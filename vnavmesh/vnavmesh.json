@@ -1,0 +1,8 @@
+{
+  "Author": "veyn",
+  "Name": "vnavmesh",
+  "Punchline": "Move around!",
+  "Description": "Utility to automatically move the character around in the world, skilfully avoiding any obstacles.",
+  "InternalName": "vnavmesh",
+  "ApplicableVersion": "any"
+}

@@ -31,10 +31,14 @@ public sealed class Plugin : IDalamudPlugin
 
         dalamud.UiBuilder.Draw += WindowSystem.Draw;
         dalamud.UiBuilder.OpenConfigUi += () => _wndMain.IsOpen = true;
+        Service.CommandManager.AddHandler("/vnavmesh", new((_, _) => _wndMain.IsOpen = true));
+
+        _wndMain.IsOpen = true;
     }
 
     public void Dispose()
     {
+        Service.CommandManager.RemoveHandler("/vnavmesh");
         WindowSystem.RemoveAllWindows();
         _wndMain.Dispose();
     }

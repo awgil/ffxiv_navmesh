@@ -1,22 +1,25 @@
 ﻿using Dalamud.Interface.Utility;
 using Dalamud.Utility;
 using ImGuiNET;
+using Navmesh.Render;
+using SharpDX.Direct3D11;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Navmesh;
 
-public unsafe class DebugGeometry
+public unsafe class DebugGeometry : IDisposable
 {
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate nint GetEngineCoreSingletonDelegate();
 
     private nint _engineCoreSingleton;
+    private RenderTarget? _rt;
+    private DynamicMesh _mesh = new(16*1024*1024, 16*1024*1024, 128*1024);
+    private DeviceContext? _ctx;
+    private DynamicMesh.Builder? _meshBuilder;
 
     public SharpDX.Matrix ViewProj { get; private set; }
     public SharpDX.Matrix Proj { get; private set; }
@@ -33,6 +36,13 @@ public unsafe class DebugGeometry
         _engineCoreSingleton = Marshal.GetDelegateForFunctionPointer<GetEngineCoreSingletonDelegate>(Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 48 8D 4C 24 ?? 48 89 4C 24 ?? 4C 8D 4D ?? 4C 8D 44 24 ??"))();
     }
 
+    public void Dispose()
+    {
+        _rt?.Dispose();
+        _meshBuilder?.Dispose();
+        _mesh.Dispose();
+    }
+
     public void StartFrame()
     {
         ViewProj = ReadMatrix(_engineCoreSingleton + 0x1B4);
@@ -42,12 +52,24 @@ public unsafe class DebugGeometry
         CameraAzimuth = MathF.Atan2(View.Column3.X, View.Column3.Z);
         CameraAltitude = MathF.Asin(View.Column3.Y);
         ViewportSize = ReadVec2(_engineCoreSingleton + 0x1F4);
+
+        if (_rt == null || _rt.Size != ViewportSize)
+        {
+            _rt?.Dispose();
+            _rt = new((int)ViewportSize.X, (int)ViewportSize.Y);
+        }
+
+        _ctx = _rt.BeginRender();
+        _meshBuilder = _mesh.Build(_ctx, new() { View = View, Proj = Proj });
     }
 
     public void EndFrame()
     {
-        if (_viewportLines.Count == 0)
-            return;
+        _meshBuilder?.Dispose();
+        _meshBuilder = null;
+
+        //if (_viewportLines.Count == 0)
+        //    return;
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
         ImGuiHelpers.ForceNextWindowMainViewport();
@@ -60,9 +82,19 @@ public unsafe class DebugGeometry
             dl.AddLine(l.from, l.to, l.col);
         _viewportLines.Clear();
 
+        if (_ctx != null && _rt != null)
+        {
+            _mesh.Draw(_ctx, false);
+            _rt.EndRender();
+            ImGui.GetWindowDrawList().AddImage(_rt.ImguiHandle, new(), new(_rt.Size.X, _rt.Size.Y));
+        }
+        _ctx = null;
+
         ImGui.End();
         ImGui.PopStyleVar();
     }
+
+    public void DrawMesh(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => _meshBuilder?.Add(mesh, ref world, color);
 
     public void DrawWorldLine(Vector3 start, Vector3 end, uint color)
     {
@@ -76,34 +108,6 @@ public unsafe class DebugGeometry
         var p1screen = new Vector2(0.5f * ViewportSize.X * (1 + p1.X), 0.5f * ViewportSize.Y * (1 - p1.Y)) + ImGuiHelpers.MainViewport.Pos;
         var p2screen = new Vector2(0.5f * ViewportSize.X * (1 + p2.X), 0.5f * ViewportSize.Y * (1 - p2.Y)) + ImGuiHelpers.MainViewport.Pos;
         _viewportLines.Add((p1screen, p2screen, color));
-    }
-
-    public void DrawWorldCone(Vector3 center, float radius, Angle direction, Angle halfWidth, uint color)
-    {
-        int numSegments = CurveApprox.CalculateCircleSegments(radius, halfWidth, 0.1f);
-        var delta = halfWidth / numSegments;
-
-        var prev = center + radius * (direction - delta * numSegments).ToDirectionXZ();
-        DrawWorldLine(center, prev, color);
-        for (int i = -numSegments + 1; i <= numSegments; ++i)
-        {
-            var curr = center + radius * (direction + delta * i).ToDirectionXZ();
-            DrawWorldLine(prev, curr, color);
-            prev = curr;
-        }
-        DrawWorldLine(prev, center, color);
-    }
-
-    public void DrawWorldCircle(Vector3 center, float radius, uint color)
-    {
-        int numSegments = CurveApprox.CalculateCircleSegments(radius, 360.Degrees(), 0.1f);
-        var prev = center + new Vector3(0, 0, radius);
-        for (int i = 1; i <= numSegments; ++i)
-        {
-            var curr = center + radius * (i * 360.0f / numSegments).Degrees().ToDirectionXZ();
-            DrawWorldLine(curr, prev, color);
-            prev = curr;
-        }
     }
 
     public void DrawWorldSphere(Vector3 center, float radius, uint color)

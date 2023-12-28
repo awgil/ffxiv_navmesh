@@ -1,15 +1,10 @@
 ﻿using Dalamud.Interface.Utility.Raii;
 using Dalamud.Memory;
-using Dalamud.Utility;
-using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Math;
 using ImGuiNET;
-using Lumina.Excel.GeneratedSheets2;
-using System;
 using System.Collections.Generic;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 using Vector4 = System.Numerics.Vector4;
 
 namespace Navmesh;
@@ -17,7 +12,7 @@ namespace Navmesh;
 public unsafe class DebugCollisionData
 {
     private UITree _tree = new();
-    private DebugGeometry _debugGeom = new();
+    private DebugGeometry _debugGeom;
     private BitMask _shownLayers = new(ulong.MaxValue);
     private bool _showOnlyFlagRaycast;
     private bool _showOnlyFlagVisit;
@@ -25,10 +20,13 @@ public unsafe class DebugCollisionData
     private HashSet<nint> _streamedMeshes = new();
     private BitMask _availableLayers;
 
+    public DebugCollisionData(DebugGeometry geom)
+    {
+        _debugGeom = geom;
+    }
+
     public void Draw()
     {
-        _debugGeom.StartFrame();
-
         var module = Framework.Instance()->BGCollisionModule;
         ImGui.TextUnformatted($"Module: {(nint)module:X}->{(nint)module->SceneManager:X} ({module->SceneManager->NumScenes} scenes, {module->LoadInProgressCounter} loads)");
         ImGui.TextUnformatted($"Streaming: {SphereStr(module->ForcedStreamingSphere)} / {SphereStr(module->SceneManager->StreamingSphere)}");
@@ -43,8 +41,6 @@ public unsafe class DebugCollisionData
             DrawSceneQuadtree(s->Scene->Quadtree, i);
             ++i;
         }
-
-        _debugGeom.EndFrame();
     }
 
     private void GatherInfo()
@@ -389,8 +385,9 @@ public unsafe class DebugCollisionData
     {
         if (node == null)
             return;
-        foreach (ref var prim in node->Primitives)
-            VisualizeTriangle(node, ref prim, ref world, color);
+        //foreach (ref var prim in node->Primitives)
+        //    VisualizeTriangle(node, ref prim, ref world, color);
+        _debugGeom.DrawMesh(new PCBMesh(node), ref world, new Vector4(color & 0xFF, (color >> 8) & 0xFF, (color >> 16) & 0xFF, (color >> 24) & 0xFF) / 255.0f);
         VisualizeColliderMeshPCBNode(node->Child1, ref world, color);
         VisualizeColliderMeshPCBNode(node->Child2, ref world, color);
     }

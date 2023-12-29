@@ -110,6 +110,11 @@
           "System.Xml.XDocument": "4.3.0"
         }
       },
+      "Newtonsoft.Json": {
+        "type": "Transitive",
+        "resolved": "13.0.3",
+        "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ=="
+      },
       "runtime.debian.8-x64.runtime.native.System.Security.Cryptography.OpenSsl": {
         "type": "Transitive",
         "resolved": "4.3.0",
@@ -957,6 +962,61 @@
           "System.Text.Encoding": "4.3.0",
           "System.Threading": "4.3.0",
           "System.Xml.ReaderWriter": "4.3.0"
+        }
+      },
+      "dotrecast.core": {
+        "type": "Project"
+      },
+      "dotrecast.detour": {
+        "type": "Project",
+        "dependencies": {
+          "DotRecast.Core": "[1.0.0, )"
+        }
+      },
+      "dotrecast.detour.crowd": {
+        "type": "Project",
+        "dependencies": {
+          "DotRecast.Detour": "[1.0.0, )"
+        }
+      },
+      "dotrecast.detour.dynamic": {
+        "type": "Project",
+        "dependencies": {
+          "DotRecast.Detour": "[1.0.0, )",
+          "DotRecast.Recast": "[1.0.0, )"
+        }
+      },
+      "dotrecast.detour.extras": {
+        "type": "Project",
+        "dependencies": {
+          "DotRecast.Detour": "[1.0.0, )",
+          "DotRecast.Recast": "[1.0.0, )",
+          "Newtonsoft.Json": "[13.0.3, )"
+        }
+      },
+      "dotrecast.detour.tilecache": {
+        "type": "Project",
+        "dependencies": {
+          "DotRecast.Detour": "[1.0.0, )",
+          "DotRecast.Recast": "[1.0.0, )"
+        }
+      },
+      "dotrecast.recast": {
+        "type": "Project",
+        "dependencies": {
+          "DotRecast.Core": "[1.0.0, )"
+        }
+      },
+      "dotrecast.recast.toolset": {
+        "type": "Project",
+        "dependencies": {
+          "DotRecast.Core": "[1.0.0, )",
+          "DotRecast.Detour": "[1.0.0, )",
+          "DotRecast.Detour.Crowd": "[1.0.0, )",
+          "DotRecast.Detour.Dynamic": "[1.0.0, )",
+          "DotRecast.Detour.Extras": "[1.0.0, )",
+          "DotRecast.Detour.TileCache": "[1.0.0, )",
+          "DotRecast.Recast": "[1.0.0, )"
         }
       },
       "ffxivclientstructs": {

@@ -1,7 +1,7 @@
 ﻿using Dalamud.Memory;
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
-using DotRecast.Recast.Toolset;
+using DotRecast.Recast;
 using DotRecast.Recast.Toolset.Builder;
 using DotRecast.Recast.Toolset.Geom;
 using DotRecast.Recast.Toolset.Tools;
@@ -20,10 +20,31 @@ public class NavmeshBuilder : IDisposable
 {
     public enum State { NotBuilt, InProgress, Failed, Ready }
 
-    private Task<NavMeshBuildResult>? _navmesh;
+    // config
+    public RcPartition Partitioning = RcPartition.WATERSHED;
+    public float CellSize = 0.3f;
+    public float CellHeight = 0.2f;
+    public float AgentMaxSlopeDeg = 45f;
+    public float AgentHeight = 2.0f;
+    public float AgentMaxClimb = 0.9f;
+    public float AgentRadius = 0.6f;
+    public float EdgeMaxLen = 12f;
+    public float EdgeMaxError = 1.3f;
+    public int MinRegionSize = 8;
+    public int MergedRegionSize = 20;
+    public int VertsPerPoly = 6;
+    public float DetailSampleDist = 6f;
+    public float DetailSampleMaxError = 1f;
+    public bool FilterLowHangingObstacles = true;
+    public bool FilterLedgeSpans = true;
+    public bool FilterWalkableLowHeightSpans = true;
 
-    public State CurrentState => _navmesh == null ? State.NotBuilt : !_navmesh.IsCompleted ? State.InProgress : _navmesh.IsFaulted || !_navmesh.Result.Success ? State.Failed : State.Ready;
-    public NavMeshBuildResult? Navmesh => _navmesh != null && _navmesh.IsCompletedSuccessfully && _navmesh.Result.Success ? _navmesh.Result : null;
+    // result
+    private RcBuilderResult? _intermediates; // valid only when task is not running
+    private Task<DtNavMesh>? _navmesh;
+
+    public State CurrentState => _navmesh == null ? State.NotBuilt : !_navmesh.IsCompleted ? State.InProgress : _navmesh.IsFaulted ? State.Failed : State.Ready;
+    public DtNavMesh? Navmesh => _navmesh != null && _navmesh.IsCompletedSuccessfully ? _navmesh.Result : null;
 
     public void Dispose()
     {
@@ -31,7 +52,11 @@ public class NavmeshBuilder : IDisposable
         //_navmesh?.Dispose();
     }
 
-    public void Rebuild() => _navmesh = Task.Run(BuildNavmesh);
+    public void Rebuild()
+    {
+        _intermediates = null;
+        _navmesh = Task.Run(BuildNavmesh);
+    }
 
     public List<Vector3> Pathfind(Vector3 from, Vector3 to)
     {
@@ -40,7 +65,7 @@ public class NavmeshBuilder : IDisposable
         if (navmesh != null)
         {
             var tool = new RcTestNavMeshTool();
-            var query = new DtNavMeshQuery(navmesh.NavMesh);
+            var query = new DtNavMeshQuery(navmesh);
             DtQueryDefaultFilter filter = new DtQueryDefaultFilter();
             var success = query.FindNearestPoly(new(from.X, from.Y, from.Z), new(2, 2, 2), filter, out var startRef, out _, out _);
             Service.Log.Debug($"[pathfind] findsrc={success.Value:X} {startRef}");
@@ -48,7 +73,7 @@ public class NavmeshBuilder : IDisposable
             Service.Log.Debug($"[pathfind] finddst={success.Value:X} {endRef}");
             List<long> polys = new();
             List<RcVec3f> smooth = new();
-            success = tool.FindFollowPath(navmesh.NavMesh, query, startRef, endRef, new(from.X, from.Y, from.Z), new(to.X, to.Y, to.Z), filter, true, ref polys, ref smooth);
+            success = tool.FindFollowPath(navmesh, query, startRef, endRef, SystemToRecast(from), SystemToRecast(to), filter, true, ref polys, ref smooth);
             Service.Log.Debug($"[pathfind] findpath={success.Value:X}");
             if (success.Succeeded())
                 res.AddRange(smooth.Select(v => new Vector3(v.X, v.Y, v.Z)));
@@ -60,6 +85,8 @@ public class NavmeshBuilder : IDisposable
     {
         public List<Vector3> Vertices = new();
         public List<(int v1, int v2, int v3)> Triangles = new();
+        public Vector3 AABBMin;
+        public Vector3 AABBMax;
 
         public unsafe void AddPCB(MeshPCB.FileNode* node, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world)
         {
@@ -67,15 +94,29 @@ public class NavmeshBuilder : IDisposable
                 return;
             int firstVertex = Vertices.Count;
             for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
-                Vertices.Add(world.TransformCoordinate(node->Vertex(i)));
+                AddVertex(world.TransformCoordinate(node->Vertex(i)));
             foreach (ref var p in node->Primitives)
                 Triangles.Add((p.V1 + firstVertex, p.V2 + firstVertex, p.V3 + firstVertex));
             AddPCB(node->Child1, ref world);
             AddPCB(node->Child2, ref world);
         }
+
+        private void AddVertex(Vector3 v)
+        {
+            if (Vertices.Count == 0)
+            {
+                AABBMin = AABBMax = v;
+            }
+            else
+            {
+                AABBMin = Vector3.Min(AABBMin, v);
+                AABBMax = Vector3.Max(AABBMax, v);
+            }
+            Vertices.Add(v);
+        }
     }
 
-    private NavMeshBuildResult BuildNavmesh()
+    private DtNavMesh BuildNavmesh()
     {
         Service.Log.Debug("[navmesh] start");
         var geom = ExtractGeometry(true, true);
@@ -100,10 +141,31 @@ public class NavmeshBuilder : IDisposable
         var geomProv = new DemoInputGeomProvider(v, f);
 
         Service.Log.Debug("[navmesh] build");
-        var settings = new RcNavMeshBuildSettings();
-        var navmesh = new SoloNavMeshBuilder().Build(geomProv, settings);
+        RcConfig cfg = new RcConfig(
+            Partitioning,
+            CellSize, CellHeight,
+            AgentMaxSlopeDeg, AgentHeight, AgentRadius, AgentMaxClimb,
+            MinRegionSize, MergedRegionSize,
+            EdgeMaxLen, EdgeMaxError,
+            VertsPerPoly,
+            DetailSampleDist, DetailSampleMaxError,
+            FilterLowHangingObstacles, FilterLedgeSpans, FilterWalkableLowHeightSpans,
+            new(RcAreaModification.RC_AREA_FLAGS_MASK), true);
+        RcBuilderConfig builderConfig = new RcBuilderConfig(cfg, SystemToRecast(geom.AABBMin), SystemToRecast(geom.AABBMax));
+
+        RcBuilder rcBuilder = new RcBuilder();
+        RcBuilderResult rcResult = rcBuilder.Build(geomProv, builderConfig);
+
+        DtNavMeshCreateParams navmeshConfig = DemoNavMeshBuilder.GetNavMeshCreateParams(geomProv, CellSize, CellHeight, AgentHeight, AgentRadius, AgentMaxClimb, rcResult);
+        var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
+        if (navmeshData == null)
+            throw new Exception("Failed to create DtMeshData");
+        DemoNavMeshBuilder.UpdateAreaAndFlags(navmeshData);
+
+        var navmesh = new DtNavMesh(navmeshData, VertsPerPoly, 0);
 
         Service.Log.Debug("[navmesh] end");
+        _intermediates = rcResult;
         return navmesh;
     }
 
@@ -174,4 +236,6 @@ public class NavmeshBuilder : IDisposable
 
         return res;
     }
+
+    private RcVec3f SystemToRecast(Vector3 v) => new(v.X, v.Y, v.Z);
 }

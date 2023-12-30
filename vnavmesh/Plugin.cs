@@ -3,6 +3,8 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using System;
 using System.IO;
+using System.Linq;
+using System.Numerics;
 using System.Reflection;
 
 namespace Navmesh;
@@ -31,7 +33,7 @@ public sealed class Plugin : IDalamudPlugin
 
         dalamud.UiBuilder.Draw += WindowSystem.Draw;
         dalamud.UiBuilder.OpenConfigUi += () => _wndMain.IsOpen = true;
-        Service.CommandManager.AddHandler("/vnavmesh", new((_, _) => _wndMain.IsOpen = true));
+        Service.CommandManager.AddHandler("/vnavmesh", new(OnCommand));
 
         _wndMain.IsOpen = true;
     }
@@ -41,5 +43,47 @@ public sealed class Plugin : IDalamudPlugin
         Service.CommandManager.RemoveHandler("/vnavmesh");
         WindowSystem.RemoveAllWindows();
         _wndMain.Dispose();
+    }
+
+    private void OnCommand(string command, string arguments)
+    {
+        Service.Log.Debug($"cmd: '{command}', args: '{arguments}'");
+        if (arguments.Length == 0)
+        {
+            _wndMain.IsOpen ^= true;
+            return;
+        }
+
+        var args = arguments.Split(' ');
+        switch (args[0])
+        {
+            case "rebuild":
+                _wndMain.Path.RebuildNavmesh();
+                break;
+            case "moveto":
+                if (args.Length > 3)
+                    MoveToCommand(args, false);
+                break;
+            case "movedir":
+                if (args.Length > 3)
+                    MoveToCommand(args, true);
+                break;
+            case "movetarget":
+                var target = Service.TargetManager.Target;
+                if (target != null)
+                    _wndMain.Path.MoveTo(target.Position);
+                break;
+            case "stop":
+                _wndMain.Path.Stop();
+                break;
+        }
+    }
+
+    private void MoveToCommand(string[] args, bool relativeToPlayer)
+    {
+        var originActor = relativeToPlayer ? Service.ClientState.LocalPlayer : null;
+        var origin = originActor?.Position ?? new();
+        var offset = new Vector3(float.Parse(args[1]), float.Parse(args[2]), float.Parse(args[3]));
+        _wndMain.Path.MoveTo(origin + offset);
     }
 }

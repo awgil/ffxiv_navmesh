@@ -22,7 +22,7 @@ public unsafe class BoxRenderer : IDisposable
         private BoxRenderer _renderer;
         private DynamicBuffer.Builder _boxes;
 
-        internal Builder(DeviceContext ctx, BoxRenderer renderer)
+        internal Builder(RenderContext ctx, BoxRenderer renderer)
         {
             _renderer = renderer;
             _boxes = renderer._buffer.Map(ctx);
@@ -49,7 +49,6 @@ public unsafe class BoxRenderer : IDisposable
 
     public int MaxCount { get; init; }
 
-    private SharpDX.Direct3D11.Device _device;
     private DynamicBuffer _buffer;
     private SharpDX.Direct3D11.Buffer _constantBuffer;
     private InputLayout _il;
@@ -58,11 +57,9 @@ public unsafe class BoxRenderer : IDisposable
     private PixelShader _ps;
     private int _count;
 
-    public BoxRenderer(int maxCount)
+    public BoxRenderer(RenderContext ctx, int maxCount)
     {
         MaxCount = maxCount;
-
-        _device = new((nint)FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Device.Instance()->D3D11Forwarder);
 
         var shader = """
             struct Box
@@ -138,20 +135,20 @@ public unsafe class BoxRenderer : IDisposable
             """;
         var vs = ShaderBytecode.Compile(shader, "vs", "vs_5_0");
         Service.Log.Debug($"Box VS compile: {vs.Message}");
-        _vs = new(_device, vs.Bytecode);
+        _vs = new(ctx.Device, vs.Bytecode);
 
         var gs = ShaderBytecode.Compile(shader, "gs", "gs_5_0");
         Service.Log.Debug($"Box GS compile: {gs.Message}");
-        _gs = new(_device, gs.Bytecode);
+        _gs = new(ctx.Device, gs.Bytecode);
 
         var ps = ShaderBytecode.Compile(shader, "ps", "ps_5_0");
         Service.Log.Debug($"Box PS compile: {ps.Message}");
-        _ps = new(_device, ps.Bytecode);
+        _ps = new(ctx.Device, ps.Bytecode);
 
-        _buffer = new(_device, 16 * 4, maxCount, BindFlags.VertexBuffer);
-        _constantBuffer = new(_device, 16 * 4 * 2, ResourceUsage.Default, BindFlags.ConstantBuffer, CpuAccessFlags.None, ResourceOptionFlags.None, 0);
+        _buffer = new(ctx, 16 * 4, maxCount, BindFlags.VertexBuffer);
+        _constantBuffer = new(ctx.Device, 16 * 4 * 2, ResourceUsage.Default, BindFlags.ConstantBuffer, CpuAccessFlags.None, ResourceOptionFlags.None, 0);
 
-        _il = new(_device, vs.Bytecode,
+        _il = new(ctx.Device, vs.Bytecode,
             [
                 new InputElement("World", 0, Format.R32G32B32_Float, -1, 0),
                 new InputElement("World", 1, Format.R32G32B32_Float, -1, 0),
@@ -171,23 +168,23 @@ public unsafe class BoxRenderer : IDisposable
         _ps.Dispose();
     }
 
-    public Builder Build(DeviceContext ctx, Constants consts)
+    public Builder Build(RenderContext ctx, Constants consts)
     {
         consts.View.Transpose();
         consts.Proj.Transpose();
-        ctx.UpdateSubresource(ref consts, _constantBuffer);
+        ctx.Context.UpdateSubresource(ref consts, _constantBuffer);
         return new Builder(ctx, this);
     }
 
-    public void Draw(DeviceContext ctx, bool wireframe)
+    public void Draw(RenderContext ctx, bool wireframe)
     {
-        ctx.InputAssembler.PrimitiveTopology = PrimitiveTopology.PointList;
-        ctx.InputAssembler.InputLayout = _il;
-        ctx.InputAssembler.SetVertexBuffers(0, new VertexBufferBinding(_buffer.Buffer, _buffer.ElementSize, 0));
-        ctx.VertexShader.Set(_vs);
-        ctx.GeometryShader.Set(_gs);
-        ctx.GeometryShader.SetConstantBuffer(0, _constantBuffer);
-        ctx.PixelShader.Set(_ps);
-        ctx.Draw(_count, 0);
+        ctx.Context.InputAssembler.PrimitiveTopology = PrimitiveTopology.PointList;
+        ctx.Context.InputAssembler.InputLayout = _il;
+        ctx.Context.InputAssembler.SetVertexBuffers(0, new VertexBufferBinding(_buffer.Buffer, _buffer.ElementSize, 0));
+        ctx.Context.VertexShader.Set(_vs);
+        ctx.Context.GeometryShader.Set(_gs);
+        ctx.Context.GeometryShader.SetConstantBuffer(0, _constantBuffer);
+        ctx.Context.PixelShader.Set(_ps);
+        ctx.Context.Draw(_count, 0);
     }
 }

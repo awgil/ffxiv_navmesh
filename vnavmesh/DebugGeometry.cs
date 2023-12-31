@@ -16,13 +16,13 @@ public unsafe class DebugGeometry : IDisposable
     private delegate nint GetEngineCoreSingletonDelegate();
 
     private nint _engineCoreSingleton;
-    private RenderTarget? _rt;
-    private DynamicMesh _mesh = new(16*1024*1024, 16*1024*1024, 128*1024);
-    private BoxRenderer _box = new(16 * 1024 * 1024);
-    private DeviceContext? _ctx;
+    private DynamicMesh _mesh;
+    private BoxRenderer _box;
     private DynamicMesh.Builder? _meshBuilder;
     private BoxRenderer.Builder? _boxBuilder;
 
+    public RenderContext RenderContext { get; init; } = new();
+    public RenderTarget? RenderTarget { get; private set; }
     public SharpDX.Matrix ViewProj { get; private set; }
     public SharpDX.Matrix Proj { get; private set; }
     public SharpDX.Matrix View { get; private set; }
@@ -36,15 +36,18 @@ public unsafe class DebugGeometry : IDisposable
     public DebugGeometry()
     {
         _engineCoreSingleton = Marshal.GetDelegateForFunctionPointer<GetEngineCoreSingletonDelegate>(Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 48 8D 4C 24 ?? 48 89 4C 24 ?? 4C 8D 4D ?? 4C 8D 44 24 ??"))();
+        _mesh = new(RenderContext, 16 * 1024 * 1024, 16 * 1024 * 1024, 128 * 1024);
+        _box = new(RenderContext, 16 * 1024 * 1024);
     }
 
     public void Dispose()
     {
-        _rt?.Dispose();
         _meshBuilder?.Dispose();
         _boxBuilder?.Dispose();
         _mesh.Dispose();
         _box.Dispose();
+        RenderTarget?.Dispose();
+        RenderContext.Dispose();
     }
 
     public void StartFrame()
@@ -57,15 +60,15 @@ public unsafe class DebugGeometry : IDisposable
         CameraAltitude = MathF.Asin(View.Column3.Y);
         ViewportSize = ReadVec2(_engineCoreSingleton + 0x1F4);
 
-        if (_rt == null || _rt.Size != ViewportSize)
+        if (RenderTarget == null || RenderTarget.Size != ViewportSize)
         {
-            _rt?.Dispose();
-            _rt = new((int)ViewportSize.X, (int)ViewportSize.Y);
+            RenderTarget?.Dispose();
+            RenderTarget = new(RenderContext, (int)ViewportSize.X, (int)ViewportSize.Y);
         }
 
-        _ctx = _rt.BeginRender();
-        _meshBuilder = _mesh.Build(_ctx, new() { View = View, Proj = Proj });
-        _boxBuilder = _box.Build(_ctx, new() { View = View, Proj = Proj });
+        RenderTarget.Bind(RenderContext);
+        _meshBuilder = _mesh.Build(RenderContext, new() { View = View, Proj = Proj });
+        _boxBuilder = _box.Build(RenderContext, new() { View = View, Proj = Proj });
     }
 
     public void EndFrame()
@@ -75,6 +78,11 @@ public unsafe class DebugGeometry : IDisposable
 
         _meshBuilder?.Dispose();
         _meshBuilder = null;
+
+        _mesh.Draw(RenderContext, false);
+        _box.Draw(RenderContext, false);
+
+        RenderContext.Execute();
 
         //if (_viewportLines.Count == 0)
         //    return;
@@ -90,14 +98,10 @@ public unsafe class DebugGeometry : IDisposable
             dl.AddLine(l.from, l.to, l.col);
         _viewportLines.Clear();
 
-        if (_ctx != null && _rt != null)
+        if (RenderTarget != null)
         {
-            _mesh.Draw(_ctx, false);
-            _box.Draw(_ctx, false);
-            _rt.EndRender();
-            ImGui.GetWindowDrawList().AddImage(_rt.ImguiHandle, new(), new(_rt.Size.X, _rt.Size.Y));
+            ImGui.GetWindowDrawList().AddImage(RenderTarget.ImguiHandle, new(), new(RenderTarget.Size.X, RenderTarget.Size.Y));
         }
-        _ctx = null;
 
         ImGui.End();
         ImGui.PopStyleVar();

@@ -10,20 +10,20 @@ public unsafe class DynamicBuffer : IDisposable
     public class Builder : IDisposable
     {
         public int NextElement { get; private set; }
-        private DeviceContext _ctx;
+        private RenderContext _ctx;
         private DynamicBuffer _buffer;
         private DataStream _stream;
 
-        internal Builder(DeviceContext ctx, DynamicBuffer buffer)
+        internal Builder(RenderContext ctx, DynamicBuffer buffer)
         {
             _ctx = ctx;
             _buffer = buffer;
-            ctx.MapSubresource(buffer.Buffer, MapMode.WriteDiscard, SharpDX.Direct3D11.MapFlags.None, out _stream);
+            ctx.Context.MapSubresource(buffer.Buffer, MapMode.WriteDiscard, MapFlags.None, out _stream);
         }
 
         public void Dispose()
         {
-            _ctx.UnmapSubresource(_buffer.Buffer, 0);
+            _ctx.Context.UnmapSubresource(_buffer.Buffer, 0);
         }
 
         // TODO: reconsider this api
@@ -40,11 +40,11 @@ public unsafe class DynamicBuffer : IDisposable
     public int NumElements { get; init; }
     public Buffer Buffer { get; init; }
 
-    public DynamicBuffer(SharpDX.Direct3D11.Device device, int elementSize, int numElements, BindFlags bindFlags)
+    public DynamicBuffer(RenderContext ctx, int elementSize, int numElements, BindFlags bindFlags)
     {
         ElementSize = elementSize;
         NumElements = numElements;
-        Buffer = new(device, new()
+        Buffer = new(ctx.Device, new()
         {
             SizeInBytes = elementSize * numElements,
             Usage = ResourceUsage.Dynamic,
@@ -58,5 +58,5 @@ public unsafe class DynamicBuffer : IDisposable
         Buffer.Dispose();
     }
 
-    public Builder Map(DeviceContext ctx) => new Builder(ctx, this);
+    public Builder Map(RenderContext ctx) => new Builder(ctx, this);
 }

@@ -10,8 +10,6 @@ namespace Navmesh.Render;
 public unsafe class RenderTarget : IDisposable
 {
     public Vector2 Size { get; private set; }
-    private SharpDX.Direct3D11.Device _device;
-    private DeviceContext _ctx;
     private Texture2D _rt;
     private RenderTargetView _rtRTV;
     private ShaderResourceView _rtSRV;
@@ -20,13 +18,11 @@ public unsafe class RenderTarget : IDisposable
 
     public nint ImguiHandle => _rtSRV.NativePointer;
 
-    public RenderTarget(int width, int height)
+    public RenderTarget(RenderContext ctx, int width, int height)
     {
         Size = new(width, height);
-        _device = new((nint)FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Device.Instance()->D3D11Forwarder);
-        _ctx = new(_device);
 
-        _rt = new(_device, new()
+        _rt = new(ctx.Device, new()
         {
             Width = width,
             Height = height,
@@ -40,14 +36,14 @@ public unsafe class RenderTarget : IDisposable
             OptionFlags = ResourceOptionFlags.None
         });
 
-        _rtRTV = new(_device, _rt, new()
+        _rtRTV = new(ctx.Device, _rt, new()
         {
             Format = Format.R8G8B8A8_UNorm,
             Dimension = RenderTargetViewDimension.Texture2D,
             Texture2D = new() { }
         });
 
-        _rtSRV = new(_device, _rt, new()
+        _rtSRV = new(ctx.Device, _rt, new()
         {
             Format = Format.R8G8B8A8_UNorm,
             Dimension = ShaderResourceViewDimension.Texture2D,
@@ -58,7 +54,7 @@ public unsafe class RenderTarget : IDisposable
             }
         });
 
-        _depth = new(_device, new()
+        _depth = new(ctx.Device, new()
         {
             Width = width,
             Height = height,
@@ -72,7 +68,7 @@ public unsafe class RenderTarget : IDisposable
             OptionFlags = ResourceOptionFlags.None
         });
 
-        _depthDSV = new(_device, _depth, new()
+        _depthDSV = new(ctx.Device, _depth, new()
         {
             Format = Format.D32_Float,
             Dimension = DepthStencilViewDimension.Texture2D,
@@ -82,7 +78,6 @@ public unsafe class RenderTarget : IDisposable
 
     public void Dispose()
     {
-        _ctx.Dispose();
         _rt.Dispose();
         _rtRTV.Dispose();
         _rtSRV.Dispose();
@@ -90,18 +85,11 @@ public unsafe class RenderTarget : IDisposable
         _depthDSV.Dispose();
     }
 
-    public DeviceContext BeginRender()
+    public void Bind(RenderContext ctx)
     {
-        _ctx.ClearRenderTargetView(_rtRTV, new());
-        _ctx.ClearDepthStencilView(_depthDSV, DepthStencilClearFlags.Depth, 1, 0);
-        _ctx.Rasterizer.SetViewport(0, 0, Size.X, Size.Y);
-        _ctx.OutputMerger.SetTargets(_depthDSV, _rtRTV);
-        return _ctx;
-    }
-
-    public void EndRender()
-    {
-        using var cmds = _ctx.FinishCommandList(true);
-        _device.ImmediateContext.ExecuteCommandList(cmds, true);
+        ctx.Context.ClearRenderTargetView(_rtRTV, new());
+        ctx.Context.ClearDepthStencilView(_depthDSV, DepthStencilClearFlags.Depth, 1, 0);
+        ctx.Context.Rasterizer.SetViewport(0, 0, Size.X, Size.Y);
+        ctx.Context.OutputMerger.SetTargets(_depthDSV, _rtRTV);
     }
 }

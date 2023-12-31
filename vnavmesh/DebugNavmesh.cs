@@ -1,6 +1,6 @@
 ﻿using Dalamud.Interface.Utility.Raii;
-using DotRecast.Core.Numerics;
 using DotRecast.Recast;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using ImGuiNET;
 using System;
 using System.Collections.Generic;
@@ -70,14 +70,17 @@ internal class DebugNavmesh : IDisposable
 
     private void DrawSolidHeightfield()
     {
+        if (_navmesh.Navmesh == null)
+            return;
+        var hf = _navmesh.Intermediates!.GetSolidHeightfield();
+
         using var n = _tree.Node("Heightfield (solid)", _navmesh.Navmesh == null);
-        if (n.SelectedOrHovered && _navmesh.Navmesh != null)
-            VisualizeSolidHeightfield(_navmesh.Intermediates!.GetSolidHeightfield());
+        if (n.SelectedOrHovered)
+            VisualizeSolidHeightfield(hf);
         if (!n.Opened)
             return;
 
         var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
-        var hf = _navmesh.Intermediates!.GetSolidHeightfield();
         _tree.LeafNode($"Num cells: {hf.width}x{hf.height}");
         _tree.LeafNode($"Bounds: [{hf.bmin}] - [{hf.bmax}]");
         _tree.LeafNode($"Cell size: {hf.cs}x{hf.ch}");

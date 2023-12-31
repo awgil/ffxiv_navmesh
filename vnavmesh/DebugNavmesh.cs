@@ -1,6 +1,6 @@
 ﻿using Dalamud.Interface.Utility.Raii;
+using DotRecast.Core.Numerics;
 using DotRecast.Recast;
-using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using ImGuiNET;
 using System;
 using System.Collections.Generic;
@@ -67,7 +67,9 @@ internal class DebugNavmesh : IDisposable
             }
         }
 
-        DrawSolidHeightfield();
+        var intermediates = _navmesh.Intermediates!;
+        DrawSolidHeightfield(intermediates.GetSolidHeightfield());
+        DrawCompactHeightfield(intermediates.GetCompactHeightfield());
     }
 
     private void DrawConfig()
@@ -86,13 +88,9 @@ internal class DebugNavmesh : IDisposable
         ImGui.Checkbox("Filter low-height spans", ref _navmesh.FilterWalkableLowHeightSpans);
     }
 
-    private void DrawSolidHeightfield()
+    private void DrawSolidHeightfield(RcHeightfield hf)
     {
-        if (_navmesh.Navmesh == null)
-            return;
-        var hf = _navmesh.Intermediates!.GetSolidHeightfield();
-
-        using var n = _tree.Node("Heightfield (solid)", _navmesh.Navmesh == null);
+        using var n = _tree.Node("Solid heightfield");
         if (n.SelectedOrHovered)
             VisualizeSolidHeightfield(hf);
         if (!n.Opened)
@@ -138,6 +136,89 @@ internal class DebugNavmesh : IDisposable
         }
     }
 
+    private void DrawCompactHeightfield(RcCompactHeightfield hf)
+    {
+        using var n = _tree.Node("Compact heightfield");
+        if (n.SelectedOrHovered)
+            VisualizeCompactHeightfield(hf);
+        if (!n.Opened)
+            return;
+
+        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
+        _tree.LeafNode($"Num cells: {hf.width}x{hf.height}");
+        _tree.LeafNode($"Bounds: [{hf.bmin}] - [{hf.bmax}]");
+        _tree.LeafNode($"Cell size: {hf.cs}x{hf.ch}");
+        _tree.LeafNode($"Config: walkable height={hf.walkableHeight}, walkable climb={hf.walkableClimb}, border={hf.borderSize}");
+        _tree.LeafNode($"Count: spans={hf.spanCount}, max dist={hf.maxDistance}, max region id={hf.maxRegions}");
+        _tree.LeafNode($"Player's cell: {(playerPos.X - hf.bmin.X) / hf.cs}x{(playerPos.Y - hf.bmin.Y) / hf.ch}x{(playerPos.Z - hf.bmin.Z) / hf.cs}");
+
+        using (var nc = _tree.Node("Cells"))
+        {
+            if (nc.Opened)
+            {
+                for (int z = 0; z < hf.height; ++z)
+                {
+                    UITree.NodeRaii? nz = null;
+                    for (int x = 0; x < hf.width; ++x)
+                    {
+                        ref var cell = ref hf.cells[z * hf.width + x];
+                        if (cell.count == 0)
+                            continue;
+
+                        nz ??= _tree.Node($"[*x{z}]");
+                        if (!nz.Value.Opened)
+                            break;
+
+                        using var nx = _tree.Node($"[{x}x{z}]: {cell.count} spans starting from {cell.index}");
+                        if (nx.SelectedOrHovered)
+                            VisualizeCompactHeightfieldCell(hf, x, z, true);
+                        if (nx.Opened)
+                        {
+                            for (int i = 0; i < cell.count; ++i)
+                            {
+                                ref var span = ref hf.spans[cell.index + i];
+                                if (_tree.LeafNode($"y={span.y}+{span.h}, conn={RcCommons.GetCon(ref span, 0)} {RcCommons.GetCon(ref span, 1)} {RcCommons.GetCon(ref span, 2)} {RcCommons.GetCon(ref span, 3)}, reg={span.reg}, dist={hf.dist[i]}, area={hf.areas[i]}").SelectedOrHovered)
+                                    VisualizeCompactHeightfieldSpan(hf, x, z, cell.index + i, true);
+                            }
+                        }
+                    }
+                    nz?.Dispose();
+                }
+            }
+        }
+
+        using (var nr = _tree.Node($"Regions ({hf.maxRegions})###regions"))
+        {
+            if (nr.Opened)
+            {
+                for (int i = 0; i < hf.maxRegions; ++i)
+                {
+                    using var nreg = _tree.Node($"Region {i}");
+                    if (nreg.SelectedOrHovered)
+                        VisualizeCompactHeightfieldRegion(hf, i);
+                    if (!nreg.Opened)
+                        continue;
+                    for (int z = 0; z < hf.height; ++z)
+                    {
+                        for (int x = 0; x < hf.width; ++x)
+                        {
+                            ref var cell = ref hf.cells[z * hf.width + x];
+                            for (int idx = 0; idx < cell.count; ++idx)
+                            {
+                                ref var span = ref hf.spans[cell.index + idx];
+                                if (span.reg != i)
+                                    continue;
+
+                                if (_tree.LeafNode($"[{x}x{z}]: y={span.y}+{span.h}").SelectedOrHovered)
+                                    VisualizeCompactHeightfieldSpan(hf, x, z, cell.index + idx, true);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private void VisualizeSolidHeightfield(RcHeightfield hf)
     {
         for (int z = 0; z < hf.height; ++z)
@@ -155,14 +236,71 @@ internal class DebugNavmesh : IDisposable
         }
     }
 
-    private void VisualizeSolidHeightfieldSpan(RcHeightfield hf, int x, int z, RcSpan span)
+    private void VisualizeSolidHeightfieldSpan(RcHeightfield hf, int x, int z, RcSpan span) => VisualizeAABB(hf.bmin, hf.cs, hf.ch, x, z, span.smin, span.smax, new(1, span.area == 0 ? 0 : 1, 0, 1));
+
+    private void VisualizeCompactHeightfield(RcCompactHeightfield hf)
+    {
+        for (int z = 0; z < hf.height; ++z)
+            for (int x = 0; x < hf.width; ++x)
+                VisualizeCompactHeightfieldCell(hf, x, z, false);
+    }
+
+    private void VisualizeCompactHeightfieldRegion(RcCompactHeightfield hf, int reg)
+    {
+        for (int z = 0; z < hf.height; ++z)
+        {
+            for (int x = 0; x < hf.width; ++x)
+            {
+                ref var cell = ref hf.cells[z * hf.width + x];
+                for (int idx = 0; idx < cell.count; ++idx)
+                    if (hf.spans[cell.index + idx].reg == reg)
+                        VisualizeCompactHeightfieldSpan(hf, x, z, cell.index + idx, true);
+            }
+        }
+    }
+
+    private void VisualizeCompactHeightfieldCell(RcCompactHeightfield hf, int x, int z, bool showConnections)
+    {
+        ref var cell = ref hf.cells[z * hf.width + x];
+        for (int i = 0; i < cell.count; ++i)
+            VisualizeCompactHeightfieldSpan(hf, x, z, cell.index + i, showConnections);
+    }
+
+    private void VisualizeCompactHeightfieldSpan(RcCompactHeightfield hf, int x, int z, int spanIndex, bool showConnections)
+    {
+        ref var span = ref hf.spans[spanIndex];
+        var y1 = span.y + span.h;
+        if (y1 == RcConstants.SPAN_MAX_HEIGHT)
+            y1 = span.y + 1;
+        VisualizeAABB(hf.bmin, hf.cs, hf.ch, x, z, span.y, y1, new(1, hf.areas[spanIndex] == 0 ? 0 : 1, 0, 1));
+        if (!showConnections)
+            return;
+        for (int dir = 0; dir < 4; ++dir)
+        {
+            var conn = RcCommons.GetCon(ref span, dir);
+            if (conn == RcConstants.RC_NOT_CONNECTED)
+                continue;
+            int nx = x + RcCommons.GetDirOffsetX(dir);
+            int nz = z + RcCommons.GetDirOffsetY(dir);
+            ref var nc = ref hf.cells[nz * hf.width + nx];
+            ref var ns = ref hf.spans[nc.index + conn];
+            var ny1 = ns.y + ns.h;
+            if (ny1 == RcConstants.SPAN_MAX_HEIGHT)
+                ny1 = ns.y + 1;
+            var from = hf.bmin.RecastToSystem() + new Vector3(hf.cs * (x + 0.5f), hf.ch * (span.y + y1) * 0.5f, hf.cs * (z + 0.5f));
+            var to = hf.bmin.RecastToSystem() + new Vector3(hf.cs * (nx + 0.5f), hf.ch * (ns.y + ny1) * 0.5f, hf.cs * (nz + 0.5f));
+            _geom.DrawWorldLine(from, to, 0xff00ffff);
+        }
+    }
+
+    private void VisualizeAABB(RcVec3f min, float cs, float ch, int x, int z, int y0, int y1, Vector4 color)
     {
         var mtx = new FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3();
-        mtx.M11 = mtx.M33 = 0.5f * hf.cs;
-        mtx.M22 = (span.smax - span.smin) * 0.5f * hf.ch;
-        mtx.M41 = hf.bmin.X + (x + 0.5f) * hf.cs;
-        mtx.M42 = hf.bmin.Y + (span.smin + span.smax) * 0.5f * hf.ch;
-        mtx.M43 = hf.bmin.Z + (z + 0.5f) * hf.cs;
-        _geom.DrawBox(ref mtx, new(1, span.area == 0 ? 0 : 1, 0, 1));
+        mtx.M11 = mtx.M33 = 0.5f * cs;
+        mtx.M22 = (y1 - y0) * 0.5f * ch;
+        mtx.M41 = min.X + (x + 0.5f) * cs;
+        mtx.M42 = min.Y + (y0 + y1) * 0.5f * ch;
+        mtx.M43 = min.Z + (z + 0.5f) * cs;
+        _geom.DrawBox(ref mtx, color);
     }
 }

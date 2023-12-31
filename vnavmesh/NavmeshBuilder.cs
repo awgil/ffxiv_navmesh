@@ -125,9 +125,57 @@ public class NavmeshBuilder : IDisposable
             var solid = new NavmeshRasterizer(cfg, colliders.BoundsMin, colliders.BoundsMax, telemetry);
             colliders.Rasterize(solid);
 
-            Service.Log.Debug("[navmesh] build");
-            RcBuilderResult rcResult = new RcBuilder().Build(0, 0, dummyProv, cfg, solid.Heightfield, telemetry);
+            if (cfg.FilterLowHangingObstacles)
+            {
+                Service.Log.Debug("[navmesh] filter low-hanging obstacles");
+                RcFilters.FilterLowHangingWalkableObstacles(telemetry, cfg.WalkableClimb, solid.Heightfield);
+            }
 
+            if (cfg.FilterLedgeSpans)
+            {
+                Service.Log.Debug("[navmesh] filter ledge spans");
+                RcFilters.FilterLedgeSpans(telemetry, cfg.WalkableHeight, cfg.WalkableClimb, solid.Heightfield);
+            }
+
+            if (cfg.FilterWalkableLowHeightSpans)
+            {
+                Service.Log.Debug("[navmesh] filter walkable low-height spans");
+                RcFilters.FilterWalkableLowHeightSpans(telemetry, cfg.WalkableHeight, solid.Heightfield);
+            }
+
+            Service.Log.Debug("[navmesh] build compact heightfield with connectivity data");
+            RcCompactHeightfield chf = RcCompacts.BuildCompactHeightfield(telemetry, cfg.WalkableHeight, cfg.WalkableClimb, solid.Heightfield);
+
+            Service.Log.Debug("[navmesh] erode the walkable area by agent radius");
+            RcAreas.ErodeWalkableArea(telemetry, cfg.WalkableRadius, chf);
+            // note: this is the good time to mark convex poly areas with custom area ids
+
+            Service.Log.Debug("[navmesh] partitioning heightfield");
+            if (cfg.Partition == RcPartitionType.WATERSHED.Value)
+            {
+                RcRegions.BuildDistanceField(telemetry, chf);
+                RcRegions.BuildRegions(telemetry, chf, cfg.MinRegionArea, cfg.MergeRegionArea);
+            }
+            else if (cfg.Partition == RcPartitionType.MONOTONE.Value)
+            {
+                RcRegions.BuildRegionsMonotone(telemetry, chf, cfg.MinRegionArea, cfg.MergeRegionArea);
+            }
+            else
+            {
+                RcRegions.BuildLayerRegions(telemetry, chf, cfg.MinRegionArea);
+            }
+
+            Service.Log.Debug("[navmesh] tracing and simplyfing contours");
+            RcContourSet cset = RcContours.BuildContours(telemetry, chf, cfg.MaxSimplificationError, cfg.MaxEdgeLen, RcBuildContoursFlags.RC_CONTOUR_TESS_WALL_EDGES);
+
+            Service.Log.Debug("[navmesh] building polygon mesh from contours");
+            RcPolyMesh pmesh = RcMeshs.BuildPolyMesh(telemetry, cset, cfg.MaxVertsPerPoly);
+
+            Service.Log.Debug("[navmesh] creating detail mesh");
+            RcPolyMeshDetail? dmesh = cfg.BuildMeshDetail ? RcMeshDetails.BuildPolyMeshDetail(telemetry, pmesh, chf, cfg.DetailSampleDist, cfg.DetailSampleMaxError) : null;
+            var rcResult = new RcBuilderResult(0, 0, solid.Heightfield, chf, cset, pmesh, dmesh, telemetry);
+
+            Service.Log.Debug("[navmesh] navmesh build");
             DtNavMeshCreateParams navmeshConfig = DemoNavMeshBuilder.GetNavMeshCreateParams(dummyProv, CellSize, CellHeight, AgentHeight, AgentRadius, AgentMaxClimb, rcResult);
             var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
             if (navmeshData == null)

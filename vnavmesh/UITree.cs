@@ -11,13 +11,17 @@ public class UITree
     {
         public bool Selected { get; init; }
         public bool Opened { get; init; }
+        public bool Hovered { get; init; }
         private bool _disposed;
         private bool _realOpened;
 
-        public NodeRaii(bool selected, bool opened, bool realOpened)
+        public bool SelectedOrHovered => Selected || Hovered;
+
+        public NodeRaii(bool selected, bool opened, bool hovered, bool realOpened)
         {
             Selected = selected;
             Opened = opened;
+            Hovered = hovered;
             _realOpened = realOpened;
         }
 
@@ -47,13 +51,14 @@ public class UITree
         ImGui.PopStyleColor();
         if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
             _selectedId = id;
-        return new(id == _selectedId, open && !leaf, open);
+        return new(id == _selectedId, open && !leaf, ImGui.IsItemHovered(), open);
     }
 
-    // returns whether node is selected
-    public bool LeafNode(string text, uint color = 0xffffffff)
+    // returned node is auto disposed
+    public NodeRaii LeafNode(string text, uint color = 0xffffffff)
     {
-        using var n = Node(text, true, color);
-        return n.Selected;
+        var n = Node(text, true, color);
+        n.Dispose();
+        return n;
     }
 }

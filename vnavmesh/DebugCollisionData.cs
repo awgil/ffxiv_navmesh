@@ -114,7 +114,7 @@ public unsafe class DebugCollisionData
     private void DrawSceneColliders(Scene* s, int index)
     {
         using var n = _tree.Node($"Scene {index}: {s->NumColliders} colliders, {s->NumLoading} loading, streaming={SphereStr(s->StreamingSphere)}###scene_{index}");
-        if (n.Selected)
+        if (n.SelectedOrHovered)
             foreach (var coll in s->Colliders)
                 if (FilterCollider(coll))
                     VisualizeCollider(coll);
@@ -153,7 +153,7 @@ public unsafe class DebugCollisionData
                     foreach (var coll in node.Colliders)
                         DrawCollider(coll);
 
-                if (cn.Selected)
+                if (cn.SelectedOrHovered)
                 {
                     // TODO: visualize cell bounds?
                     foreach (var coll in node.Colliders)
@@ -175,7 +175,7 @@ public unsafe class DebugCollisionData
         var type = coll->GetColliderType();
         var color = type == ColliderType.Mesh && _streamedMeshes.Contains((nint)coll) ? 0xff00ff00 : 0xffffffff;
         using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}", false, color);
-        if (n.Selected)
+        if (n.SelectedOrHovered)
             VisualizeCollider(coll);
         if (!n.Opened)
             return;
@@ -200,7 +200,7 @@ public unsafe class DebugCollisionData
                             var elem = cast->Elements + i;
                             var entryRaw = (uint*)entry;
                             using var mn = _tree.Node($"Mesh {i}: file=tr{entry->MeshId:d4}.pcb, bounds={AABBStr(entry->Bounds)} == {(nint)elem->Mesh:X}###mesh_{i}", elem->Mesh == null);
-                            if (mn.Selected)
+                            if (mn.SelectedOrHovered)
                                 VisualizeCollider(&elem->Mesh->Collider);
                             if (mn.Opened)
                                 DrawColliderMesh(elem->Mesh);
@@ -263,9 +263,9 @@ public unsafe class DebugCollisionData
         _tree.LeafNode($"Scale: {Vec3Str(coll->Scale)}");
         DrawMat4x3("World", ref coll->World);
         DrawMat4x3("InvWorld", ref coll->InvWorld);
-        if (_tree.LeafNode($"Bounding sphere: {SphereStr(coll->BoundingSphere)}"))
+        if (_tree.LeafNode($"Bounding sphere: {SphereStr(coll->BoundingSphere)}").SelectedOrHovered)
             VisualizeSphere(coll->BoundingSphere, 0xff00ff00);
-        if (_tree.LeafNode($"Bounding box: {AABBStr(coll->WorldBoundingBox)}"))
+        if (_tree.LeafNode($"Bounding box: {AABBStr(coll->WorldBoundingBox)}").SelectedOrHovered)
             VisualizeOBB(ref coll->WorldBoundingBox, ref Matrix4x3.Identity, 0xff00ff00);
         _tree.LeafNode($"Total size: {coll->TotalPrimitives} prims, {coll->TotalChildren} nodes");
         _tree.LeafNode($"Mesh type: {(coll->MeshIsSimple ? "simple" : coll->MemoryData != null ? "PCB placeholder" : "PCB")} {(coll->Loaded ? "" : "(loading)")}");
@@ -282,13 +282,13 @@ public unsafe class DebugCollisionData
             return;
 
         using var n = _tree.Node(tag);
-        if (n.Selected)
+        if (n.SelectedOrHovered)
             VisualizeColliderMeshPCBNode(node, ref world, 0xff00ffff);
         if (!n.Opened)
             return;
 
         _tree.LeafNode($"Header: {node->Header:X16}");
-        if (_tree.LeafNode($"AABB: {AABBStr(node->LocalBounds)}"))
+        if (_tree.LeafNode($"AABB: {AABBStr(node->LocalBounds)}").SelectedOrHovered)
             VisualizeOBB(ref node->LocalBounds, ref world, 0xff00ff00);
 
         {
@@ -298,7 +298,7 @@ public unsafe class DebugCollisionData
                 for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
                 {
                     var v = node->Vertex(i);
-                    if (_tree.LeafNode($"[{i}] ({(i < node->NumVertsRaw ? 'r' : 'c')}): {Vec3Str(v)}"))
+                    if (_tree.LeafNode($"[{i}] ({(i < node->NumVertsRaw ? 'r' : 'c')}): {Vec3Str(v)}").SelectedOrHovered)
                         VisualizeVertex(world.TransformCoordinate(v), 0xff00ffff);
                 }
             }
@@ -309,7 +309,7 @@ public unsafe class DebugCollisionData
             {
                 int i = 0;
                 foreach (ref var prim in node->Primitives)
-                    if (_tree.LeafNode($"[{i++}]: {prim.V1}x{prim.V2}x{prim.V3}, material={prim.Material:X8}"))
+                    if (_tree.LeafNode($"[{i++}]: {prim.V1}x{prim.V2}x{prim.V3}, material={prim.Material:X8}").SelectedOrHovered)
                         VisualizeTriangle(node, ref prim, ref world, 0xff00ffff);
             }
         }

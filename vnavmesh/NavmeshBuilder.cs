@@ -1,11 +1,13 @@
 ﻿using Dalamud.Memory;
+using DotRecast.Core;
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
+using DotRecast.Recast.Geom;
 using DotRecast.Recast.Toolset.Builder;
-using DotRecast.Recast.Toolset.Geom;
 using DotRecast.Recast.Toolset.Tools;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+using FFXIVClientStructs.Interop;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -44,6 +46,7 @@ public class NavmeshBuilder : IDisposable
     private Task<DtNavMesh>? _navmesh;
 
     public State CurrentState => _navmesh == null ? State.NotBuilt : !_navmesh.IsCompleted ? State.InProgress : _navmesh.IsFaulted ? State.Failed : State.Ready;
+    public RcBuilderResult? Intermediates => _intermediates;
     public DtNavMesh? Navmesh => _navmesh != null && _navmesh.IsCompletedSuccessfully ? _navmesh.Result : null;
 
     public void Dispose()
@@ -55,6 +58,7 @@ public class NavmeshBuilder : IDisposable
     public void Rebuild()
     {
         _intermediates = null;
+        // TODO: extract minimal collision scene meshes before spawning async task, otherwise we have a race...
         _navmesh = Task.Run(BuildNavmesh);
     }
 
@@ -81,160 +85,161 @@ public class NavmeshBuilder : IDisposable
         return res;
     }
 
-    private class MegaMesh
+    private class DummyProvider : IInputGeomProvider
     {
-        public List<Vector3> Vertices = new();
-        public List<(int v1, int v2, int v3)> Triangles = new();
-        public Vector3 AABBMin;
-        public Vector3 AABBMax;
-
-        public unsafe void AddPCB(MeshPCB.FileNode* node, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world)
-        {
-            if (node == null)
-                return;
-            int firstVertex = Vertices.Count;
-            for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
-                AddVertex(world.TransformCoordinate(node->Vertex(i)));
-            foreach (ref var p in node->Primitives)
-                Triangles.Add((p.V1 + firstVertex, p.V2 + firstVertex, p.V3 + firstVertex));
-            AddPCB(node->Child1, ref world);
-            AddPCB(node->Child2, ref world);
-        }
-
-        private void AddVertex(Vector3 v)
-        {
-            if (Vertices.Count == 0)
-            {
-                AABBMin = AABBMax = v;
-            }
-            else
-            {
-                AABBMin = Vector3.Min(AABBMin, v);
-                AABBMax = Vector3.Max(AABBMax, v);
-            }
-            Vertices.Add(v);
-        }
+        public void AddConvexVolume(RcConvexVolume convexVolume) { }
+        public void AddOffMeshConnection(RcVec3f start, RcVec3f end, float radius, bool bidir, int area, int flags) { }
+        public IList<RcConvexVolume> ConvexVolumes() => [];
+        public RcTriMesh GetMesh() => new([], []);
+        public RcVec3f GetMeshBoundsMax() => default;
+        public RcVec3f GetMeshBoundsMin() => default;
+        public List<RcOffMeshConnection> GetOffMeshConnections() => [];
+        public IEnumerable<RcTriMesh> Meshes() => Enumerable.Empty<RcTriMesh>();
+        public void RemoveOffMeshConnections(Predicate<RcOffMeshConnection> filter) { }
     }
 
     private DtNavMesh BuildNavmesh()
     {
-        Service.Log.Debug("[navmesh] start");
-        var geom = ExtractGeometry(true, true);
-
-        Service.Log.Debug("[navmesh] to-prov");
-        var v = new float[geom.Vertices.Count * 3];
-        var f = new int[geom.Triangles.Count * 3];
-        int i = 0;
-        foreach (var vert in geom.Vertices)
+        try
         {
-            v[i++] = vert.X;
-            v[i++] = vert.Y;
-            v[i++] = vert.Z;
+            Service.Log.Debug("[navmesh] start");
+            var telemetry = new RcTelemetry();
+
+            // init config
+            var cfg = new RcConfig(
+                Partitioning,
+                CellSize, CellHeight,
+                AgentMaxSlopeDeg, AgentHeight, AgentRadius, AgentMaxClimb,
+                MinRegionSize, MergedRegionSize,
+                EdgeMaxLen, EdgeMaxError,
+                VertsPerPoly,
+                DetailSampleDist, DetailSampleMaxError,
+                FilterLowHangingObstacles, FilterLedgeSpans, FilterWalkableLowHeightSpans,
+                new(RcAreaModification.RC_AREA_FLAGS_MASK), true);
+
+            Service.Log.Debug("[navmesh] find set of colliders");
+            var colliders = new Colliders(true, true);
+
+            var dummyProv = new DummyProvider();
+
+            Service.Log.Debug("[navmesh] rasterize input polygon soup to heightfield");
+            var solid = new NavmeshRasterizer(cfg, SystemToRecast(colliders.BoundsMin), SystemToRecast(colliders.BoundsMax), telemetry);
+            colliders.Rasterize(solid);
+
+            Service.Log.Debug("[navmesh] build");
+            RcBuilderResult rcResult = new RcBuilder().Build(0, 0, dummyProv, cfg, solid.Heightfield, telemetry);
+
+            DtNavMeshCreateParams navmeshConfig = DemoNavMeshBuilder.GetNavMeshCreateParams(dummyProv, CellSize, CellHeight, AgentHeight, AgentRadius, AgentMaxClimb, rcResult);
+            var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
+            if (navmeshData == null)
+                throw new Exception("Failed to create DtMeshData");
+            DemoNavMeshBuilder.UpdateAreaAndFlags(navmeshData);
+
+            var navmesh = new DtNavMesh(navmeshData, VertsPerPoly, 0);
+
+            Service.Log.Debug("[navmesh] end");
+            _intermediates = rcResult;
+            return navmesh;
         }
-        i = 0;
-        foreach (var tri in geom.Triangles)
+        catch (Exception ex)
         {
-            f[i++] = tri.v1;
-            f[i++] = tri.v2;
-            f[i++] = tri.v3;
+            Service.Log.Error($"Error building navmesh: {ex}");
+            throw;
         }
-        var geomProv = new DemoInputGeomProvider(v, f);
-
-        Service.Log.Debug("[navmesh] build");
-        RcConfig cfg = new RcConfig(
-            Partitioning,
-            CellSize, CellHeight,
-            AgentMaxSlopeDeg, AgentHeight, AgentRadius, AgentMaxClimb,
-            MinRegionSize, MergedRegionSize,
-            EdgeMaxLen, EdgeMaxError,
-            VertsPerPoly,
-            DetailSampleDist, DetailSampleMaxError,
-            FilterLowHangingObstacles, FilterLedgeSpans, FilterWalkableLowHeightSpans,
-            new(RcAreaModification.RC_AREA_FLAGS_MASK), true);
-        RcBuilderConfig builderConfig = new RcBuilderConfig(cfg, SystemToRecast(geom.AABBMin), SystemToRecast(geom.AABBMax));
-
-        RcBuilder rcBuilder = new RcBuilder();
-        RcBuilderResult rcResult = rcBuilder.Build(geomProv, builderConfig);
-
-        DtNavMeshCreateParams navmeshConfig = DemoNavMeshBuilder.GetNavMeshCreateParams(geomProv, CellSize, CellHeight, AgentHeight, AgentRadius, AgentMaxClimb, rcResult);
-        var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
-        if (navmeshData == null)
-            throw new Exception("Failed to create DtMeshData");
-        DemoNavMeshBuilder.UpdateAreaAndFlags(navmeshData);
-
-        var navmesh = new DtNavMesh(navmeshData, VertsPerPoly, 0);
-
-        Service.Log.Debug("[navmesh] end");
-        _intermediates = rcResult;
-        return navmesh;
     }
 
-    private unsafe MegaMesh ExtractGeometry(bool includeStreamedMeshes, bool includeStandaloneMeshes)
+    private unsafe class Colliders
     {
-        var res = new MegaMesh();
+        public List<Pointer<ColliderStreamed>> Streamed = new();
+        public List<Pointer<ColliderMesh>> Meshes = new();
+        public Vector3 BoundsMin;
+        public Vector3 BoundsMax;
 
-        // first pass - mark streamed meshes (so that we can ignore them on standalone mesh pass) and manually load & add full streamable meshes
-        HashSet<nint> streamedMeshes = new();
-        foreach (var s in FFXIVClientStructs.FFXIV.Client.System.Framework.Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
+        public Colliders(bool includeStreamedMeshes, bool includeStandaloneMeshes)
         {
-            foreach (var coll in s->Scene->Colliders)
+            BoundsMin = new(float.MaxValue);
+            BoundsMax = new(float.MinValue);
+
+            // first pass - mark streamed meshes (so that we can ignore them on standalone mesh pass) and add streamable
+            HashSet<nint> streamedMeshes = new();
+            foreach (var s in FFXIVClientStructs.FFXIV.Client.System.Framework.Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
             {
-                if (coll->GetColliderType() != ColliderType.Streamed)
-                    continue;
-                var cast = (ColliderStreamed*)coll;
-                if (cast->Header == null || cast->Elements == null)
-                    continue;
-                var basePath = MemoryHelper.ReadStringNullTerminated((nint)cast->PathBase);
-                var elements = new Span<ColliderStreamed.Element>(cast->Elements, cast->Header->NumMeshes);
-                foreach (ref var e in elements)
+                foreach (var coll in s->Scene->Colliders)
                 {
-                    if (includeStandaloneMeshes && e.Mesh != null)
-                    {
-                        streamedMeshes.Add((nint)e.Mesh);
-                    }
+                    if (coll->GetColliderType() != ColliderType.Streamed)
+                        continue;
+                    var cast = (ColliderStreamed*)coll;
+                    if (cast->Header == null)
+                        continue;
                     if (includeStreamedMeshes)
                     {
-                        var f = Service.DataManager.GetFile($"{basePath}/tr{e.MeshId:d4}.pcb");
-                        if (f != null)
+                        Streamed.Add(cast);
+                        AddBounds(ref cast->Header->Bounds);
+                    }
+                    if (includeStandaloneMeshes && cast->Elements != null)
+                        foreach (ref var e in new Span<ColliderStreamed.Element>(cast->Elements, cast->Header->NumMeshes))
+                            if (e.Mesh != null)
+                                streamedMeshes.Add((nint)e.Mesh);
+                }
+            }
+
+            // second pass - add standalone meshes
+            if (includeStandaloneMeshes)
+            {
+                foreach (var s in FFXIVClientStructs.FFXIV.Client.System.Framework.Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
+                {
+                    foreach (var coll in s->Scene->Colliders)
+                    {
+                        if (coll->GetColliderType() == ColliderType.Mesh && !streamedMeshes.Contains((nint)coll))
                         {
-                            var data = (MeshPCB.FileHeader*)Unsafe.AsPointer(ref f.Data[0]);
-                            if (data->Version is 1 or 4)
-                            {
-                                res.AddPCB((MeshPCB.FileNode*)(data + 1), ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity);
-                            }
+                            var cast = (ColliderMesh*)coll;
+                            Meshes.Add(cast);
+                            AddBounds(ref cast->WorldBoundingBox);
                         }
                     }
                 }
             }
         }
 
-        // second pass - add standalone meshes
-        if (includeStandaloneMeshes)
+        public void Rasterize(NavmeshRasterizer rasterizer)
         {
-            foreach (var s in FFXIVClientStructs.FFXIV.Client.System.Framework.Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
+            foreach (var coll in Streamed)
             {
-                foreach (var coll in s->Scene->Colliders)
+                if (coll.Value->Header == null || coll.Value->Elements == null)
+                    continue;
+                var basePath = MemoryHelper.ReadStringNullTerminated((nint)coll.Value->PathBase);
+                foreach (ref var e in new Span<ColliderStreamed.Element>(coll.Value->Elements, coll.Value->Header->NumMeshes))
                 {
-                    if (coll->GetColliderType() != ColliderType.Mesh || streamedMeshes.Contains((nint)coll))
-                        continue;
-                    var cast = (ColliderMesh*)coll;
-                    if (cast->MeshIsSimple || cast->Mesh == null)
-                        continue;
-                    var mesh = (MeshPCB*)cast->Mesh;
-                    res.AddPCB(mesh->RootNode, ref cast->World);
+                    var f = Service.DataManager.GetFile($"{basePath}/tr{e.MeshId:d4}.pcb");
+                    if (f != null)
+                    {
+                        fixed (byte* rawData = &f.Data[0])
+                        {
+                            var data = (MeshPCB.FileHeader*)rawData;
+                            if (data->Version is 1 or 4)
+                            {
+                                rasterizer.RasterizePCB((MeshPCB.FileNode*)(data + 1), null);
+                            }
+                        }
+                    }
+                }
+            }
+
+            foreach (var coll in Meshes)
+            {
+                if (!coll.Value->MeshIsSimple && coll.Value->Mesh != null)
+                {
+                    var mesh = (MeshPCB*)coll.Value->Mesh;
+                    rasterizer.RasterizePCB(mesh->RootNode, &coll.Value->World);
                 }
             }
         }
 
-        // print out to clipboard in .obj format
-        //var obj = new StringBuilder();
-        //foreach (var v in res.Vertices)
-        //    obj.AppendLine($"v {v.X} {v.Y} {v.Z}");
-        //foreach (var tri in res.Triangles)
-        //    obj.AppendLine($"f {tri.Item1 + 1} {tri.Item2 + 1} {tri.Item3 + 1}");
-        //ImGui.SetClipboardText(obj.ToString());
-
-        return res;
+        private void AddBounds(ref FFXIVClientStructs.FFXIV.Common.Math.AABB aabb)
+        {
+            BoundsMin = Vector3.Min(BoundsMin, aabb.Min);
+            BoundsMax = Vector3.Max(BoundsMax, aabb.Max);
+        }
     }
 
     private RcVec3f SystemToRecast(Vector3 v) => new(v.X, v.Y, v.Z);

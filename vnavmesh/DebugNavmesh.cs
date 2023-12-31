@@ -9,10 +9,12 @@ namespace Navmesh;
 
 internal class DebugNavmesh : IDisposable
 {
+    private UITree _tree = new();
     private DebugGeometry _geom;
     private NavmeshBuilder _navmesh;
     private Vector3 _target;
     private List<Vector3> _waypoints = new();
+    private bool _drawSolidHeightfield;
 
     public DebugNavmesh(DebugGeometry geom, NavmeshBuilder navmesh)
     {
@@ -60,6 +62,56 @@ internal class DebugNavmesh : IDisposable
                 _geom.DrawWorldLine(from, to, 0xff00ff00);
                 from = to;
             }
+        }
+
+        DrawSolidHeightfield();
+    }
+
+    private void DrawSolidHeightfield()
+    {
+        if (_drawSolidHeightfield && _navmesh.Navmesh != null)
+        {
+
+        }
+
+        using var n = _tree.Node("Heightfield (solid)", _navmesh.Navmesh == null);
+        if (!n.Opened)
+            return;
+
+        var hf = _navmesh.Intermediates!.GetSolidHeightfield();
+        ImGui.Checkbox("Draw visualization", ref _drawSolidHeightfield);
+        _tree.LeafNode($"Num cells: {hf.width}x{hf.height}");
+        _tree.LeafNode($"Bounds: [{hf.bmin}] - [{hf.bmax}]");
+        _tree.LeafNode($"Cell size: {hf.cs}x{hf.ch}");
+        _tree.LeafNode($"Border size: {hf.borderSize}");
+        using var nc = _tree.Node("Cells");
+        if (!nc.Opened)
+            return;
+
+        for (int z = 0; z < hf.height; ++z)
+        {
+            UITree.NodeRaii? nz = null;
+            for (int x = 0; x < hf.width; ++x)
+            {
+                var span = hf.spans[z * hf.width + x];
+                if (span == null)
+                    continue;
+
+                nz ??= _tree.Node($"[*x{z}]");
+                if (!nz.Value.Opened)
+                    break;
+
+                using var nx = _tree.Node($"[{x}x{z}]");
+                if (nx.Opened)
+                {
+                    while (span != null)
+                    {
+                        _tree.LeafNode($"{span.smin}-{span.smax} = {span.area:X}");
+                        span = span.next;
+                    }
+                }
+            }
+            nz?.Dispose();
         }
     }
 }

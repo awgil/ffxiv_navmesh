@@ -5,7 +5,10 @@ using ImGuiNET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http.Headers;
+using System.Net.NetworkInformation;
 using System.Numerics;
+using System.Text;
 
 namespace Navmesh;
 
@@ -70,6 +73,8 @@ internal class DebugNavmesh : IDisposable
         var intermediates = _navmesh.Intermediates!;
         DrawSolidHeightfield(intermediates.GetSolidHeightfield());
         DrawCompactHeightfield(intermediates.GetCompactHeightfield());
+        DrawContourSet(intermediates.GetContourSet());
+        DrawPolyMesh(intermediates.GetMesh());
     }
 
     private void DrawConfig()
@@ -219,6 +224,117 @@ internal class DebugNavmesh : IDisposable
         }
     }
 
+    private void DrawContourSet(RcContourSet cs)
+    {
+        using var n = _tree.Node("Contour set");
+        if (!n.Opened)
+            return;
+
+        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
+        _tree.LeafNode($"Num cells: {cs.width}x{cs.height}");
+        _tree.LeafNode($"Bounds: [{cs.bmin}] - [{cs.bmax}]");
+        _tree.LeafNode($"Cell size: {cs.cs}x{cs.ch}");
+        _tree.LeafNode($"Misc: border size={cs.borderSize}, max error={cs.maxError}");
+        _tree.LeafNode($"Player's cell: {(playerPos.X - cs.bmin.X) / cs.cs}x{(playerPos.Y - cs.bmin.Y) / cs.ch}x{(playerPos.Z - cs.bmin.Z) / cs.cs}");
+
+        using var nc = _tree.Node($"Contours ({cs.conts.Count})###contours");
+        if (!nc.Opened)
+            return;
+
+        int i = 0;
+        foreach (var c in cs.conts)
+        {
+            using var ncont = _tree.Node($"Contour {i++}: area={c.area}, region={c.reg}");
+            if (ncont.SelectedOrHovered)
+            {
+                VisualizeContour(cs, c.verts, c.nverts, 0xff00ff00);
+                VisualizeContour(cs, c.rverts, c.nrverts, 0xff00ffff);
+            }
+            if (!ncont.Opened)
+                continue;
+
+            using (var ns = _tree.Node($"Simplified vertices ({c.nverts})###simp"))
+            {
+                if (ns.SelectedOrHovered)
+                    VisualizeContour(cs, c.verts, c.nverts, 0xff00ff00);
+                if (ns.Opened)
+                {
+                    for (int iv = 0; iv < c.nverts; ++iv)
+                    {
+                        var reg = c.verts[iv * 4 + 3];
+                        if (_tree.LeafNode($"{iv}: {c.verts[iv * 4]}x{c.verts[iv * 4 + 1]}x{c.verts[iv * 4 + 2]}, reg={reg & RcConstants.RC_CONTOUR_REG_MASK}, border={(reg & RcConstants.RC_BORDER_VERTEX) != 0}, areaborder={(reg & RcConstants.RC_AREA_BORDER) != 0}").SelectedOrHovered)
+                            VisualizeContourVertex(cs, c.verts, iv);
+                    }
+                }
+            }
+
+            using (var nr = _tree.Node($"Raw vertices ({c.nrverts})###raw"))
+            {
+                if (nr.SelectedOrHovered)
+                    VisualizeContour(cs, c.rverts, c.nrverts, 0xff00ffff);
+                if (nr.Opened)
+                {
+                    for (int iv = 0; iv < c.nrverts; ++iv)
+                    {
+                        var reg = c.rverts[iv * 4 + 3];
+                        if (_tree.LeafNode($"{iv}: {c.rverts[iv * 4]}x{c.rverts[iv * 4 + 1]}x{c.rverts[iv * 4 + 2]}, reg={reg & RcConstants.RC_CONTOUR_REG_MASK}, border={(reg & RcConstants.RC_BORDER_VERTEX) != 0}, areaborder={(reg & RcConstants.RC_AREA_BORDER) != 0}").SelectedOrHovered)
+                            VisualizeContourVertex(cs, c.rverts, iv);
+                    }
+                }
+            }
+        }
+    }
+
+    private void DrawPolyMesh(RcPolyMesh mesh)
+    {
+        using var n = _tree.Node("Poly mesh");
+        if (n.SelectedOrHovered)
+            VisualizeMesh(mesh);
+        if (!n.Opened)
+            return;
+
+        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
+        _tree.LeafNode($"Bounds: [{mesh.bmin}] - [{mesh.bmax}]");
+        _tree.LeafNode($"Cell size: {mesh.cs}x{mesh.ch}");
+        _tree.LeafNode($"Misc: border size={mesh.borderSize}, max edge error={mesh.maxEdgeError}, max vertices/poly={mesh.nvp}");
+        _tree.LeafNode($"Player's cell: {(playerPos.X - mesh.bmin.X) / mesh.cs}x{(playerPos.Y - mesh.bmin.Y) / mesh.ch}x{(playerPos.Z - mesh.bmin.Z) / mesh.cs}");
+
+        using (var nv = _tree.Node($"Vertices ({mesh.nverts})###verts"))
+        {
+            if (nv.Opened)
+            {
+                for (int i = 0; i < mesh.nverts; ++i)
+                {
+                    if (_tree.LeafNode($"{i}: {mesh.verts[3 * i]}x{mesh.verts[3 * i + 1]}x{mesh.verts[3 * i + 2]}").SelectedOrHovered)
+                        VisualizeMeshVertex(mesh, i);
+                }
+            }
+        }
+
+        using (var np = _tree.Node($"Polygons ({mesh.npolys})###polys"))
+        {
+            if (np.Opened)
+            {
+                for (int i = 0; i < mesh.npolys; ++i)
+                {
+                    using var nprim = _tree.Node(i.ToString());
+                    if (nprim.SelectedOrHovered)
+                        VisualizeMeshPolygon(mesh, i);
+                    if (!nprim.Opened)
+                        continue;
+                    for (int j = 0; j < mesh.nvp; ++j)
+                    {
+                        var vertex = mesh.polys[i * 2 * mesh.nvp + j];
+                        if (_tree.LeafNode($"Vertex {j}: #{vertex}").SelectedOrHovered && vertex != RcConstants.RC_MESH_NULL_IDX)
+                            VisualizeMeshVertex(mesh, vertex);
+                    }
+                    for (int j = 0; j < mesh.nvp; ++j)
+                        _tree.LeafNode($"Adjacency {j}: {mesh.polys[i * 2 * mesh.nvp + mesh.nvp + j]:X}");
+                }
+            }
+        }
+    }
+
     private void VisualizeSolidHeightfield(RcHeightfield hf)
     {
         for (int z = 0; z < hf.height; ++z)
@@ -293,6 +409,53 @@ internal class DebugNavmesh : IDisposable
         }
     }
 
+    private void VisualizeContour(RcContourSet cs, int[] contourVertices, int numVerts, uint color)
+    {
+        if (numVerts <= 0)
+            return;
+        var from = GetContourVertex(cs, contourVertices, numVerts - 1);
+        for (int i = 0; i < numVerts; ++i)
+        {
+            var to = GetContourVertex(cs, contourVertices, i);
+            _geom.DrawWorldLine(from, to, color);
+            from = to;
+        }
+    }
+
+    private void VisualizeContourVertex(RcContourSet cs, int[] vertices, int index)
+    {
+        _geom.DrawWorldSphere(GetContourVertex(cs, vertices, index), 1, 0xff0000ff);
+    }
+
+    private void VisualizeMesh(RcPolyMesh mesh)
+    {
+        for (int i = 0; i < mesh.npolys; ++i)
+            VisualizeMeshPolygon(mesh, i);
+    }
+
+    private void VisualizeMeshPolygon(RcPolyMesh mesh, int index)
+    {
+        //var off = index * 2 * mesh.nvp;
+        //if (mesh.polys[off] == RcConstants.RC_MESH_NULL_IDX)
+        //    return;
+        //var from = GetMeshVertex(mesh, mesh.polys[off]);
+        //for (int i = 1; i < mesh.nvp; ++i)
+        //{
+        //    if (mesh.polys[off + i] == RcConstants.RC_MESH_NULL_IDX)
+        //        break;
+        //    var to = GetMeshVertex(mesh, mesh.polys[off + i]);
+        //    _geom.DrawWorldLine(from, to, 0xff00ff00);
+        //    from = to;
+        //}
+        //_geom.DrawWorldLine(from, GetMeshVertex(mesh, mesh.polys[off]), 0xff00ff00);
+        _geom.DrawMesh(new RcPolyMeshPrimitive(mesh, index), ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, new(0, 1, 0, 1));
+    }
+
+    private void VisualizeMeshVertex(RcPolyMesh mesh, int index)
+    {
+        _geom.DrawWorldSphere(GetMeshVertex(mesh, index), 1, 0xff0000ff);
+    }
+
     private void VisualizeAABB(RcVec3f min, float cs, float ch, int x, int z, int y0, int y1, Vector4 color)
     {
         var mtx = new FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3();
@@ -303,4 +466,7 @@ internal class DebugNavmesh : IDisposable
         mtx.M43 = min.Z + (z + 0.5f) * cs;
         _geom.DrawBox(ref mtx, color);
     }
+
+    private Vector3 GetContourVertex(RcContourSet cs, int[] verts, int index) => cs.bmin.RecastToSystem() + new Vector3(cs.cs, cs.ch, cs.cs) * new Vector3(verts[4 * index], verts[4 * index + 1], verts[4 * index + 2]);
+    private Vector3 GetMeshVertex(RcPolyMesh mesh, int index) => mesh.bmin.RecastToSystem() + new Vector3(mesh.cs, mesh.ch, mesh.cs) * new Vector3(mesh.verts[3 * index], mesh.verts[3 * index + 1], mesh.verts[3 * index + 2]);
 }

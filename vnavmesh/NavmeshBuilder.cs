@@ -114,17 +114,19 @@ public class NavmeshBuilder : IDisposable
                 VertsPerPoly,
                 DetailSampleDist, DetailSampleMaxError,
                 FilterLowHangingObstacles, FilterLedgeSpans, FilterWalkableLowHeightSpans,
-                new(RcAreaModification.RC_AREA_FLAGS_MASK), true);
+                new(RcConstants.RC_WALKABLE_AREA), true);
 
             Service.Log.Debug("[navmesh] find set of colliders");
             var colliders = new Colliders(true, true);
 
-            var dummyProv = new DummyProvider();
-
+            // 1. voxelize raw geometry
+            // this creates a 'solid heightfield', which is a grid of sorted linked lists of spans
+            // each span contains an 'area id', which is either walkable (if normal is good) or not (otherwise); areas outside spans contains no geometry at all
             Service.Log.Debug("[navmesh] rasterize input polygon soup to heightfield");
             var solid = new NavmeshRasterizer(cfg, colliders.BoundsMin, colliders.BoundsMax, telemetry);
             colliders.Rasterize(solid);
 
+            // 2. perform a bunch of postprocessing on a heightfield
             if (cfg.FilterLowHangingObstacles)
             {
                 Service.Log.Debug("[navmesh] filter low-hanging obstacles");
@@ -143,13 +145,20 @@ public class NavmeshBuilder : IDisposable
                 RcFilters.FilterWalkableLowHeightSpans(telemetry, cfg.WalkableHeight, solid.Heightfield);
             }
 
+            // 3. create a 'compact heightfield' structure
+            // this is very similar to a normal heightfield, except that spans are now stored in a single array, and grid cells just contain consecutive ranges
+            // this also contains connectivity data (links to neighbouring cells)
             Service.Log.Debug("[navmesh] build compact heightfield with connectivity data");
             RcCompactHeightfield chf = RcCompacts.BuildCompactHeightfield(telemetry, cfg.WalkableHeight, cfg.WalkableClimb, solid.Heightfield);
 
+            // 4. mark spans that are too close to unwalkable as unwalkable, to account for actor's non-zero radius
+            // this changes area of some spans from walkable to non-walkable
             Service.Log.Debug("[navmesh] erode the walkable area by agent radius");
             RcAreas.ErodeWalkableArea(telemetry, cfg.WalkableRadius, chf);
             // note: this is the good time to mark convex poly areas with custom area ids
 
+            // 5. build connected regions; this assigns region ids to spans in the compact heightfield
+            // there are different algorithms with different tradeoffs
             Service.Log.Debug("[navmesh] partitioning heightfield");
             if (cfg.Partition == RcPartitionType.WATERSHED.Value)
             {
@@ -165,18 +174,22 @@ public class NavmeshBuilder : IDisposable
                 RcRegions.BuildLayerRegions(telemetry, chf, cfg.MinRegionArea);
             }
 
+            // 6. build contours around regions, then simplify them to reduce vertex count
+            // contour set is just a list of contours, each of which is a simple non-convex polygon that belong to a single region with a single area id
             Service.Log.Debug("[navmesh] tracing and simplyfing contours");
             RcContourSet cset = RcContours.BuildContours(telemetry, chf, cfg.MaxSimplificationError, cfg.MaxEdgeLen, RcBuildContoursFlags.RC_CONTOUR_TESS_WALL_EDGES);
 
+            // 7. triangulate contours to build a mesh of convex polygons with adjacency information
             Service.Log.Debug("[navmesh] building polygon mesh from contours");
             RcPolyMesh pmesh = RcMeshs.BuildPolyMesh(telemetry, cset, cfg.MaxVertsPerPoly);
 
+            // 8. not sure about this, apparently this is needed to provide height information?..
             Service.Log.Debug("[navmesh] creating detail mesh");
             RcPolyMeshDetail? dmesh = cfg.BuildMeshDetail ? RcMeshDetails.BuildPolyMeshDetail(telemetry, pmesh, chf, cfg.DetailSampleDist, cfg.DetailSampleMaxError) : null;
             var rcResult = new RcBuilderResult(0, 0, solid.Heightfield, chf, cset, pmesh, dmesh, telemetry);
 
-            Service.Log.Debug("[navmesh] navmesh build");
-            DtNavMeshCreateParams navmeshConfig = DemoNavMeshBuilder.GetNavMeshCreateParams(dummyProv, CellSize, CellHeight, AgentHeight, AgentRadius, AgentMaxClimb, rcResult);
+            Service.Log.Debug("[navmesh] detour navmesh build");
+            DtNavMeshCreateParams navmeshConfig = DemoNavMeshBuilder.GetNavMeshCreateParams(new DummyProvider(), CellSize, CellHeight, AgentHeight, AgentRadius, AgentMaxClimb, rcResult);
             var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
             if (navmeshData == null)
                 throw new Exception("Failed to create DtMeshData");

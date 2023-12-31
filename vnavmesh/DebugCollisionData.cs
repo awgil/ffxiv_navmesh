@@ -30,6 +30,7 @@ public unsafe class DebugCollisionData
         var module = Framework.Instance()->BGCollisionModule;
         ImGui.TextUnformatted($"Module: {(nint)module:X}->{(nint)module->SceneManager:X} ({module->SceneManager->NumScenes} scenes, {module->LoadInProgressCounter} loads)");
         ImGui.TextUnformatted($"Streaming: {SphereStr(module->ForcedStreamingSphere)} / {SphereStr(module->SceneManager->StreamingSphere)}");
+        //module->ForcedStreamingSphere.W = 10000;
 
         GatherInfo();
         DrawSettings();

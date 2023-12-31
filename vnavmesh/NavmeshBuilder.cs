@@ -12,7 +12,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace Navmesh;
@@ -77,7 +76,7 @@ public class NavmeshBuilder : IDisposable
             Service.Log.Debug($"[pathfind] finddst={success.Value:X} {endRef}");
             List<long> polys = new();
             List<RcVec3f> smooth = new();
-            success = tool.FindFollowPath(navmesh, query, startRef, endRef, SystemToRecast(from), SystemToRecast(to), filter, true, ref polys, ref smooth);
+            success = tool.FindFollowPath(navmesh, query, startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), filter, true, ref polys, ref smooth);
             Service.Log.Debug($"[pathfind] findpath={success.Value:X}");
             if (success.Succeeded())
                 res.AddRange(smooth.Select(v => new Vector3(v.X, v.Y, v.Z)));
@@ -123,7 +122,7 @@ public class NavmeshBuilder : IDisposable
             var dummyProv = new DummyProvider();
 
             Service.Log.Debug("[navmesh] rasterize input polygon soup to heightfield");
-            var solid = new NavmeshRasterizer(cfg, SystemToRecast(colliders.BoundsMin), SystemToRecast(colliders.BoundsMax), telemetry);
+            var solid = new NavmeshRasterizer(cfg, colliders.BoundsMin, colliders.BoundsMax, telemetry);
             colliders.Rasterize(solid);
 
             Service.Log.Debug("[navmesh] build");
@@ -241,6 +240,4 @@ public class NavmeshBuilder : IDisposable
             BoundsMax = Vector3.Max(BoundsMax, aabb.Max);
         }
     }
-
-    private RcVec3f SystemToRecast(Vector3 v) => new(v.X, v.Y, v.Z);
 }

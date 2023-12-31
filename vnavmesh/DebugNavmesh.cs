@@ -29,6 +29,8 @@ internal class DebugNavmesh : IDisposable
 
     public void Draw()
     {
+        DrawConfig();
+
         var state = _navmesh.CurrentState;
         using (var d = ImRaii.Disabled(state == NavmeshBuilder.State.InProgress))
         {
@@ -66,6 +68,22 @@ internal class DebugNavmesh : IDisposable
         }
 
         DrawSolidHeightfield();
+    }
+
+    private void DrawConfig()
+    {
+        using var n = _tree.Node("Navmesh properties");
+        if (!n.Opened)
+            return;
+
+        ImGui.InputFloat("The xz-plane cell size to use for fields. [Limit: > 0] [Units: wu]", ref _navmesh.CellSize);
+        ImGui.InputFloat("The y-axis cell size to use for fields. [Limit: > 0] [Units: wu]", ref _navmesh.CellHeight);
+        ImGui.InputFloat("The maximum slope that is considered walkable. [Limits: 0 <= value < 90] [Units: Degrees]", ref _navmesh.AgentMaxSlopeDeg);
+        ImGui.InputFloat("Maximum ledge height that is considered to still be traversable. [Limit: >= 0] [Units: wu]", ref _navmesh.AgentMaxClimb);
+        ImGui.InputFloat("Minimum floor to 'ceiling' height that will still allow the floor area to be considered walkable. [Limit: >= 3 * CellHeight] [Units: wu]", ref _navmesh.AgentHeight);
+        ImGui.Checkbox("Filter low-hanging obstacles", ref _navmesh.FilterLowHangingObstacles);
+        ImGui.Checkbox("Filter ledges", ref _navmesh.FilterLedgeSpans);
+        ImGui.Checkbox("Filter low-height spans", ref _navmesh.FilterWalkableLowHeightSpans);
     }
 
     private void DrawSolidHeightfield()

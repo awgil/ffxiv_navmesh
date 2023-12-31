@@ -1,5 +1,4 @@
 ﻿using DotRecast.Core;
-using DotRecast.Core.Numerics;
 using DotRecast.Recast;
 using System.Numerics;
 
@@ -14,10 +13,12 @@ public class NavmeshRasterizer
     private float[] _vertices = new float[3 * 256];
     private float _walkableNormalThreshold; // triangle is considered 'walkable' if it's world-space normal's Y coordinate is >= this
 
-    public NavmeshRasterizer(RcConfig cfg, RcVec3f bbMin, RcVec3f bbMax, RcTelemetry telemetry)
+    public NavmeshRasterizer(RcConfig cfg, Vector3 bbMin, Vector3 bbMax, RcTelemetry telemetry)
     {
-        RcCommons.CalcGridSize(bbMin, bbMax, cfg.Cs, out var width, out var height);
-        Heightfield = new RcHeightfield(width, height, bbMin, bbMax, cfg.Cs, cfg.Ch, cfg.BorderSize);
+        var rcMin = bbMin.SystemToRecast();
+        var rcMax = bbMax.SystemToRecast();
+        RcCommons.CalcGridSize(rcMin, rcMax, cfg.Cs, out var width, out var height);
+        Heightfield = new RcHeightfield(width, height, rcMin, rcMax, cfg.Cs, cfg.Ch, cfg.BorderSize);
         _cfg = cfg;
         _telemetry = telemetry;
         _walkableNormalThreshold = cfg.WalkableSlopeAngle.Degrees().Cos();

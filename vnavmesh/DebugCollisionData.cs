@@ -173,7 +173,17 @@ public unsafe class DebugCollisionData
         var flagsText = raycastFlag ? (globalVisitFlag ? "raycast, global visit" : "raycast") : (globalVisitFlag ? "global visit" : "none");
 
         var type = coll->GetColliderType();
-        var color = type == ColliderType.Mesh && _streamedMeshes.Contains((nint)coll) ? 0xff00ff00 : 0xffffffff;
+        var color = 0xffffffff;
+        if (type == ColliderType.Mesh)
+        {
+            var collMesh = (ColliderMesh*)coll;
+            if (_streamedMeshes.Contains((nint)coll))
+                color = 0xff00ff00;
+            else if (collMesh->MeshIsSimple)
+                color = 0xff0000ff;
+            else if (collMesh->Resource == null)
+                color = 0xff00ffff;
+        }
         using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}", false, color);
         if (n.SelectedOrHovered)
             VisualizeCollider(coll);
@@ -186,6 +196,7 @@ public unsafe class DebugCollisionData
             case ColliderType.Streamed:
                 {
                     var cast = (ColliderStreamed*)coll;
+                    DrawResource(cast->Resource);
                     var path = MemoryHelper.ReadStringNullTerminated((nint)cast->PathBase);
                     _tree.LeafNode($"Path: {path}/{MemoryHelper.ReadStringNullTerminated((nint)cast->PathBase + path.Length + 1)}");
                     _tree.LeafNode($"Streamed: [{cast->StreamedMinX:f3}x{cast->StreamedMinZ:f3}] - [{cast->StreamedMaxX:f3}x{cast->StreamedMaxZ:f3}]");
@@ -258,6 +269,7 @@ public unsafe class DebugCollisionData
 
     private void DrawColliderMesh(ColliderMesh* coll)
     {
+        DrawResource(coll->Resource);
         _tree.LeafNode($"Translation: {Vec3Str(coll->Translation)}");
         _tree.LeafNode($"Rotation: {Vec3Str(coll->Rotation)}");
         _tree.LeafNode($"Scale: {Vec3Str(coll->Scale)}");
@@ -315,6 +327,18 @@ public unsafe class DebugCollisionData
         }
         DrawColliderMeshPCBNode($"Child 1 (+{node->Child1Offset})", node->Child1, ref world);
         DrawColliderMeshPCBNode($"Child 2 (+{node->Child2Offset})", node->Child2, ref world);
+    }
+
+    private void DrawResource(Resource* res)
+    {
+        if (res != null)
+        {
+            _tree.LeafNode($"Resource: {(nint)res:X} '{MemoryHelper.ReadStringNullTerminated((nint)res->Path)}'");
+        }
+        else
+        {
+            _tree.LeafNode($"Resource: null");
+        }
     }
 
     private void VisualizeCollider(Collider* coll)

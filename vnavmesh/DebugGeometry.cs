@@ -18,8 +18,10 @@ public unsafe class DebugGeometry : IDisposable
     private nint _engineCoreSingleton;
     private RenderTarget? _rt;
     private DynamicMesh _mesh = new(16*1024*1024, 16*1024*1024, 128*1024);
+    private BoxRenderer _box = new(16 * 1024 * 1024);
     private DeviceContext? _ctx;
     private DynamicMesh.Builder? _meshBuilder;
+    private BoxRenderer.Builder? _boxBuilder;
 
     public SharpDX.Matrix ViewProj { get; private set; }
     public SharpDX.Matrix Proj { get; private set; }
@@ -40,7 +42,9 @@ public unsafe class DebugGeometry : IDisposable
     {
         _rt?.Dispose();
         _meshBuilder?.Dispose();
+        _boxBuilder?.Dispose();
         _mesh.Dispose();
+        _box.Dispose();
     }
 
     public void StartFrame()
@@ -61,10 +65,14 @@ public unsafe class DebugGeometry : IDisposable
 
         _ctx = _rt.BeginRender();
         _meshBuilder = _mesh.Build(_ctx, new() { View = View, Proj = Proj });
+        _boxBuilder = _box.Build(_ctx, new() { View = View, Proj = Proj });
     }
 
     public void EndFrame()
     {
+        _boxBuilder?.Dispose();
+        _boxBuilder = null;
+
         _meshBuilder?.Dispose();
         _meshBuilder = null;
 
@@ -85,6 +93,7 @@ public unsafe class DebugGeometry : IDisposable
         if (_ctx != null && _rt != null)
         {
             _mesh.Draw(_ctx, false);
+            _box.Draw(_ctx, false);
             _rt.EndRender();
             ImGui.GetWindowDrawList().AddImage(_rt.ImguiHandle, new(), new(_rt.Size.X, _rt.Size.Y));
         }
@@ -95,6 +104,8 @@ public unsafe class DebugGeometry : IDisposable
     }
 
     public void DrawMesh(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => _meshBuilder?.Add(mesh, ref world, color);
+
+    public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => _boxBuilder?.Add(ref world, color);
 
     public void DrawWorldLine(Vector3 start, Vector3 end, uint color)
     {

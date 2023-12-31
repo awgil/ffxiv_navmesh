@@ -1,4 +1,6 @@
 ﻿using Dalamud.Interface.Utility.Raii;
+using DotRecast.Core.Numerics;
+using DotRecast.Recast;
 using ImGuiNET;
 using System;
 using System.Collections.Generic;
@@ -14,7 +16,6 @@ internal class DebugNavmesh : IDisposable
     private NavmeshBuilder _navmesh;
     private Vector3 _target;
     private List<Vector3> _waypoints = new();
-    private bool _drawSolidHeightfield;
 
     public DebugNavmesh(DebugGeometry geom, NavmeshBuilder navmesh)
     {
@@ -69,21 +70,19 @@ internal class DebugNavmesh : IDisposable
 
     private void DrawSolidHeightfield()
     {
-        if (_drawSolidHeightfield && _navmesh.Navmesh != null)
-        {
-
-        }
-
         using var n = _tree.Node("Heightfield (solid)", _navmesh.Navmesh == null);
+        if (n.SelectedOrHovered && _navmesh.Navmesh != null)
+            VisualizeSolidHeightfield(_navmesh.Intermediates!.GetSolidHeightfield());
         if (!n.Opened)
             return;
 
+        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
         var hf = _navmesh.Intermediates!.GetSolidHeightfield();
-        ImGui.Checkbox("Draw visualization", ref _drawSolidHeightfield);
         _tree.LeafNode($"Num cells: {hf.width}x{hf.height}");
         _tree.LeafNode($"Bounds: [{hf.bmin}] - [{hf.bmax}]");
         _tree.LeafNode($"Cell size: {hf.cs}x{hf.ch}");
         _tree.LeafNode($"Border size: {hf.borderSize}");
+        _tree.LeafNode($"Player's cell: {(playerPos.X - hf.bmin.X) / hf.cs}x{(playerPos.Y - hf.bmin.Y) / hf.ch}x{(playerPos.Z - hf.bmin.Z) / hf.cs}");
         using var nc = _tree.Node("Cells");
         if (!nc.Opened)
             return;
@@ -102,16 +101,47 @@ internal class DebugNavmesh : IDisposable
                     break;
 
                 using var nx = _tree.Node($"[{x}x{z}]");
+                if (nx.SelectedOrHovered)
+                    VisualizeSolidHeightfieldCell(hf, x, z);
                 if (nx.Opened)
                 {
                     while (span != null)
                     {
-                        _tree.LeafNode($"{span.smin}-{span.smax} = {span.area:X}");
+                        if (_tree.LeafNode($"{span.smin}-{span.smax} = {span.area:X}").SelectedOrHovered)
+                            VisualizeSolidHeightfieldSpan(hf, x, z, span);
                         span = span.next;
                     }
                 }
             }
             nz?.Dispose();
         }
+    }
+
+    private void VisualizeSolidHeightfield(RcHeightfield hf)
+    {
+        for (int z = 0; z < hf.height; ++z)
+            for (int x = 0; x < hf.width; ++x)
+                VisualizeSolidHeightfieldCell(hf, x, z);
+    }
+
+    private void VisualizeSolidHeightfieldCell(RcHeightfield hf, int x, int z)
+    {
+        var span = hf.spans[z * hf.width + x];
+        while (span != null)
+        {
+            VisualizeSolidHeightfieldSpan(hf, x, z, span);
+            span = span.next;
+        }
+    }
+
+    private void VisualizeSolidHeightfieldSpan(RcHeightfield hf, int x, int z, RcSpan span)
+    {
+        var mtx = new FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3();
+        mtx.M11 = mtx.M33 = 0.5f * hf.cs;
+        mtx.M22 = (span.smax - span.smin) * 0.5f * hf.ch;
+        mtx.M41 = hf.bmin.X + (x + 0.5f) * hf.cs;
+        mtx.M42 = hf.bmin.Y + (span.smin + span.smax) * 0.5f * hf.ch;
+        mtx.M43 = hf.bmin.Z + (z + 0.5f) * hf.cs;
+        _geom.DrawBox(ref mtx, new(1, span.area == 0 ? 0 : 1, 0, 1));
     }
 }

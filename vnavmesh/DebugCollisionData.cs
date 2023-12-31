@@ -340,8 +340,9 @@ public unsafe class DebugCollisionData
             case ColliderType.Box:
                 {
                     var cast = (ColliderBox*)coll;
-                    var boxOBB = new AABB() { Min = new(-1), Max = new(+1) };
-                    VisualizeOBB(ref boxOBB, ref cast->World, 0xff0000ff);
+                    //var boxOBB = new AABB() { Min = new(-1), Max = new(+1) };
+                    //VisualizeOBB(ref boxOBB, ref cast->World, 0xff0000ff);
+                    _debugGeom.DrawBox(ref cast->World, new(1, 0, 0, 1));
                 }
                 break;
             case ColliderType.Cylinder:

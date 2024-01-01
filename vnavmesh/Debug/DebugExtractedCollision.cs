@@ -1,11 +1,10 @@
-﻿using System;
-using System.Linq;
+﻿using System.Linq;
 using System.Numerics;
 using Matrix4x3 = FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3;
 
 namespace Navmesh.Debug;
 
-public class DebugExtractedCollision : IDisposable
+public class DebugExtractedCollision
 {
     private UITree _tree;
     private DebugDrawer _dd;
@@ -14,10 +13,6 @@ public class DebugExtractedCollision : IDisposable
     {
         _tree = tree;
         _dd = dd;
-    }
-
-    public void Dispose()
-    {
     }
 
     public void Draw(CollisionGeometryExtractor geometry)

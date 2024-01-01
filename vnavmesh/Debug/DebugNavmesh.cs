@@ -14,6 +14,7 @@ internal class DebugNavmesh : IDisposable
     private UITree _tree = new();
     private DebugDrawer _dd;
     private DebugExtractedCollision _drawExtracted;
+    private DebugSolidHeightfield _drawSolidHeightfield;
     private NavmeshBuilder _navmesh;
     private Vector3 _target;
     private List<Vector3> _waypoints = new();
@@ -22,20 +23,19 @@ internal class DebugNavmesh : IDisposable
     {
         _dd = dd;
         _drawExtracted = new(_tree, dd);
+        _drawSolidHeightfield = new(_tree, dd);
         _navmesh = navmesh;
     }
 
     public void Dispose()
     {
-        _drawExtracted.Dispose();
     }
 
     public void Draw()
     {
         DrawConfig();
 
-        var state = _navmesh.CurrentState;
-        using (var d = ImRaii.Disabled(state == NavmeshBuilder.State.InProgress))
+        using (var d = ImRaii.Disabled(_navmesh.CurrentState == NavmeshBuilder.State.InProgress))
         {
             if (ImGui.Button("Rebuild navmesh"))
             {
@@ -43,10 +43,10 @@ internal class DebugNavmesh : IDisposable
                 _waypoints.Clear();
             }
             ImGui.SameLine();
-            ImGui.TextUnformatted($"State: {state}");
+            ImGui.TextUnformatted($"State: {_navmesh.CurrentState}");
         }
 
-        if (state != NavmeshBuilder.State.Ready)
+        if (_navmesh.CurrentState != NavmeshBuilder.State.Ready)
             return;
 
         if (ImGui.Button("Set target to current pos"))
@@ -72,7 +72,7 @@ internal class DebugNavmesh : IDisposable
 
         var intermediates = _navmesh.Intermediates!;
         _drawExtracted.Draw(_navmesh.CollisionGeometry);
-        DrawSolidHeightfield(intermediates.GetSolidHeightfield());
+        _drawSolidHeightfield.Draw(intermediates.GetSolidHeightfield());
         DrawCompactHeightfield(intermediates.GetCompactHeightfield());
         DrawContourSet(intermediates.GetContourSet());
         DrawPolyMesh(intermediates.GetMesh());
@@ -92,54 +92,6 @@ internal class DebugNavmesh : IDisposable
         ImGui.Checkbox("Filter low-hanging obstacles", ref _navmesh.FilterLowHangingObstacles);
         ImGui.Checkbox("Filter ledges", ref _navmesh.FilterLedgeSpans);
         ImGui.Checkbox("Filter low-height spans", ref _navmesh.FilterWalkableLowHeightSpans);
-    }
-
-    private void DrawSolidHeightfield(RcHeightfield hf)
-    {
-        using var n = _tree.Node("Solid heightfield");
-        if (n.SelectedOrHovered)
-            VisualizeSolidHeightfield(hf);
-        if (!n.Opened)
-            return;
-
-        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
-        _tree.LeafNode($"Num cells: {hf.width}x{hf.height}");
-        _tree.LeafNode($"Bounds: [{hf.bmin}] - [{hf.bmax}]");
-        _tree.LeafNode($"Cell size: {hf.cs}x{hf.ch}");
-        _tree.LeafNode($"Border size: {hf.borderSize}");
-        _tree.LeafNode($"Player's cell: {(playerPos.X - hf.bmin.X) / hf.cs}x{(playerPos.Y - hf.bmin.Y) / hf.ch}x{(playerPos.Z - hf.bmin.Z) / hf.cs}");
-        using var nc = _tree.Node("Cells");
-        if (!nc.Opened)
-            return;
-
-        for (int z = 0; z < hf.height; ++z)
-        {
-            UITree.NodeRaii? nz = null;
-            for (int x = 0; x < hf.width; ++x)
-            {
-                var span = hf.spans[z * hf.width + x];
-                if (span == null)
-                    continue;
-
-                nz ??= _tree.Node($"[*x{z}]");
-                if (!nz.Value.Opened)
-                    break;
-
-                using var nx = _tree.Node($"[{x}x{z}]");
-                if (nx.SelectedOrHovered)
-                    VisualizeSolidHeightfieldCell(hf, x, z);
-                if (nx.Opened)
-                {
-                    while (span != null)
-                    {
-                        if (_tree.LeafNode($"{span.smin}-{span.smax} = {span.area:X}").SelectedOrHovered)
-                            VisualizeSolidHeightfieldSpan(hf, x, z, span);
-                        span = span.next;
-                    }
-                }
-            }
-            nz?.Dispose();
-        }
     }
 
     private void DrawCompactHeightfield(RcCompactHeightfield hf)
@@ -335,25 +287,6 @@ internal class DebugNavmesh : IDisposable
             }
         }
     }
-
-    private void VisualizeSolidHeightfield(RcHeightfield hf)
-    {
-        for (int z = 0; z < hf.height; ++z)
-            for (int x = 0; x < hf.width; ++x)
-                VisualizeSolidHeightfieldCell(hf, x, z);
-    }
-
-    private void VisualizeSolidHeightfieldCell(RcHeightfield hf, int x, int z)
-    {
-        var span = hf.spans[z * hf.width + x];
-        while (span != null)
-        {
-            VisualizeSolidHeightfieldSpan(hf, x, z, span);
-            span = span.next;
-        }
-    }
-
-    private void VisualizeSolidHeightfieldSpan(RcHeightfield hf, int x, int z, RcSpan span) => VisualizeAABB(hf.bmin, hf.cs, hf.ch, x, z, span.smin, span.smax, new(1, span.area == 0 ? 0 : 1, 0, 1));
 
     private void VisualizeCompactHeightfield(RcCompactHeightfield hf)
     {

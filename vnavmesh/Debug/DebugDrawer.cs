@@ -67,7 +67,7 @@ public unsafe class DebugDrawer : IDisposable
 
         RenderTarget.Bind(RenderContext);
         _meshBuilder = _mesh.Build(RenderContext, new() { ViewProj = ViewProj, LightingWorldYThreshold = 45.Degrees().Cos() });
-        _boxBuilder = _box.Build(RenderContext, new() { View = View, Proj = Proj });
+        _boxBuilder = _box.Build(RenderContext, new() { ViewProj = ViewProj });
     }
 
     public void EndFrame()
@@ -109,7 +109,17 @@ public unsafe class DebugDrawer : IDisposable
     public void DrawMesh(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => _meshBuilder?.Add(mesh, ref world, color);
     public void DrawMeshes(IMesh mesh, IEnumerable<DynamicMesh.Instance> instances) => _meshBuilder?.Add(mesh, instances);
 
-    public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => _boxBuilder?.Add(ref world, color);
+    public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 colorTop, Vector4 colorSide) => _boxBuilder?.Add(ref world, colorTop, colorSide);
+    public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => _boxBuilder?.Add(ref world, color, color);
+
+    public void DrawAABB(Vector3 min, Vector3 max, Vector4 colorTop, Vector4 colorSide)
+    {
+        var center = (max + min) * 0.5f;
+        var extent = (max - min) * 0.5f;
+        FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 m = new() { M11 = extent.X, M22 = extent.Y, M33 = extent.Z, M41 = center.X, M42 = center.Y, M43 = center.Z };
+        DrawBox(ref m, colorTop, colorSide);
+    }
+    public void DrawAABB(Vector3 min, Vector3 max, Vector4 color) => DrawAABB(min, max, color, color);
 
     public void DrawWorldLine(Vector3 start, Vector3 end, uint color)
     {

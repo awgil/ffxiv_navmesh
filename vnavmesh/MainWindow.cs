@@ -26,8 +26,8 @@ public class MainWindow : Window, IDisposable
     {
         _navmesh.Dispose();
         _path.Dispose();
-        _debugGeom.Dispose();
         _debugNavmesh.Dispose();
+        _debugGeom.Dispose();
     }
 
     public override void PreOpenCheck()

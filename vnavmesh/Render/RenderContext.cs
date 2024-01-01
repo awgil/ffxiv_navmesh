@@ -25,5 +25,6 @@ public class RenderContext : IDisposable
     {
         using var cmds = Context.FinishCommandList(true);
         Device.ImmediateContext.ExecuteCommandList(cmds, true);
+        Context.ClearState();
     }
 }

@@ -1,5 +1,6 @@
 ﻿using Dalamud.Interface.Utility.Raii;
 using Dalamud.Memory;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Math;
@@ -185,6 +186,11 @@ public unsafe class DebugCollisionData
                 color = 0xff00ffff;
         }
         using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}", false, color);
+        if (ImGui.BeginPopupContextItem())
+        {
+            ContextCollider(coll);
+            ImGui.EndPopup();
+        }
         if (n.SelectedOrHovered)
             VisualizeCollider(coll);
         if (!n.Opened)
@@ -484,5 +490,27 @@ public unsafe class DebugCollisionData
         _tree.LeafNode($"{tag} R1: {Vec3Str(mat.Row1)}");
         _tree.LeafNode($"{tag} R2: {Vec3Str(mat.Row2)}");
         _tree.LeafNode($"{tag} R3: {Vec3Str(mat.Row3)}");
+    }
+
+    private void ContextCollider(Collider* coll)
+    {
+        var activeLayers = new BitMask(coll->LayerMask);
+        foreach (var i in _availableLayers.SetBits())
+        {
+            var active = activeLayers[i];
+            if (ImGui.Checkbox($"Layer {i}", ref active))
+            {
+                activeLayers[i] = active;
+                coll->LayerMask = activeLayers.Raw;
+            }
+        }
+
+        var raycast = (coll->VisibilityFlags & 1) != 0;
+        if (ImGui.Checkbox("Flag: raycast", ref raycast))
+            coll->VisibilityFlags ^= 1;
+
+        var globalVisit = (coll->VisibilityFlags & 2) != 0;
+        if (ImGui.Checkbox("Flag: global visit", ref globalVisit))
+            coll->VisibilityFlags ^= 2;
     }
 }

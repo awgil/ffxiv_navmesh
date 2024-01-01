@@ -16,8 +16,8 @@ public unsafe class DynamicMesh : IDisposable
     [StructLayout(LayoutKind.Sequential)]
     public struct Constants
     {
-        public Matrix View;
-        public Matrix Proj;
+        public Matrix ViewProj;
+        public float LightingWorldYThreshold; // to match recast demo, this should be equal to cos of max walkable angle
     }
 
     public record struct Instance(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 World, System.Numerics.Vector4 Color);
@@ -104,33 +104,33 @@ public unsafe class DynamicMesh : IDisposable
         var shader = """
             struct Vertex
             {
-                float3 pos : POSITION;
+                float3 pos : Position;
             };
 
             struct Instance
             {
-                float4 worldColX : WORLD0;
-                float4 worldColY : WORLD1;
-                float4 worldColZ : WORLD2;
-                float4 color : COLOR;
+                float4 worldColX : World0;
+                float4 worldColY : World1;
+                float4 worldColZ : World2;
+                float4 color : Color;
             };
 
             struct VSOutput
             {
-                float3 viewPos : Position;
-                float4 color : COLOR;
+                float3 worldPos : Position;
+                float4 color : Color;
             };
 
             struct GSOutput
             {
                 float4 projPos : SV_Position;
-                float4 color : COLOR;
+                float4 color : Color;
             };
 
             struct Constants
             {
-                float4x4 view;
-                float4x4 proj;
+                float4x4 viewProj;
+                float lightingWorldYThreshold;
             };
             Constants k : register(c0);
 
@@ -141,7 +141,7 @@ public unsafe class DynamicMesh : IDisposable
                 float wx = dot(lp, i.worldColX);
                 float wy = dot(lp, i.worldColY);
                 float wz = dot(lp, i.worldColZ);
-                res.viewPos = mul(float4(wx, wy, wz, 1.0), k.view).xyz;
+                res.worldPos = float3(wx, wy, wz);
                 res.color = i.color;
                 return res;
             }
@@ -149,24 +149,29 @@ public unsafe class DynamicMesh : IDisposable
             [maxvertexcount(3)]
             void gs(triangle VSOutput input[3], inout TriangleStream<GSOutput> output)
             {
-                float3 a = input[0].viewPos;
-                float3 b = input[1].viewPos;
-                float3 c = input[2].viewPos;
+                float3 a = input[0].worldPos;
+                float3 b = input[1].worldPos;
+                float3 c = input[2].worldPos;
                 float3 ab = b - a;
                 float3 bc = c - b;
                 float3 normal = normalize(cross(ab, bc));
-                float lighting = lerp(0.1, 1.0, -normal.z);
+
+                // lighting calculations are taken from recast demo
+                float tint = 0.216 * (2 + normal.x + normal.z);
+                float3 lighting = float3(tint, tint, tint);
+                if (normal.y < k.lightingWorldYThreshold)
+                    lighting = lerp(lighting, float3(0.75, 0.5, 0), 0.25);
 
                 GSOutput v;
                 v.color = input[0].color;
                 v.color.rgb *= lighting;
                 v.color.a *= 0.7;
 
-                v.projPos = mul(float4(a, 1), k.proj);
+                v.projPos = mul(float4(a, 1), k.viewProj);
                 output.Append(v);
-                v.projPos = mul(float4(b, 1), k.proj);
+                v.projPos = mul(float4(b, 1), k.viewProj);
                 output.Append(v);
-                v.projPos = mul(float4(c, 1), k.proj);
+                v.projPos = mul(float4(c, 1), k.viewProj);
                 output.Append(v);
 
                 output.RestartStrip();
@@ -174,6 +179,13 @@ public unsafe class DynamicMesh : IDisposable
 
             float4 ps(GSOutput input) : SV_Target
             {
+                // to give some idea of depth, attenuate color by z-based 'fog'
+                //float fogStart = 0.1;
+                //float fogEnd = 1.25;
+                //float fogFactor = saturate((input.projPos.w / 500 - fogStart) / (fogEnd - fogStart));
+                //float fogFactor = input.projPos.w < 100 ? 0 : 1;
+                //float3 color = lerp(input.color.rgb, float3(0.3, 0.3, 0.32), fogFactor);
+                //return float4(color, input.color.a);
                 return input.color;
             }
             """;
@@ -192,15 +204,15 @@ public unsafe class DynamicMesh : IDisposable
         _vertexBuffer = new(ctx, 3 * 4, maxVertices, BindFlags.VertexBuffer);
         _primBuffer = new(ctx, 4 * 3, maxPrimitives, BindFlags.IndexBuffer);
         _instanceBuffer = new(ctx, 16 * 4, maxVertices, BindFlags.VertexBuffer);
-        _constantBuffer = new(ctx.Device, 16 * 4 * 2, ResourceUsage.Default, BindFlags.ConstantBuffer, CpuAccessFlags.None, ResourceOptionFlags.None, 0);
+        _constantBuffer = new(ctx.Device, 4 * 64, ResourceUsage.Default, BindFlags.ConstantBuffer, CpuAccessFlags.None, ResourceOptionFlags.None, 0);
 
         _il = new(ctx.Device, vs.Bytecode,
             [
-                new InputElement("POSITION", 0, Format.R32G32B32_Float, 0),
-                new InputElement("WORLD", 0, Format.R32G32B32A32_Float, -1, 1, InputClassification.PerInstanceData, 1),
-                new InputElement("WORLD", 1, Format.R32G32B32A32_Float, -1, 1, InputClassification.PerInstanceData, 1),
-                new InputElement("WORLD", 2, Format.R32G32B32A32_Float, -1, 1, InputClassification.PerInstanceData, 1),
-                new InputElement("COLOR", 0, Format.R32G32B32A32_Float, -1, 1, InputClassification.PerInstanceData, 1),
+                new InputElement("Position", 0, Format.R32G32B32_Float, 0),
+                new InputElement("World", 0, Format.R32G32B32A32_Float, -1, 1, InputClassification.PerInstanceData, 1),
+                new InputElement("World", 1, Format.R32G32B32A32_Float, -1, 1, InputClassification.PerInstanceData, 1),
+                new InputElement("World", 2, Format.R32G32B32A32_Float, -1, 1, InputClassification.PerInstanceData, 1),
+                new InputElement("Color", 0, Format.R32G32B32A32_Float, -1, 1, InputClassification.PerInstanceData, 1),
             ]);
 
         var rsDesc = RasterizerStateDescription.Default();
@@ -223,8 +235,7 @@ public unsafe class DynamicMesh : IDisposable
 
     public Builder Build(RenderContext ctx, Constants consts)
     {
-        consts.View.Transpose();
-        consts.Proj.Transpose();
+        consts.ViewProj.Transpose();
         ctx.Context.UpdateSubresource(ref consts, _constantBuffer);
         return new Builder(ctx, this);
     }

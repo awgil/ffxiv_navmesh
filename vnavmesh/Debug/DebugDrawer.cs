@@ -66,7 +66,7 @@ public unsafe class DebugDrawer : IDisposable
         }
 
         RenderTarget.Bind(RenderContext);
-        _meshBuilder = _mesh.Build(RenderContext, new() { View = View, Proj = Proj });
+        _meshBuilder = _mesh.Build(RenderContext, new() { ViewProj = ViewProj, LightingWorldYThreshold = 45.Degrees().Cos() });
         _boxBuilder = _box.Build(RenderContext, new() { View = View, Proj = Proj });
     }
 

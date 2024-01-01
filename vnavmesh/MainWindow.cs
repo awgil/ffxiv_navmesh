@@ -1,5 +1,6 @@
 ﻿using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Navmesh.Debug;
 using Navmesh.Movement;
 using System;
 
@@ -9,8 +10,8 @@ public class MainWindow : Window, IDisposable
 {
     private NavmeshBuilder _navmesh = new();
     private FollowPath _path;
-    private DebugGeometry _debugGeom = new();
-    private DebugCollisionData _debugColl;
+    private DebugDrawer _debugGeom = new();
+    private DebugGameCollision _debugColl;
     private DebugNavmesh _debugNavmesh;
 
     public FollowPath Path => _path; // TODO: reconsider

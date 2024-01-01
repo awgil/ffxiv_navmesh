@@ -41,10 +41,12 @@ public class NavmeshBuilder : IDisposable
     public bool FilterWalkableLowHeightSpans = true;
 
     // result
+    private CollisionGeometryExtractor _extractor = new(); // should not be accessed while task is running
     private RcBuilderResult? _intermediates; // valid only when task is not running
     private Task<DtNavMesh>? _navmesh;
 
     public State CurrentState => _navmesh == null ? State.NotBuilt : !_navmesh.IsCompleted ? State.InProgress : _navmesh.IsFaulted ? State.Failed : State.Ready;
+    public CollisionGeometryExtractor CollisionGeometry => _extractor;
     public RcBuilderResult? Intermediates => _intermediates;
     public DtNavMesh? Navmesh => _navmesh != null && _navmesh.IsCompletedSuccessfully ? _navmesh.Result : null;
 
@@ -57,7 +59,10 @@ public class NavmeshBuilder : IDisposable
     public void Rebuild()
     {
         _intermediates = null;
-        // TODO: extract minimal collision scene meshes before spawning async task, otherwise we have a race...
+        _extractor.Clear();
+        Service.Log.Debug("[navmesh] extract from scene");
+        _extractor.FillFromGame(1); // layer 0 is where collision geometry is
+        Service.Log.Debug("[navmesh] schedule async build");
         _navmesh = Task.Run(BuildNavmesh);
     }
 
@@ -116,15 +121,16 @@ public class NavmeshBuilder : IDisposable
                 FilterLowHangingObstacles, FilterLedgeSpans, FilterWalkableLowHeightSpans,
                 new(RcConstants.RC_WALKABLE_AREA), true);
 
-            Service.Log.Debug("[navmesh] find set of colliders");
-            var colliders = new Colliders(true, true);
+            // 0. load all meshes
+            Service.Log.Debug("[navmesh] load meshes");
+            _extractor.Extract();
 
             // 1. voxelize raw geometry
             // this creates a 'solid heightfield', which is a grid of sorted linked lists of spans
             // each span contains an 'area id', which is either walkable (if normal is good) or not (otherwise); areas outside spans contains no geometry at all
             Service.Log.Debug("[navmesh] rasterize input polygon soup to heightfield");
-            var solid = new NavmeshRasterizer(cfg, colliders.BoundsMin, colliders.BoundsMax, telemetry);
-            colliders.Rasterize(solid);
+            var solid = new NavmeshRasterizer(cfg, _extractor.BoundsMin, _extractor.BoundsMax, telemetry);
+            solid.Rasterize(_extractor, true, true, false); // TODO: some analytic meshes are used for things like doors - their raycast flag is removed when they are opened ... :(
 
             // 2. perform a bunch of postprocessing on a heightfield
             if (cfg.FilterLowHangingObstacles)
@@ -205,100 +211,6 @@ public class NavmeshBuilder : IDisposable
         {
             Service.Log.Error($"Error building navmesh: {ex}");
             throw;
-        }
-    }
-
-    private unsafe class Colliders
-    {
-        public List<Pointer<ColliderStreamed>> Streamed = new();
-        public List<Pointer<ColliderMesh>> Meshes = new();
-        public Vector3 BoundsMin;
-        public Vector3 BoundsMax;
-
-        public Colliders(bool includeStreamedMeshes, bool includeStandaloneMeshes)
-        {
-            BoundsMin = new(float.MaxValue);
-            BoundsMax = new(float.MinValue);
-
-            // first pass - mark streamed meshes (so that we can ignore them on standalone mesh pass) and add streamable
-            HashSet<nint> streamedMeshes = new();
-            foreach (var s in FFXIVClientStructs.FFXIV.Client.System.Framework.Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
-            {
-                foreach (var coll in s->Scene->Colliders)
-                {
-                    if (coll->GetColliderType() != ColliderType.Streamed)
-                        continue;
-                    var cast = (ColliderStreamed*)coll;
-                    if (cast->Header == null)
-                        continue;
-                    if (includeStreamedMeshes)
-                    {
-                        Streamed.Add(cast);
-                        AddBounds(ref cast->Header->Bounds);
-                    }
-                    if (includeStandaloneMeshes && cast->Elements != null)
-                        foreach (ref var e in new Span<ColliderStreamed.Element>(cast->Elements, cast->Header->NumMeshes))
-                            if (e.Mesh != null)
-                                streamedMeshes.Add((nint)e.Mesh);
-                }
-            }
-
-            // second pass - add standalone meshes
-            if (includeStandaloneMeshes)
-            {
-                foreach (var s in FFXIVClientStructs.FFXIV.Client.System.Framework.Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
-                {
-                    foreach (var coll in s->Scene->Colliders)
-                    {
-                        if (coll->GetColliderType() == ColliderType.Mesh && !streamedMeshes.Contains((nint)coll))
-                        {
-                            var cast = (ColliderMesh*)coll;
-                            Meshes.Add(cast);
-                            AddBounds(ref cast->WorldBoundingBox);
-                        }
-                    }
-                }
-            }
-        }
-
-        public void Rasterize(NavmeshRasterizer rasterizer)
-        {
-            foreach (var coll in Streamed)
-            {
-                if (coll.Value->Header == null || coll.Value->Elements == null)
-                    continue;
-                var basePath = MemoryHelper.ReadStringNullTerminated((nint)coll.Value->PathBase);
-                foreach (ref var e in new Span<ColliderStreamed.Element>(coll.Value->Elements, coll.Value->Header->NumMeshes))
-                {
-                    var f = Service.DataManager.GetFile($"{basePath}/tr{e.MeshId:d4}.pcb");
-                    if (f != null)
-                    {
-                        fixed (byte* rawData = &f.Data[0])
-                        {
-                            var data = (MeshPCB.FileHeader*)rawData;
-                            if (data->Version is 1 or 4)
-                            {
-                                rasterizer.RasterizePCB((MeshPCB.FileNode*)(data + 1), null);
-                            }
-                        }
-                    }
-                }
-            }
-
-            foreach (var coll in Meshes)
-            {
-                if (!coll.Value->MeshIsSimple && coll.Value->Mesh != null)
-                {
-                    var mesh = (MeshPCB*)coll.Value->Mesh;
-                    rasterizer.RasterizePCB(mesh->RootNode, &coll.Value->World);
-                }
-            }
-        }
-
-        private void AddBounds(ref FFXIVClientStructs.FFXIV.Common.Math.AABB aabb)
-        {
-            BoundsMin = Vector3.Min(BoundsMin, aabb.Min);
-            BoundsMax = Vector3.Max(BoundsMax, aabb.Max);
         }
     }
 }

@@ -11,7 +11,7 @@ namespace Navmesh.Render;
 
 public unsafe class DynamicMesh : IDisposable
 {
-    public record struct Mesh(int FirstVertex, int FirstPrimitive, int NumPrimitives);
+    public record struct Mesh(int FirstVertex, int FirstPrimitive, int NumPrimitives, int NumInstances);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Constants
@@ -19,6 +19,8 @@ public unsafe class DynamicMesh : IDisposable
         public Matrix View;
         public Matrix Proj;
     }
+
+    public record struct Instance(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 World, System.Numerics.Vector4 Color);
 
     public class Builder : IDisposable
     {
@@ -44,17 +46,22 @@ public unsafe class DynamicMesh : IDisposable
             _instances.Dispose();
         }
 
-        public void Add(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, System.Numerics.Vector4 color)
+        public void Add(IMesh mesh, IEnumerable<Instance> instances)
         {
+            var ni = 0;
+            foreach (var i in instances)
+            {
+                _instances.Advance(1);
+                _instances.Stream.Write(new System.Numerics.Vector4(i.World.M11, i.World.M21, i.World.M31, i.World.M41));
+                _instances.Stream.Write(new System.Numerics.Vector4(i.World.M12, i.World.M22, i.World.M32, i.World.M42));
+                _instances.Stream.Write(new System.Numerics.Vector4(i.World.M13, i.World.M23, i.World.M33, i.World.M43));
+                _instances.Stream.Write(i.Color);
+                ++ni;
+            }
+
             var nv = mesh.NumVertices();
             var nt = mesh.NumTriangles();
-            _mesh._meshes.Add(new(_vertices.NextElement, _primitives.NextElement, nt));
-
-            _instances.Advance(1);
-            _instances.Stream.Write(new System.Numerics.Vector4(world.M11, world.M21, world.M31, world.M41));
-            _instances.Stream.Write(new System.Numerics.Vector4(world.M12, world.M22, world.M32, world.M42));
-            _instances.Stream.Write(new System.Numerics.Vector4(world.M13, world.M23, world.M33, world.M43));
-            _instances.Stream.Write(color);
+            _mesh._meshes.Add(new(_vertices.NextElement, _primitives.NextElement, nt, ni));
 
             _vertices.Advance(nv);
             for (int i = 0; i < nv; ++i)
@@ -69,6 +76,8 @@ public unsafe class DynamicMesh : IDisposable
                 _primitives.Stream.Write(v3);
             }
         }
+
+        public void Add(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, System.Numerics.Vector4 color) => Add(mesh, [new(world, color)]);
     }
 
     public int MaxVertices { get; init; }
@@ -234,10 +243,11 @@ public unsafe class DynamicMesh : IDisposable
             ctx.Context.Rasterizer.State = _rsWireframe;
         ctx.Context.PixelShader.Set(_ps);
 
-        int i = 0;
+        int startInst = 0;
         foreach (var m in _meshes)
         {
-            ctx.Context.DrawIndexedInstanced(m.NumPrimitives * 3, 1, m.FirstPrimitive * 3, m.FirstVertex, i++);
+            ctx.Context.DrawIndexedInstanced(m.NumPrimitives * 3, m.NumInstances, m.FirstPrimitive * 3, m.FirstVertex, startInst);
+            startInst += m.NumInstances;
         }
     }
 }

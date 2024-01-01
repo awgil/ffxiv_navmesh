@@ -24,36 +24,44 @@ public class NavmeshRasterizer
         _walkableNormalThreshold = cfg.WalkableSlopeAngle.Degrees().Cos();
     }
 
-    public unsafe void RasterizePCB(FFXIVClientStructs.FFXIV.Common.Component.BGCollision.MeshPCB.FileNode* node, FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3* world)
+    public unsafe void Rasterize(CollisionGeometryExtractor geom, bool includeStreamed, bool includeLooseMeshes, bool includeAnalytic)
     {
-        if (node == null)
-            return;
-
-        // fill vertex buffer
-        for (int i = 0, iv = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
+        foreach (var (name, mesh) in geom.Meshes)
         {
-            var v = node->Vertex(i);
-            if (world != null)
-                v = world->TransformCoordinate(v);
-            _vertices[iv++] = v.X;
-            _vertices[iv++] = v.Y;
-            _vertices[iv++] = v.Z;
-        }
+            var streamed = mesh.Flags.HasFlag(CollisionGeometryExtractor.Flags.FromStreamed);
+            var analytic = mesh.Flags.HasFlag(CollisionGeometryExtractor.Flags.FromAnalyticShape);
+            bool include = streamed ? includeStreamed : analytic ? includeAnalytic : includeLooseMeshes;
+            if (!include)
+                continue;
 
-        foreach (ref var p in node->Primitives)
-        {
-            var v1 = CachedVertex(p.V1);
-            var v2 = CachedVertex(p.V2);
-            var v3 = CachedVertex(p.V3);
-            var v12 = v2 - v1;
-            var v13 = v3 - v1;
-            var normal = Vector3.Normalize(Vector3.Cross(v12, v13));
-            var areaId = normal.Y >= _walkableNormalThreshold ? _cfg.WalkableAreaMod.Value : 0;
-            RcRasterizations.RasterizeTriangle(Heightfield, _vertices, p.V1, p.V2, p.V3, areaId, _cfg.WalkableClimb, _telemetry);
-        }
+            foreach (var world in mesh.Instances)
+            {
+                foreach (var part in mesh.Parts)
+                {
+                    // fill vertex buffer
+                    int iv = 0;
+                    foreach (var v in part.Vertices)
+                    {
+                        var w = world.TransformCoordinate(v);
+                        _vertices[iv++] = v.X;
+                        _vertices[iv++] = v.Y;
+                        _vertices[iv++] = v.Z;
+                    }
 
-        RasterizePCB(node->Child1, world);
-        RasterizePCB(node->Child2, world);
+                    foreach (var p in part.Primitives)
+                    {
+                        var v1 = CachedVertex(p.v1);
+                        var v2 = CachedVertex(p.v2);
+                        var v3 = CachedVertex(p.v3);
+                        var v12 = v2 - v1;
+                        var v13 = v3 - v1;
+                        var normal = Vector3.Normalize(Vector3.Cross(v12, v13));
+                        var areaId = normal.Y >= _walkableNormalThreshold ? _cfg.WalkableAreaMod.Value : 0;
+                        RcRasterizations.RasterizeTriangle(Heightfield, _vertices, p.v1, p.v2, p.v3, areaId, _cfg.WalkableClimb, _telemetry);
+                    }
+                }
+            }
+        }
     }
 
     private Vector3 CachedVertex(int i)

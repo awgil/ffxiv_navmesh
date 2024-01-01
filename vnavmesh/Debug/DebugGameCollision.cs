@@ -1,6 +1,5 @@
 ﻿using Dalamud.Interface.Utility.Raii;
 using Dalamud.Memory;
-using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Math;
@@ -8,20 +7,21 @@ using ImGuiNET;
 using System.Collections.Generic;
 using Vector4 = System.Numerics.Vector4;
 
-namespace Navmesh;
+namespace Navmesh.Debug;
 
-public unsafe class DebugCollisionData
+public unsafe class DebugGameCollision
 {
     private UITree _tree = new();
-    private DebugGeometry _debugGeom;
+    private DebugDrawer _debugGeom;
     private BitMask _shownLayers = new(ulong.MaxValue);
+    private bool _showZeroLayer = true;
     private bool _showOnlyFlagRaycast;
     private bool _showOnlyFlagVisit;
 
     private HashSet<nint> _streamedMeshes = new();
     private BitMask _availableLayers;
 
-    public DebugCollisionData(DebugGeometry geom)
+    public DebugGameCollision(DebugDrawer geom)
     {
         _debugGeom = geom;
     }
@@ -73,7 +73,7 @@ public unsafe class DebugCollisionData
 
     private bool FilterCollider(Collider* coll)
     {
-        if ((_shownLayers.Raw & coll->LayerMask) == 0)
+        if (coll->LayerMask == 0 ? !_showZeroLayer : (_shownLayers.Raw & coll->LayerMask) == 0)
             return false;
         if (_showOnlyFlagRaycast && (coll->VisibilityFlags & 1) == 0)
             return false;
@@ -88,6 +88,7 @@ public unsafe class DebugCollisionData
         if (!n.Opened)
             return;
 
+        ImGui.Checkbox("Show objects with zero layer", ref _showZeroLayer);
         {
             var shownLayers = _availableLayers & _shownLayers;
             using var layers = ImRaii.Combo("Shown layers", shownLayers == _availableLayers ? "All" : shownLayers.None() ? "None" : string.Join(", ", shownLayers.SetBits()));
@@ -103,7 +104,7 @@ public unsafe class DebugCollisionData
         }
 
         {
-            using var flags = ImRaii.Combo("Flag filter", _showOnlyFlagRaycast ? (_showOnlyFlagVisit ? "Only when both flags are set" : "Only if raycast flag is set") : (_showOnlyFlagVisit ? "Only if global visit flag is set" : "Show everything"));
+            using var flags = ImRaii.Combo("Flag filter", _showOnlyFlagRaycast ? _showOnlyFlagVisit ? "Only when both flags are set" : "Only if raycast flag is set" : _showOnlyFlagVisit ? "Only if global visit flag is set" : "Show everything");
             if (flags)
             {
                 ImGui.Checkbox("Hide objects without raycast flag (0x1)", ref _showOnlyFlagRaycast);
@@ -171,7 +172,7 @@ public unsafe class DebugCollisionData
 
         var raycastFlag = (coll->VisibilityFlags & 1) != 0;
         var globalVisitFlag = (coll->VisibilityFlags & 2) != 0;
-        var flagsText = raycastFlag ? (globalVisitFlag ? "raycast, global visit" : "raycast") : (globalVisitFlag ? "global visit" : "none");
+        var flagsText = raycastFlag ? globalVisitFlag ? "raycast, global visit" : "raycast" : globalVisitFlag ? "global visit" : "none";
 
         var type = coll->GetColliderType();
         var color = 0xffffffff;
@@ -217,7 +218,7 @@ public unsafe class DebugCollisionData
                             var elem = cast->Elements + i;
                             var entryRaw = (uint*)entry;
                             using var mn = _tree.Node($"Mesh {i}: file=tr{entry->MeshId:d4}.pcb, bounds={AABBStr(entry->Bounds)} == {(nint)elem->Mesh:X}###mesh_{i}", elem->Mesh == null);
-                            if (mn.SelectedOrHovered)
+                            if (mn.SelectedOrHovered && elem->Mesh != null)
                                 VisualizeCollider(&elem->Mesh->Collider);
                             if (mn.Opened)
                                 DrawColliderMesh(elem->Mesh);
@@ -286,7 +287,7 @@ public unsafe class DebugCollisionData
         if (_tree.LeafNode($"Bounding box: {AABBStr(coll->WorldBoundingBox)}").SelectedOrHovered)
             VisualizeOBB(ref coll->WorldBoundingBox, ref Matrix4x3.Identity, 0xff00ff00);
         _tree.LeafNode($"Total size: {coll->TotalPrimitives} prims, {coll->TotalChildren} nodes");
-        _tree.LeafNode($"Mesh type: {(coll->MeshIsSimple ? "simple" : coll->MemoryData != null ? "PCB placeholder" : "PCB")} {(coll->Loaded ? "" : "(loading)")}");
+        _tree.LeafNode($"Mesh type: {(coll->MeshIsSimple ? "simple" : coll->MemoryData != null ? "PCB in-memory" : "PCB from file")} {(coll->Loaded ? "" : "(loading)")}");
         if (coll->Mesh == null || coll->MeshIsSimple)
             return;
 
@@ -419,7 +420,7 @@ public unsafe class DebugCollisionData
             return;
         //foreach (ref var prim in node->Primitives)
         //    VisualizeTriangle(node, ref prim, ref world, color);
-        _debugGeom.DrawMesh(new PCBMesh(node), ref world, new Vector4(color & 0xFF, (color >> 8) & 0xFF, (color >> 16) & 0xFF, (color >> 24) & 0xFF) / 255.0f);
+        _debugGeom.DrawMesh(new PCBMesh(node), ref world, new Vector4(color & 0xFF, color >> 8 & 0xFF, color >> 16 & 0xFF, color >> 24 & 0xFF) / 255.0f);
         VisualizeColliderMeshPCBNode(node->Child1, ref world, color);
         VisualizeColliderMeshPCBNode(node->Child2, ref world, color);
     }

@@ -6,7 +6,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 
-namespace Navmesh;
+namespace Navmesh.Debug;
 
 public class DebugExportObj
 {

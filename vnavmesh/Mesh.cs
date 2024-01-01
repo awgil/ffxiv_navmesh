@@ -29,6 +29,22 @@ public unsafe class PCBMesh : IMesh
     }
 }
 
+public class ExtractedMesh : IMesh
+{
+    private CollisionGeometryExtractor.MeshPart _mesh;
+
+    public ExtractedMesh(CollisionGeometryExtractor.MeshPart mesh) => _mesh = mesh;
+
+    public int NumVertices() => _mesh.Vertices.Count;
+    public int NumTriangles() => _mesh.Primitives.Count;
+    public Vector3 Vertex(int index) => _mesh.Vertices[index];
+    public (int, int, int) Triangle(int index)
+    {
+        var p = _mesh.Primitives[index];
+        return (p.v1, p.v3, p.v2); // change winding to what dx expects
+    }
+}
+
 public class RcPolyMeshPrimitive : IMesh
 {
     private RcPolyMesh _mesh;

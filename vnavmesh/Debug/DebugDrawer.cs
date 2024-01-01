@@ -2,15 +2,14 @@
 using Dalamud.Utility;
 using ImGuiNET;
 using Navmesh.Render;
-using SharpDX.Direct3D11;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
-namespace Navmesh;
+namespace Navmesh.Debug;
 
-public unsafe class DebugGeometry : IDisposable
+public unsafe class DebugDrawer : IDisposable
 {
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate nint GetEngineCoreSingletonDelegate();
@@ -33,7 +32,7 @@ public unsafe class DebugGeometry : IDisposable
 
     private List<(Vector2 from, Vector2 to, uint col)> _viewportLines = new();
 
-    public DebugGeometry()
+    public DebugDrawer()
     {
         _engineCoreSingleton = Marshal.GetDelegateForFunctionPointer<GetEngineCoreSingletonDelegate>(Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 48 8D 4C 24 ?? 48 89 4C 24 ?? 4C 8D 4D ?? 4C 8D 44 24 ??"))();
         _mesh = new(RenderContext, 16 * 1024 * 1024, 16 * 1024 * 1024, 128 * 1024);
@@ -108,6 +107,7 @@ public unsafe class DebugGeometry : IDisposable
     }
 
     public void DrawMesh(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => _meshBuilder?.Add(mesh, ref world, color);
+    public void DrawMeshes(IMesh mesh, IEnumerable<DynamicMesh.Instance> instances) => _meshBuilder?.Add(mesh, instances);
 
     public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => _boxBuilder?.Add(ref world, color);
 
@@ -115,14 +115,8 @@ public unsafe class DebugGeometry : IDisposable
     {
         var p1 = start.ToSharpDX();
         var p2 = end.ToSharpDX();
-        if (!ClipLineToNearPlane(ref p1, ref p2))
-            return;
-
-        p1 = SharpDX.Vector3.TransformCoordinate(p1, ViewProj);
-        p2 = SharpDX.Vector3.TransformCoordinate(p2, ViewProj);
-        var p1screen = new Vector2(0.5f * ViewportSize.X * (1 + p1.X), 0.5f * ViewportSize.Y * (1 - p1.Y)) + ImGuiHelpers.MainViewport.Pos;
-        var p2screen = new Vector2(0.5f * ViewportSize.X * (1 + p2.X), 0.5f * ViewportSize.Y * (1 - p2.Y)) + ImGuiHelpers.MainViewport.Pos;
-        _viewportLines.Add((p1screen, p2screen, color));
+        if (ClipLineToNearPlane(ref p1, ref p2))
+            _viewportLines.Add((WorldToScreen(p1), WorldToScreen(p2), color));
     }
 
     public void DrawWorldSphere(Vector3 center, float radius, uint color)
@@ -146,7 +140,26 @@ public unsafe class DebugGeometry : IDisposable
         }
     }
 
-    private unsafe SharpDX.Matrix ReadMatrix(IntPtr address)
+    public void DrawWorldTriangle(Vector3 v1, Vector3 v2, Vector3 v3, uint color)
+    {
+        DrawWorldLine(v1, v2, color);
+        DrawWorldLine(v2, v3, color);
+        DrawWorldLine(v3, v1, color);
+    }
+
+    public void DrawWorldPoint(Vector3 p, uint color)
+    {
+        var pw = p.ToSharpDX();
+        var nearPlane = ViewProj.Column3;
+        if (SharpDX.Vector4.Dot(new(pw, 1), nearPlane) <= 0)
+            return;
+
+        var ps = WorldToScreen(pw);
+        foreach (var (from, to) in AdjacentPairs(CurveApprox.Circle(ps, 5, 1)))
+            _viewportLines.Add((from, to, color));
+    }
+
+    private unsafe SharpDX.Matrix ReadMatrix(nint address)
     {
         var p = (float*)address;
         SharpDX.Matrix mtx = new();
@@ -155,7 +168,7 @@ public unsafe class DebugGeometry : IDisposable
         return mtx;
     }
 
-    private unsafe SharpDX.Vector2 ReadVec2(IntPtr address)
+    private unsafe SharpDX.Vector2 ReadVec2(nint address)
     {
         var p = (float*)address;
         return new(p[0], p[1]);
@@ -180,5 +193,26 @@ public unsafe class DebugGeometry : IDisposable
                 b = a + t * ab;
         }
         return true;
+    }
+
+    private Vector2 WorldToScreen(SharpDX.Vector3 w)
+    {
+        var p = SharpDX.Vector3.TransformCoordinate(w, ViewProj);
+        return new Vector2(0.5f * ViewportSize.X * (1 + p.X), 0.5f * ViewportSize.Y * (1 - p.Y)) + ImGuiHelpers.MainViewport.Pos;
+    }
+
+    private static IEnumerable<(Vector2, Vector2)> AdjacentPairs(IEnumerable<Vector2> v)
+    {
+        var en = v.GetEnumerator();
+        if (!en.MoveNext())
+            yield break;
+        var first = en.Current;
+        var from = en.Current;
+        while (en.MoveNext())
+        {
+            yield return (from, en.Current);
+            from = en.Current;
+        }
+        yield return (from, first);
     }
 }

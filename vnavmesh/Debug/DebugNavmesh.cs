@@ -5,29 +5,29 @@ using ImGuiNET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http.Headers;
-using System.Net.NetworkInformation;
 using System.Numerics;
-using System.Text;
 
-namespace Navmesh;
+namespace Navmesh.Debug;
 
 internal class DebugNavmesh : IDisposable
 {
     private UITree _tree = new();
-    private DebugGeometry _geom;
+    private DebugDrawer _dd;
+    private DebugExtractedCollision _drawExtracted;
     private NavmeshBuilder _navmesh;
     private Vector3 _target;
     private List<Vector3> _waypoints = new();
 
-    public DebugNavmesh(DebugGeometry geom, NavmeshBuilder navmesh)
+    public DebugNavmesh(DebugDrawer dd, NavmeshBuilder navmesh)
     {
-        _geom = geom;
+        _dd = dd;
+        _drawExtracted = new(_tree, dd);
         _navmesh = navmesh;
     }
 
     public void Dispose()
     {
+        _drawExtracted.Dispose();
     }
 
     public void Draw()
@@ -65,12 +65,13 @@ internal class DebugNavmesh : IDisposable
             var from = _waypoints[0];
             foreach (var to in _waypoints.Skip(1))
             {
-                _geom.DrawWorldLine(from, to, 0xff00ff00);
+                _dd.DrawWorldLine(from, to, 0xff00ff00);
                 from = to;
             }
         }
 
         var intermediates = _navmesh.Intermediates!;
+        _drawExtracted.Draw(_navmesh.CollisionGeometry);
         DrawSolidHeightfield(intermediates.GetSolidHeightfield());
         DrawCompactHeightfield(intermediates.GetCompactHeightfield());
         DrawContourSet(intermediates.GetContourSet());
@@ -405,7 +406,7 @@ internal class DebugNavmesh : IDisposable
                 ny1 = ns.y + 1;
             var from = hf.bmin.RecastToSystem() + new Vector3(hf.cs * (x + 0.5f), hf.ch * (span.y + y1) * 0.5f, hf.cs * (z + 0.5f));
             var to = hf.bmin.RecastToSystem() + new Vector3(hf.cs * (nx + 0.5f), hf.ch * (ns.y + ny1) * 0.5f, hf.cs * (nz + 0.5f));
-            _geom.DrawWorldLine(from, to, 0xff00ffff);
+            _dd.DrawWorldLine(from, to, 0xff00ffff);
         }
     }
 
@@ -417,14 +418,14 @@ internal class DebugNavmesh : IDisposable
         for (int i = 0; i < numVerts; ++i)
         {
             var to = GetContourVertex(cs, contourVertices, i);
-            _geom.DrawWorldLine(from, to, color);
+            _dd.DrawWorldLine(from, to, color);
             from = to;
         }
     }
 
     private void VisualizeContourVertex(RcContourSet cs, int[] vertices, int index)
     {
-        _geom.DrawWorldSphere(GetContourVertex(cs, vertices, index), 1, 0xff0000ff);
+        _dd.DrawWorldSphere(GetContourVertex(cs, vertices, index), 1, 0xff0000ff);
     }
 
     private void VisualizeMesh(RcPolyMesh mesh)
@@ -448,12 +449,12 @@ internal class DebugNavmesh : IDisposable
         //    from = to;
         //}
         //_geom.DrawWorldLine(from, GetMeshVertex(mesh, mesh.polys[off]), 0xff00ff00);
-        _geom.DrawMesh(new RcPolyMeshPrimitive(mesh, index), ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, new(0, 1, 0, 1));
+        _dd.DrawMesh(new RcPolyMeshPrimitive(mesh, index), ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, new(0, 1, 0, 1));
     }
 
     private void VisualizeMeshVertex(RcPolyMesh mesh, int index)
     {
-        _geom.DrawWorldSphere(GetMeshVertex(mesh, index), 1, 0xff0000ff);
+        _dd.DrawWorldSphere(GetMeshVertex(mesh, index), 1, 0xff0000ff);
     }
 
     private void VisualizeAABB(RcVec3f min, float cs, float ch, int x, int z, int y0, int y1, Vector4 color)
@@ -464,7 +465,7 @@ internal class DebugNavmesh : IDisposable
         mtx.M41 = min.X + (x + 0.5f) * cs;
         mtx.M42 = min.Y + (y0 + y1) * 0.5f * ch;
         mtx.M43 = min.Z + (z + 0.5f) * cs;
-        _geom.DrawBox(ref mtx, color);
+        _dd.DrawBox(ref mtx, color);
     }
 
     private Vector3 GetContourVertex(RcContourSet cs, int[] verts, int index) => cs.bmin.RecastToSystem() + new Vector3(cs.cs, cs.ch, cs.cs) * new Vector3(verts[4 * index], verts[4 * index + 1], verts[4 * index + 2]);

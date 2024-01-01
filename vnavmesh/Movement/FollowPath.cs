@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Navmesh.Debug;
 
 namespace Navmesh.Movement;
 
@@ -54,7 +55,7 @@ public class FollowPath : IDisposable
         }
     }
 
-    public void DrawPath(DebugGeometry drawer)
+    public void DrawPath(DebugDrawer drawer)
     {
         var player = Service.ClientState.LocalPlayer;
         if (player == null)

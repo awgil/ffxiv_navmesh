@@ -9,9 +9,105 @@ using System.Runtime.InteropServices;
 
 namespace Navmesh.Render;
 
-public unsafe class DynamicMesh : IDisposable
+public class EffectMesh : IDisposable
 {
     public record struct Mesh(int FirstVertex, int FirstPrimitive, int NumPrimitives, int NumInstances);
+    public record struct Instance(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 World, System.Numerics.Vector4 Color);
+
+    public class Data : IDisposable
+    {
+        public class Builder : IDisposable
+        {
+            private Data _data;
+            private RenderBuffer.Builder _vertices;
+            private RenderBuffer.Builder _primitives;
+            private RenderBuffer.Builder _instances;
+
+            internal Builder(RenderContext ctx, Data data)
+            {
+                _data = data;
+                _vertices = data._vertexBuffer.Map(ctx);
+                _primitives = data._primBuffer.Map(ctx);
+                _instances = data._instanceBuffer.Map(ctx);
+
+                data._meshes.Clear();
+            }
+
+            public void Dispose()
+            {
+                _vertices.Dispose();
+                _primitives.Dispose();
+                _instances.Dispose();
+            }
+
+            public void Add(IMesh mesh, IEnumerable<Instance> instances)
+            {
+                var ni = 0;
+                foreach (var i in instances)
+                {
+                    _instances.Advance(1);
+                    _instances.Stream.Write(new System.Numerics.Vector4(i.World.M11, i.World.M21, i.World.M31, i.World.M41));
+                    _instances.Stream.Write(new System.Numerics.Vector4(i.World.M12, i.World.M22, i.World.M32, i.World.M42));
+                    _instances.Stream.Write(new System.Numerics.Vector4(i.World.M13, i.World.M23, i.World.M33, i.World.M43));
+                    _instances.Stream.Write(i.Color);
+                    ++ni;
+                }
+
+                var nv = mesh.NumVertices();
+                var nt = mesh.NumTriangles();
+                _data._meshes.Add(new(_vertices.CurElements, _primitives.CurElements, nt, ni));
+
+                _vertices.Advance(nv);
+                for (int i = 0; i < nv; ++i)
+                    _vertices.Stream.Write(mesh.Vertex(i));
+
+                _primitives.Advance(nt);
+                for (int i = 0; i < nt; ++i)
+                {
+                    var (v1, v2, v3) = mesh.Triangle(i);
+                    _primitives.Stream.Write(v1);
+                    _primitives.Stream.Write(v2);
+                    _primitives.Stream.Write(v3);
+                }
+            }
+
+            public void Add(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, System.Numerics.Vector4 color) => Add(mesh, [new(world, color)]);
+        }
+
+        private RenderBuffer _vertexBuffer;
+        private RenderBuffer _primBuffer;
+        private RenderBuffer _instanceBuffer;
+        private List<Mesh> _meshes = new();
+
+        public Data(RenderContext ctx, int maxVertices, int maxPrimitives, int maxInstances, bool dynamic)
+        {
+            _vertexBuffer = new(ctx, 3 * 4, maxVertices, BindFlags.VertexBuffer, dynamic);
+            _primBuffer = new(ctx, 4 * 3, maxPrimitives, BindFlags.IndexBuffer, dynamic);
+            _instanceBuffer = new(ctx, 16 * 4, maxInstances, BindFlags.VertexBuffer, dynamic);
+        }
+
+        public void Dispose()
+        {
+            _vertexBuffer.Dispose();
+            _primBuffer.Dispose();
+            _instanceBuffer.Dispose();
+        }
+
+        public Builder Map(RenderContext ctx) => new(ctx, this);
+
+        // Draw* should be called after EffectBox.Bind set up its state
+        public void DrawAll(RenderContext ctx)
+        {
+            ctx.Context.InputAssembler.SetVertexBuffers(0, new VertexBufferBinding(_vertexBuffer.Buffer, _vertexBuffer.ElementSize, 0), new VertexBufferBinding(_instanceBuffer.Buffer, _instanceBuffer.ElementSize, 0));
+            ctx.Context.InputAssembler.SetIndexBuffer(_primBuffer.Buffer, Format.R32_UInt, 0);
+            int startInst = 0;
+            foreach (var m in _meshes)
+            {
+                ctx.Context.DrawIndexedInstanced(m.NumPrimitives * 3, m.NumInstances, m.FirstPrimitive * 3, m.FirstVertex, startInst);
+                startInst += m.NumInstances;
+            }
+        }
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Constants
@@ -20,87 +116,15 @@ public unsafe class DynamicMesh : IDisposable
         public float LightingWorldYThreshold; // to match recast demo, this should be equal to cos of max walkable angle
     }
 
-    public record struct Instance(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 World, System.Numerics.Vector4 Color);
-
-    public class Builder : IDisposable
-    {
-        private DynamicMesh _mesh;
-        private DynamicBuffer.Builder _vertices;
-        private DynamicBuffer.Builder _primitives;
-        private DynamicBuffer.Builder _instances;
-
-        internal Builder(RenderContext ctx, DynamicMesh mesh)
-        {
-            _mesh = mesh;
-            _vertices = mesh._vertexBuffer.Map(ctx);
-            _primitives = mesh._primBuffer.Map(ctx);
-            _instances = mesh._instanceBuffer.Map(ctx);
-
-            mesh._meshes.Clear();
-        }
-
-        public void Dispose()
-        {
-            _vertices.Dispose();
-            _primitives.Dispose();
-            _instances.Dispose();
-        }
-
-        public void Add(IMesh mesh, IEnumerable<Instance> instances)
-        {
-            var ni = 0;
-            foreach (var i in instances)
-            {
-                _instances.Advance(1);
-                _instances.Stream.Write(new System.Numerics.Vector4(i.World.M11, i.World.M21, i.World.M31, i.World.M41));
-                _instances.Stream.Write(new System.Numerics.Vector4(i.World.M12, i.World.M22, i.World.M32, i.World.M42));
-                _instances.Stream.Write(new System.Numerics.Vector4(i.World.M13, i.World.M23, i.World.M33, i.World.M43));
-                _instances.Stream.Write(i.Color);
-                ++ni;
-            }
-
-            var nv = mesh.NumVertices();
-            var nt = mesh.NumTriangles();
-            _mesh._meshes.Add(new(_vertices.NextElement, _primitives.NextElement, nt, ni));
-
-            _vertices.Advance(nv);
-            for (int i = 0; i < nv; ++i)
-                _vertices.Stream.Write(mesh.Vertex(i));
-
-            _primitives.Advance(nt);
-            for (int i = 0; i < nt; ++i)
-            {
-                var (v1, v2, v3) = mesh.Triangle(i);
-                _primitives.Stream.Write(v1);
-                _primitives.Stream.Write(v2);
-                _primitives.Stream.Write(v3);
-            }
-        }
-
-        public void Add(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, System.Numerics.Vector4 color) => Add(mesh, [new(world, color)]);
-    }
-
-    public int MaxVertices { get; init; }
-    public int MaxPrimitives { get; init; }
-    public int MaxInstances { get; init; }
-
-    private DynamicBuffer _vertexBuffer;
-    private DynamicBuffer _primBuffer;
-    private DynamicBuffer _instanceBuffer;
     private SharpDX.Direct3D11.Buffer _constantBuffer;
     private InputLayout _il;
     private VertexShader _vs;
     private GeometryShader _gs;
     private PixelShader _ps;
     private RasterizerState _rsWireframe;
-    private List<Mesh> _meshes = new();
 
-    public DynamicMesh(RenderContext ctx, int maxVertices, int maxPrimitives, int maxInstances)
+    public EffectMesh(RenderContext ctx)
     {
-        MaxVertices = maxVertices;
-        MaxPrimitives = maxPrimitives;
-        MaxInstances = maxInstances;
-
         var shader = """
             struct Vertex
             {
@@ -201,9 +225,6 @@ public unsafe class DynamicMesh : IDisposable
         Service.Log.Debug($"PS compile: {ps.Message}");
         _ps = new(ctx.Device, ps.Bytecode);
 
-        _vertexBuffer = new(ctx, 3 * 4, maxVertices, BindFlags.VertexBuffer);
-        _primBuffer = new(ctx, 4 * 3, maxPrimitives, BindFlags.IndexBuffer);
-        _instanceBuffer = new(ctx, 16 * 4, maxVertices, BindFlags.VertexBuffer);
         _constantBuffer = new(ctx.Device, 4 * 64, ResourceUsage.Default, BindFlags.ConstantBuffer, CpuAccessFlags.None, ResourceOptionFlags.None, 0);
 
         _il = new(ctx.Device, vs.Bytecode,
@@ -222,9 +243,6 @@ public unsafe class DynamicMesh : IDisposable
 
     public void Dispose()
     {
-        _vertexBuffer.Dispose();
-        _primBuffer.Dispose();
-        _instanceBuffer.Dispose();
         _constantBuffer.Dispose();
         _il.Dispose();
         _vs.Dispose();
@@ -233,19 +251,16 @@ public unsafe class DynamicMesh : IDisposable
         _rsWireframe.Dispose();
     }
 
-    public Builder Build(RenderContext ctx, Constants consts)
+    public void UpdateConstants(RenderContext ctx, Constants consts)
     {
         consts.ViewProj.Transpose();
         ctx.Context.UpdateSubresource(ref consts, _constantBuffer);
-        return new Builder(ctx, this);
     }
 
-    public void Draw(RenderContext ctx, bool wireframe)
+    public void Bind(RenderContext ctx, bool wireframe)
     {
         ctx.Context.InputAssembler.PrimitiveTopology = PrimitiveTopology.TriangleList;
         ctx.Context.InputAssembler.InputLayout = _il;
-        ctx.Context.InputAssembler.SetVertexBuffers(0, new VertexBufferBinding(_vertexBuffer.Buffer, _vertexBuffer.ElementSize, 0), new VertexBufferBinding(_instanceBuffer.Buffer, _instanceBuffer.ElementSize, 0));
-        ctx.Context.InputAssembler.SetIndexBuffer(_primBuffer.Buffer, Format.R32_UInt, 0);
         ctx.Context.VertexShader.Set(_vs);
         ctx.Context.VertexShader.SetConstantBuffer(0, _constantBuffer);
         ctx.Context.GeometryShader.Set(_gs);
@@ -253,12 +268,12 @@ public unsafe class DynamicMesh : IDisposable
         if (wireframe)
             ctx.Context.Rasterizer.State = _rsWireframe;
         ctx.Context.PixelShader.Set(_ps);
+    }
 
-        int startInst = 0;
-        foreach (var m in _meshes)
-        {
-            ctx.Context.DrawIndexedInstanced(m.NumPrimitives * 3, m.NumInstances, m.FirstPrimitive * 3, m.FirstVertex, startInst);
-            startInst += m.NumInstances;
-        }
+    // shortcut to bind + draw
+    public void Draw(RenderContext ctx, Data data)
+    {
+        Bind(ctx, false);
+        data.DrawAll(ctx);
     }
 }

@@ -154,11 +154,15 @@ public class NavmeshBuilder : IDisposable
             // 3. create a 'compact heightfield' structure
             // this is very similar to a normal heightfield, except that spans are now stored in a single array, and grid cells just contain consecutive ranges
             // this also contains connectivity data (links to neighbouring cells)
+            // note that spans from null areas are not added to the compact heightfield
+            // also note that for each span, y is equal to the solid span's smax (makes sense - in solid, walkable voxel is one containing walkable geometry, so free area is 'above')
+            // h is not really used beyond connectivity calculations (it's a distance to the next span - potentially of null area - or to maxheight)
             Service.Log.Debug("[navmesh] build compact heightfield with connectivity data");
             RcCompactHeightfield chf = RcCompacts.BuildCompactHeightfield(telemetry, cfg.WalkableHeight, cfg.WalkableClimb, solid.Heightfield);
 
             // 4. mark spans that are too close to unwalkable as unwalkable, to account for actor's non-zero radius
             // this changes area of some spans from walkable to non-walkable
+            // note that before this step, compact heightfield has no non-walkable spans
             Service.Log.Debug("[navmesh] erode the walkable area by agent radius");
             RcAreas.ErodeWalkableArea(telemetry, cfg.WalkableRadius, chf);
             // note: this is the good time to mark convex poly areas with custom area ids

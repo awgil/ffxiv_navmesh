@@ -11,24 +11,25 @@ namespace Navmesh.Debug;
 
 internal class DebugNavmesh : IDisposable
 {
-    private UITree _tree = new();
-    private DebugDrawer _dd;
-    private DebugExtractedCollision _drawExtracted;
-    private DebugSolidHeightfield _drawSolidHeightfield;
     private NavmeshBuilder _navmesh;
     private Vector3 _target;
     private List<Vector3> _waypoints = new();
 
+    private UITree _tree = new();
+    private DebugDrawer _dd;
+    private DebugExtractedCollision _drawExtracted;
+    private DebugSolidHeightfield? _drawSolidHeightfield;
+
     public DebugNavmesh(DebugDrawer dd, NavmeshBuilder navmesh)
     {
+        _navmesh = navmesh;
         _dd = dd;
         _drawExtracted = new(_tree, dd);
-        _drawSolidHeightfield = new(_tree, dd);
-        _navmesh = navmesh;
     }
 
     public void Dispose()
     {
+        _drawSolidHeightfield?.Dispose();
     }
 
     public void Draw()
@@ -39,6 +40,8 @@ internal class DebugNavmesh : IDisposable
         {
             if (ImGui.Button("Rebuild navmesh"))
             {
+                _drawSolidHeightfield?.Dispose();
+                _drawSolidHeightfield = null;
                 _navmesh.Rebuild();
                 _waypoints.Clear();
             }
@@ -72,7 +75,8 @@ internal class DebugNavmesh : IDisposable
 
         var intermediates = _navmesh.Intermediates!;
         _drawExtracted.Draw(_navmesh.CollisionGeometry);
-        _drawSolidHeightfield.Draw(intermediates.GetSolidHeightfield());
+        _drawSolidHeightfield ??= new(intermediates.GetSolidHeightfield(), _tree, _dd);
+        _drawSolidHeightfield.Draw();
         DrawCompactHeightfield(intermediates.GetCompactHeightfield());
         DrawContourSet(intermediates.GetContourSet());
         DrawPolyMesh(intermediates.GetMesh());

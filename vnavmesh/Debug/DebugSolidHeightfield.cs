@@ -1,43 +1,75 @@
 ﻿using DotRecast.Recast;
+using Navmesh.Render;
+using System;
 using System.Numerics;
 
 namespace Navmesh.Debug;
 
-public class DebugSolidHeightfield
+public class DebugSolidHeightfield : IDisposable
 {
+    private RcHeightfield _hf;
     private UITree _tree;
     private DebugDrawer _dd;
+    private int _numNullSpans;
+    private int _numWalkableSpans;
+    private int[,] _spanCellOffsets;
+    private EffectBox.Data? _visu;
 
-    public DebugSolidHeightfield(UITree tree, DebugDrawer dd)
+    public DebugSolidHeightfield(RcHeightfield hf, UITree tree, DebugDrawer dd)
     {
+        _hf = hf;
         _tree = tree;
         _dd = dd;
+
+        _spanCellOffsets = new int[hf.width, hf.height];
+        int icell = 0;
+        for (int z = 0; z < hf.height; ++z)
+        {
+            for (int x = 0; x < hf.width; ++x)
+            {
+                _spanCellOffsets[x, z] = _numNullSpans + _numWalkableSpans;
+                var span = hf.spans[icell++];
+                while (span != null)
+                {
+                    if (span.area == 0)
+                        ++_numNullSpans;
+                    else
+                        ++_numWalkableSpans;
+                    span = span.next;
+                }
+            }
+        }
     }
 
-    public void Draw(RcHeightfield hf)
+    public void Dispose()
+    {
+        _visu?.Dispose();
+    }
+
+    public void Draw()
     {
         using var nr = _tree.Node("Solid heightfield");
-        if (nr.SelectedOrHovered)
-            Visualize(hf);
+        if (nr.SelectedOrHovered && (_visu != null || nr.Opened))
+            Visualize();
         if (!nr.Opened)
             return;
 
         var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
-        _tree.LeafNode($"Num cells: {hf.width}x{hf.height}");
-        _tree.LeafNode($"Bounds: [{hf.bmin}] - [{hf.bmax}]");
-        _tree.LeafNode($"Cell size: {hf.cs}x{hf.ch}");
-        _tree.LeafNode($"Border size: {hf.borderSize}");
-        _tree.LeafNode($"Player's cell: {(playerPos.X - hf.bmin.X) / hf.cs}x{(playerPos.Y - hf.bmin.Y) / hf.ch}x{(playerPos.Z - hf.bmin.Z) / hf.cs}");
+        _tree.LeafNode($"Num cells: {_hf.width}x{_hf.height}");
+        _tree.LeafNode($"Bounds: [{_hf.bmin}] - [{_hf.bmax}]");
+        _tree.LeafNode($"Cell size: {_hf.cs}x{_hf.ch}");
+        _tree.LeafNode($"Border size: {_hf.borderSize}");
+        _tree.LeafNode($"Player's cell: {(playerPos.X - _hf.bmin.X) / _hf.cs}x{(playerPos.Y - _hf.bmin.Y) / _hf.ch}x{(playerPos.Z - _hf.bmin.Z) / _hf.cs}");
         using var nc = _tree.Node("Cells");
         if (!nc.Opened)
             return;
 
-        for (int z = 0; z < hf.height; ++z)
+        for (int z = 0; z < _hf.height; ++z)
         {
             UITree.NodeRaii? nz = null;
-            for (int x = 0; x < hf.width; ++x)
+            for (int x = 0; x < _hf.width; ++x)
             {
-                var span = hf.spans[z * hf.width + x];
+                var span = _hf.spans[z * _hf.width + x];
                 if (span == null)
                     continue;
 
@@ -47,14 +79,16 @@ public class DebugSolidHeightfield
 
                 using var nx = _tree.Node($"[{x}x{z}]");
                 if (nx.SelectedOrHovered)
-                    VisualizeCell(hf, x, z);
+                    VisualizeCell(x, z);
                 if (nx.Opened)
                 {
+                    int ispan = 0;
                     while (span != null)
                     {
                         if (_tree.LeafNode($"{span.smin}-{span.smax} = {span.area:X}").SelectedOrHovered)
-                            VisualizeSpan(hf, x, z, span);
+                            VisualizeSpan(_spanCellOffsets[x, z] + ispan);
                         span = span.next;
+                        ++ispan;
                     }
                 }
             }
@@ -62,53 +96,64 @@ public class DebugSolidHeightfield
         }
     }
 
-    private void Visualize(RcHeightfield hf)
+    private EffectBox.Data GetOrInitVisualizer()
     {
-        //var timer = DateTime.Now;
-        // this is unrolled for efficiency, still quite slow though :(
-        // TODO: one thing i don't like about current visualization is the lack of edges and/or any depth cues
-        int ispan = 0;
-        FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world = new() { M11 = hf.cs * 0.5f, M33 = hf.cs * 0.5f }; // x/z scale never changes
-        world.M43 = hf.bmin.Z + hf.cs * 0.5f;
-        var x0 = hf.bmin.X + hf.cs * 0.5f;
-        var chh = hf.ch * 0.5f;
-        for (int z = 0; z < hf.height; ++z)
+        if (_visu == null)
         {
-            world.M41 = x0;
-            for (int x = 0; x < hf.width; ++x)
+            _visu = new(_dd.RenderContext, _numNullSpans + _numWalkableSpans, false);
+            using var builder = _visu.Map(_dd.RenderContext);
+
+            var timer = Timer.Create();
+            // this is unrolled for efficiency, still quite slow though :(
+            // TODO: one thing i don't like about current visualization is the lack of edges and/or any depth cues
+            int icell = 0;
+            FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world = new() { M11 = _hf.cs * 0.5f, M33 = _hf.cs * 0.5f }; // x/z scale never changes
+            world.M43 = _hf.bmin.Z + _hf.cs * 0.5f;
+            var x0 = _hf.bmin.X + _hf.cs * 0.5f;
+            var chh = _hf.ch * 0.5f;
+            for (int z = 0; z < _hf.height; ++z)
             {
-                var span = hf.spans[ispan++];
-                while (span != null)
+                world.M41 = x0;
+                for (int x = 0; x < _hf.width; ++x)
                 {
-                    world.M22 = (span.smax - span.smin) * chh;
-                    world.M42 = hf.bmin.Y + (span.smin + span.smax) * chh;
-                    _dd.DrawBox(ref world, AreaColor(span.area), _colSide);
-                    span = span.next;
+                    var span = _hf.spans[icell++];
+                    while (span != null)
+                    {
+                        world.M22 = (span.smax - span.smin) * chh;
+                        world.M42 = _hf.bmin.Y + (span.smin + span.smax) * chh;
+                        builder.Add(ref world, AreaColor(span.area), _colSide);
+                        span = span.next;
+                    }
+                    world.M41 += _hf.cs;
                 }
-                world.M41 += hf.cs;
+                world.M43 += _hf.cs;
             }
-            world.M43 += hf.cs;
+            Service.Log.Debug($"hf visualization build time: {timer.Value().TotalMilliseconds:f3}ms");
         }
-        //Service.Log.Debug($"hf: {(DateTime.Now - timer).TotalMilliseconds:f3}ms");
+        return _visu;
     }
 
-    private void VisualizeCell(RcHeightfield hf, int x, int z)
+    private void Visualize()
     {
-        var span = hf.spans[z * hf.width + x];
+        _dd.EffectBox.Draw(_dd.RenderContext, GetOrInitVisualizer());
+    }
+
+    private void VisualizeCell(int x, int z)
+    {
+        int numSpans = 0;
+        var span = _hf.spans[z * _hf.width + x];
         while (span != null)
         {
-            VisualizeSpan(hf, x, z, span);
+            ++numSpans;
             span = span.next;
         }
+        if (numSpans > 0)
+            _dd.EffectBox.DrawSubset(_dd.RenderContext, GetOrInitVisualizer(), _spanCellOffsets[x, z], numSpans);
     }
 
-    private void VisualizeSpan(RcHeightfield hf, int x, int z, RcSpan span)
+    private void VisualizeSpan(int spanIndex)
     {
-        var s = new Vector3(hf.cs, hf.ch, hf.cs);
-        var min = hf.bmin.RecastToSystem() + s * new Vector3(x, span.smin, z);
-        s.Y *= span.smax - span.smin;
-        var max = min + s;
-        _dd.DrawAABB(min, max, AreaColor(span.area), _colSide);
+        _dd.EffectBox.DrawSubset(_dd.RenderContext, GetOrInitVisualizer(), spanIndex, 1);
     }
 
     private static Vector4 _colSide = new(1.0f);

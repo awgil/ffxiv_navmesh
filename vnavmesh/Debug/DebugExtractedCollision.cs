@@ -104,7 +104,7 @@ public class DebugExtractedCollision
     {
         var imesh = new ExtractedMesh(part);
         var color = MeshColor(mesh);
-        _dd.DrawMeshes(imesh, mesh.Instances.Select(w => new Render.DynamicMesh.Instance(w, color)));
+        _dd.DrawMeshes(imesh, mesh.Instances.Select(w => new Render.EffectMesh.Instance(w, color)));
     }
 
     private void VisualizeMeshInstance(CollisionGeometryExtractor.Mesh mesh, Matrix4x3 world)

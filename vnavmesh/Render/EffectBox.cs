@@ -8,59 +8,74 @@ using System.Runtime.InteropServices;
 
 namespace Navmesh.Render;
 
-public unsafe class BoxRenderer : IDisposable
+public class EffectBox : IDisposable
 {
+    public class Data : IDisposable
+    {
+        public class Builder : IDisposable
+        {
+            private RenderBuffer.Builder _boxes;
+
+            internal Builder(RenderContext ctx, Data data)
+            {
+                _boxes = data._buffer.Map(ctx);
+            }
+
+            public void Dispose()
+            {
+                _boxes.Dispose();
+            }
+
+            public void Add(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, System.Numerics.Vector4 colorTop, System.Numerics.Vector4 colorSide)
+            {
+                _boxes.Advance(1);
+                _boxes.Stream.Write(world.Row0);
+                _boxes.Stream.Write(world.Row1);
+                _boxes.Stream.Write(world.Row2);
+                _boxes.Stream.Write(world.Row3);
+                _boxes.Stream.Write(colorTop);
+                _boxes.Stream.Write(colorSide);
+            }
+        }
+
+        private RenderBuffer _buffer;
+
+        public Data(RenderContext ctx, int maxCount, bool dynamic)
+        {
+            _buffer = new(ctx, 20 * 4, maxCount, BindFlags.VertexBuffer, dynamic);
+        }
+
+        public void Dispose()
+        {
+            _buffer.Dispose();
+        }
+
+        public Builder Map(RenderContext ctx) => new(ctx, this);
+
+        // Draw* should be called after EffectBox.Bind set up its state
+        public void DrawSubset(RenderContext ctx, int firstBox, int numBoxes)
+        {
+            ctx.Context.InputAssembler.SetVertexBuffers(0, new VertexBufferBinding(_buffer.Buffer, _buffer.ElementSize, 0));
+            ctx.Context.Draw(numBoxes, firstBox);
+        }
+
+        public void DrawAll(RenderContext ctx) => DrawSubset(ctx, 0, _buffer.CurElements);
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct Constants
     {
         public Matrix ViewProj;
     }
 
-    public class Builder : IDisposable
-    {
-        private BoxRenderer _renderer;
-        private DynamicBuffer.Builder _boxes;
-
-        internal Builder(RenderContext ctx, BoxRenderer renderer)
-        {
-            _renderer = renderer;
-            _boxes = renderer._buffer.Map(ctx);
-
-            renderer._count = 0;
-        }
-
-        public void Dispose()
-        {
-            _boxes.Dispose();
-        }
-
-        public void Add(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, System.Numerics.Vector4 colorTop, System.Numerics.Vector4 colorSide)
-        {
-            ++_renderer._count;
-            _boxes.Advance(1);
-            _boxes.Stream.Write(world.Row0);
-            _boxes.Stream.Write(world.Row1);
-            _boxes.Stream.Write(world.Row2);
-            _boxes.Stream.Write(world.Row3);
-            _boxes.Stream.Write(colorTop);
-            _boxes.Stream.Write(colorSide);
-        }
-    }
-
-    public int MaxCount { get; init; }
-
-    private DynamicBuffer _buffer;
     private SharpDX.Direct3D11.Buffer _constantBuffer;
     private InputLayout _il;
     private VertexShader _vs;
     private GeometryShader _gs;
     private PixelShader _ps;
-    private int _count;
 
-    public BoxRenderer(RenderContext ctx, int maxCount)
+    public EffectBox(RenderContext ctx)
     {
-        MaxCount = maxCount;
-
         var shader = """
             struct Box
             {
@@ -152,7 +167,6 @@ public unsafe class BoxRenderer : IDisposable
         Service.Log.Debug($"Box PS compile: {ps.Message}");
         _ps = new(ctx.Device, ps.Bytecode);
 
-        _buffer = new(ctx, 20 * 4, maxCount, BindFlags.VertexBuffer);
         _constantBuffer = new(ctx.Device, 16 * 4 * 2, ResourceUsage.Default, BindFlags.ConstantBuffer, CpuAccessFlags.None, ResourceOptionFlags.None, 0);
 
         _il = new(ctx.Device, vs.Bytecode,
@@ -168,7 +182,6 @@ public unsafe class BoxRenderer : IDisposable
 
     public void Dispose()
     {
-        _buffer.Dispose();
         _constantBuffer.Dispose();
         _il.Dispose();
         _vs.Dispose();
@@ -176,22 +189,32 @@ public unsafe class BoxRenderer : IDisposable
         _ps.Dispose();
     }
 
-    public Builder Build(RenderContext ctx, Constants consts)
+    public void UpdateConstants(RenderContext ctx, Constants consts)
     {
         consts.ViewProj.Transpose();
         ctx.Context.UpdateSubresource(ref consts, _constantBuffer);
-        return new Builder(ctx, this);
     }
 
-    public void Draw(RenderContext ctx, bool wireframe)
+    public void Bind(RenderContext ctx)
     {
         ctx.Context.InputAssembler.PrimitiveTopology = PrimitiveTopology.PointList;
         ctx.Context.InputAssembler.InputLayout = _il;
-        ctx.Context.InputAssembler.SetVertexBuffers(0, new VertexBufferBinding(_buffer.Buffer, _buffer.ElementSize, 0));
         ctx.Context.VertexShader.Set(_vs);
         ctx.Context.GeometryShader.Set(_gs);
         ctx.Context.GeometryShader.SetConstantBuffer(0, _constantBuffer);
         ctx.Context.PixelShader.Set(_ps);
-        ctx.Context.Draw(_count, 0);
+    }
+
+    // shortcut to bind + draw
+    public void Draw(RenderContext ctx, Data data)
+    {
+        Bind(ctx);
+        data.DrawAll(ctx);
+    }
+
+    public void DrawSubset(RenderContext ctx, Data data, int firstBox, int numBoxes)
+    {
+        Bind(ctx);
+        data.DrawSubset(ctx, firstBox, numBoxes);
     }
 }

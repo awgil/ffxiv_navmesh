@@ -11,17 +11,11 @@ namespace Navmesh.Debug;
 
 public unsafe class DebugDrawer : IDisposable
 {
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate nint GetEngineCoreSingletonDelegate();
-
-    private nint _engineCoreSingleton;
-    private DynamicMesh _mesh;
-    private BoxRenderer _box;
-    private DynamicMesh.Builder? _meshBuilder;
-    private BoxRenderer.Builder? _boxBuilder;
-
     public RenderContext RenderContext { get; init; } = new();
     public RenderTarget? RenderTarget { get; private set; }
+    public EffectMesh EffectMesh { get; init; }
+    public EffectBox EffectBox { get; init; }
+
     public SharpDX.Matrix ViewProj { get; private set; }
     public SharpDX.Matrix Proj { get; private set; }
     public SharpDX.Matrix View { get; private set; }
@@ -30,21 +24,35 @@ public unsafe class DebugDrawer : IDisposable
     public float CameraAltitude { get; private set; } // facing horizontally = 0, facing down = pi/4, facing up = -pi/4
     public SharpDX.Vector2 ViewportSize { get; private set; }
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate nint GetEngineCoreSingletonDelegate();
+
+    private nint _engineCoreSingleton;
+    private EffectMesh.Data _meshDynamicData;
+    private EffectMesh.Data.Builder? _meshDynamicBuilder;
+    private EffectBox.Data _boxDynamicData;
+    private EffectBox.Data.Builder? _boxDynamicBuilder;
+
     private List<(Vector2 from, Vector2 to, uint col)> _viewportLines = new();
 
     public DebugDrawer()
     {
+        EffectMesh = new(RenderContext);
+        EffectBox = new(RenderContext);
+
         _engineCoreSingleton = Marshal.GetDelegateForFunctionPointer<GetEngineCoreSingletonDelegate>(Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 48 8D 4C 24 ?? 48 89 4C 24 ?? 4C 8D 4D ?? 4C 8D 44 24 ??"))();
-        _mesh = new(RenderContext, 16 * 1024 * 1024, 16 * 1024 * 1024, 128 * 1024);
-        _box = new(RenderContext, 16 * 1024 * 1024);
+        _meshDynamicData = new(RenderContext, 16 * 1024 * 1024, 16 * 1024 * 1024, 128 * 1024, true);
+        _boxDynamicData = new(RenderContext, 16 * 1024 * 1024, true);
     }
 
     public void Dispose()
     {
-        _meshBuilder?.Dispose();
-        _boxBuilder?.Dispose();
-        _mesh.Dispose();
-        _box.Dispose();
+        _boxDynamicBuilder?.Dispose();
+        _boxDynamicData.Dispose();
+        _meshDynamicBuilder?.Dispose();
+        _meshDynamicData.Dispose();
+        EffectBox.Dispose();
+        EffectMesh.Dispose();
         RenderTarget?.Dispose();
         RenderContext.Dispose();
     }
@@ -59,27 +67,32 @@ public unsafe class DebugDrawer : IDisposable
         CameraAltitude = MathF.Asin(View.Column3.Y);
         ViewportSize = ReadVec2(_engineCoreSingleton + 0x1F4);
 
+        EffectBox.UpdateConstants(RenderContext, new() { ViewProj = ViewProj });
+        EffectMesh.UpdateConstants(RenderContext, new() { ViewProj = ViewProj, LightingWorldYThreshold = 45.Degrees().Cos() });
+
         if (RenderTarget == null || RenderTarget.Size != ViewportSize)
         {
             RenderTarget?.Dispose();
             RenderTarget = new(RenderContext, (int)ViewportSize.X, (int)ViewportSize.Y);
         }
-
         RenderTarget.Bind(RenderContext);
-        _meshBuilder = _mesh.Build(RenderContext, new() { ViewProj = ViewProj, LightingWorldYThreshold = 45.Degrees().Cos() });
-        _boxBuilder = _box.Build(RenderContext, new() { ViewProj = ViewProj });
     }
 
     public void EndFrame()
     {
-        _boxBuilder?.Dispose();
-        _boxBuilder = null;
+        if (_boxDynamicBuilder != null)
+        {
+            _boxDynamicBuilder.Dispose();
+            _boxDynamicBuilder = null;
+            EffectBox.Draw(RenderContext, _boxDynamicData);
+        }
 
-        _meshBuilder?.Dispose();
-        _meshBuilder = null;
-
-        _mesh.Draw(RenderContext, false);
-        _box.Draw(RenderContext, false);
+        if (_meshDynamicBuilder != null)
+        {
+            _meshDynamicBuilder.Dispose();
+            _meshDynamicBuilder = null;
+            EffectMesh.Draw(RenderContext, _meshDynamicData);
+        }
 
         RenderContext.Execute();
 
@@ -106,11 +119,11 @@ public unsafe class DebugDrawer : IDisposable
         ImGui.PopStyleVar();
     }
 
-    public void DrawMesh(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => _meshBuilder?.Add(mesh, ref world, color);
-    public void DrawMeshes(IMesh mesh, IEnumerable<DynamicMesh.Instance> instances) => _meshBuilder?.Add(mesh, instances);
+    public void DrawMesh(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => GetDynamicMeshes().Add(mesh, ref world, color);
+    public void DrawMeshes(IMesh mesh, IEnumerable<EffectMesh.Instance> instances) => GetDynamicMeshes().Add(mesh, instances);
 
-    public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 colorTop, Vector4 colorSide) => _boxBuilder?.Add(ref world, colorTop, colorSide);
-    public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => _boxBuilder?.Add(ref world, color, color);
+    public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 colorTop, Vector4 colorSide) => GetDynamicBoxes().Add(ref world, colorTop, colorSide);
+    public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => GetDynamicBoxes().Add(ref world, color, color);
 
     public void DrawAABB(Vector3 min, Vector3 max, Vector4 colorTop, Vector4 colorSide)
     {
@@ -168,6 +181,9 @@ public unsafe class DebugDrawer : IDisposable
         foreach (var (from, to) in AdjacentPairs(CurveApprox.Circle(ps, 5, 1)))
             _viewportLines.Add((from, to, color));
     }
+
+    private EffectMesh.Data.Builder GetDynamicMeshes() => _meshDynamicBuilder ??= _meshDynamicData.Map(RenderContext);
+    private EffectBox.Data.Builder GetDynamicBoxes() => _boxDynamicBuilder ??= _boxDynamicData.Map(RenderContext);
 
     private unsafe SharpDX.Matrix ReadMatrix(nint address)
     {

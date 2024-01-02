@@ -7,7 +7,7 @@ using System;
 namespace Navmesh.Render;
 
 // render target texture with utilities to render to self
-public unsafe class RenderTarget : IDisposable
+public class RenderTarget : IDisposable
 {
     public Vector2 Size { get; private set; }
     private Texture2D _rt;

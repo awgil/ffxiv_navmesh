@@ -125,7 +125,7 @@ public class DebugExtractedCollision : IDisposable
     private void VisualizeVertex(CollisionGeometryExtractor.Mesh mesh, Vector3 v)
     {
         foreach (var i in mesh.Instances)
-            _dd.DrawWorldPoint(i.TransformCoordinate(v), 0xff0000ff);
+            _dd.DrawWorldPoint(i.TransformCoordinate(v), 5, 0xff0000ff);
     }
 
     private void VisualizeTriangle(CollisionGeometryExtractor.Mesh mesh, Vector3 v1, Vector3 v2, Vector3 v3)

@@ -1,11 +1,10 @@
 ﻿using DotRecast.Recast;
 using Navmesh.Render;
-using System;
 using System.Numerics;
 
 namespace Navmesh.Debug;
 
-public class DebugSolidHeightfield : IDisposable
+public class DebugSolidHeightfield : DebugRecast
 {
     private RcHeightfield _hf;
     private UITree _tree;
@@ -14,6 +13,11 @@ public class DebugSolidHeightfield : IDisposable
     private int _numWalkableSpans;
     private int[,] _spanCellOffsets;
     private EffectBox.Data? _visu;
+
+    private static Vector4 _colSide = new(1.0f);
+    private static Vector4 _colAreaNull = new(0.25f, 0.25f, 0.25f, 1.0f);
+    private static Vector4 _colAreaWalkable = new(0.25f, 0.5f, 0.63f, 1.0f);
+    private static Vector4 AreaColor(int area) => area == 0 ? _colAreaNull : _colAreaWalkable; // TODO: other colors for other areas
 
     public DebugSolidHeightfield(RcHeightfield hf, UITree tree, DebugDrawer dd)
     {
@@ -41,7 +45,7 @@ public class DebugSolidHeightfield : IDisposable
         }
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         _visu?.Dispose();
     }
@@ -52,12 +56,9 @@ public class DebugSolidHeightfield : IDisposable
         if (!nr.Opened)
             return;
 
-        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
-        _tree.LeafNode($"Num cells: {_hf.width}x{_hf.height}");
-        _tree.LeafNode($"Bounds: [{_hf.bmin}] - [{_hf.bmax}]");
-        _tree.LeafNode($"Cell size: {_hf.cs}x{_hf.ch}");
+        DrawBaseInfo(_tree, _hf.width, _hf.height, _hf.bmin, _hf.bmax, _hf.cs, _hf.ch);
         _tree.LeafNode($"Border size: {_hf.borderSize}");
-        _tree.LeafNode($"Player's cell: {(playerPos.X - _hf.bmin.X) / _hf.cs}x{(playerPos.Y - _hf.bmin.Y) / _hf.ch}x{(playerPos.Z - _hf.bmin.Z) / _hf.cs}");
+
         using var nc = _tree.Node("Cells");
         if (nc.SelectedOrHovered)
             Visualize();
@@ -155,9 +156,4 @@ public class DebugSolidHeightfield : IDisposable
     {
         _dd.EffectBox.DrawSubset(_dd.RenderContext, GetOrInitVisualizer(), spanIndex, 1);
     }
-
-    private static Vector4 _colSide = new(1.0f);
-    private static Vector4 _colAreaNull = new(0.25f, 0.25f, 0.25f, 1.0f);
-    private static Vector4 _colAreaWalkable = new(0.25f, 0.5f, 0.63f, 1.0f);
-    private static Vector4 AreaColor(int area) => area == 0 ? _colAreaNull : _colAreaWalkable; // TODO: other colors for other areas
 }

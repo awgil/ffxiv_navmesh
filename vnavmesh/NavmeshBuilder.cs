@@ -135,18 +135,23 @@ public class NavmeshBuilder : IDisposable
             // 2. perform a bunch of postprocessing on a heightfield
             if (cfg.FilterLowHangingObstacles)
             {
+                // mark non-walkable spans as walkable if their maximum is within climb distance of the span below
+                // this allows climbing stairs, walking over curbs, etc
                 Service.Log.Debug("[navmesh] filter low-hanging obstacles");
                 RcFilters.FilterLowHangingWalkableObstacles(telemetry, cfg.WalkableClimb, solid.Heightfield);
             }
 
             if (cfg.FilterLedgeSpans)
             {
+                // mark 'ledge' spans as non-walkable - spans that have too large height distance to the neighbour
+                // this reduces the impact of voxelization error
                 Service.Log.Debug("[navmesh] filter ledge spans");
                 RcFilters.FilterLedgeSpans(telemetry, cfg.WalkableHeight, cfg.WalkableClimb, solid.Heightfield);
             }
 
             if (cfg.FilterWalkableLowHeightSpans)
             {
+                // mark walkable spans of very low height (smaller than agent height) as non-walkable
                 Service.Log.Debug("[navmesh] filter walkable low-height spans");
                 RcFilters.FilterWalkableLowHeightSpans(telemetry, cfg.WalkableHeight, solid.Heightfield);
             }

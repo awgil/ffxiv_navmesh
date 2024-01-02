@@ -20,6 +20,7 @@ internal class DebugNavmesh : IDisposable
     private DebugExtractedCollision? _drawExtracted;
     private DebugSolidHeightfield? _drawSolidHeightfield;
     private DebugCompactHeightfield? _drawCompactHeightfield;
+    private DebugContourSet? _drawContourSet;
 
     public DebugNavmesh(DebugDrawer dd, NavmeshBuilder navmesh)
     {
@@ -32,6 +33,7 @@ internal class DebugNavmesh : IDisposable
         _drawExtracted?.Dispose();
         _drawSolidHeightfield?.Dispose();
         _drawCompactHeightfield?.Dispose();
+        _drawContourSet?.Dispose();
     }
 
     public void Draw()
@@ -48,6 +50,8 @@ internal class DebugNavmesh : IDisposable
                 _drawSolidHeightfield = null;
                 _drawCompactHeightfield?.Dispose();
                 _drawCompactHeightfield = null;
+                _drawContourSet?.Dispose();
+                _drawContourSet = null;
                 _navmesh.Rebuild();
                 _waypoints.Clear();
             }
@@ -86,7 +90,8 @@ internal class DebugNavmesh : IDisposable
         _drawSolidHeightfield.Draw();
         _drawCompactHeightfield ??= new(intermediates.GetCompactHeightfield(), _tree, _dd);
         _drawCompactHeightfield.Draw();
-        DrawContourSet(intermediates.GetContourSet());
+        _drawContourSet ??= new(intermediates.GetContourSet(), _tree, _dd);
+        _drawContourSet.Draw();
         DrawPolyMesh(intermediates.GetMesh());
     }
 
@@ -104,67 +109,6 @@ internal class DebugNavmesh : IDisposable
         ImGui.Checkbox("Filter low-hanging obstacles", ref _navmesh.FilterLowHangingObstacles);
         ImGui.Checkbox("Filter ledges", ref _navmesh.FilterLedgeSpans);
         ImGui.Checkbox("Filter low-height spans", ref _navmesh.FilterWalkableLowHeightSpans);
-    }
-
-    private void DrawContourSet(RcContourSet cs)
-    {
-        using var n = _tree.Node("Contour set");
-        if (!n.Opened)
-            return;
-
-        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
-        _tree.LeafNode($"Num cells: {cs.width}x{cs.height}");
-        _tree.LeafNode($"Bounds: [{cs.bmin}] - [{cs.bmax}]");
-        _tree.LeafNode($"Cell size: {cs.cs}x{cs.ch}");
-        _tree.LeafNode($"Misc: border size={cs.borderSize}, max error={cs.maxError}");
-        _tree.LeafNode($"Player's cell: {(playerPos.X - cs.bmin.X) / cs.cs}x{(playerPos.Y - cs.bmin.Y) / cs.ch}x{(playerPos.Z - cs.bmin.Z) / cs.cs}");
-
-        using var nc = _tree.Node($"Contours ({cs.conts.Count})###contours");
-        if (!nc.Opened)
-            return;
-
-        int i = 0;
-        foreach (var c in cs.conts)
-        {
-            using var ncont = _tree.Node($"Contour {i++}: area={c.area}, region={c.reg}");
-            if (ncont.SelectedOrHovered)
-            {
-                VisualizeContour(cs, c.verts, c.nverts, 0xff00ff00);
-                VisualizeContour(cs, c.rverts, c.nrverts, 0xff00ffff);
-            }
-            if (!ncont.Opened)
-                continue;
-
-            using (var ns = _tree.Node($"Simplified vertices ({c.nverts})###simp"))
-            {
-                if (ns.SelectedOrHovered)
-                    VisualizeContour(cs, c.verts, c.nverts, 0xff00ff00);
-                if (ns.Opened)
-                {
-                    for (int iv = 0; iv < c.nverts; ++iv)
-                    {
-                        var reg = c.verts[iv * 4 + 3];
-                        if (_tree.LeafNode($"{iv}: {c.verts[iv * 4]}x{c.verts[iv * 4 + 1]}x{c.verts[iv * 4 + 2]}, reg={reg & RcConstants.RC_CONTOUR_REG_MASK}, border={(reg & RcConstants.RC_BORDER_VERTEX) != 0}, areaborder={(reg & RcConstants.RC_AREA_BORDER) != 0}").SelectedOrHovered)
-                            VisualizeContourVertex(cs, c.verts, iv);
-                    }
-                }
-            }
-
-            using (var nr = _tree.Node($"Raw vertices ({c.nrverts})###raw"))
-            {
-                if (nr.SelectedOrHovered)
-                    VisualizeContour(cs, c.rverts, c.nrverts, 0xff00ffff);
-                if (nr.Opened)
-                {
-                    for (int iv = 0; iv < c.nrverts; ++iv)
-                    {
-                        var reg = c.rverts[iv * 4 + 3];
-                        if (_tree.LeafNode($"{iv}: {c.rverts[iv * 4]}x{c.rverts[iv * 4 + 1]}x{c.rverts[iv * 4 + 2]}, reg={reg & RcConstants.RC_CONTOUR_REG_MASK}, border={(reg & RcConstants.RC_BORDER_VERTEX) != 0}, areaborder={(reg & RcConstants.RC_AREA_BORDER) != 0}").SelectedOrHovered)
-                            VisualizeContourVertex(cs, c.rverts, iv);
-                    }
-                }
-            }
-        }
     }
 
     private void DrawPolyMesh(RcPolyMesh mesh)
@@ -217,24 +161,6 @@ internal class DebugNavmesh : IDisposable
         }
     }
 
-    private void VisualizeContour(RcContourSet cs, int[] contourVertices, int numVerts, uint color)
-    {
-        if (numVerts <= 0)
-            return;
-        var from = GetContourVertex(cs, contourVertices, numVerts - 1);
-        for (int i = 0; i < numVerts; ++i)
-        {
-            var to = GetContourVertex(cs, contourVertices, i);
-            _dd.DrawWorldLine(from, to, color);
-            from = to;
-        }
-    }
-
-    private void VisualizeContourVertex(RcContourSet cs, int[] vertices, int index)
-    {
-        _dd.DrawWorldSphere(GetContourVertex(cs, vertices, index), 1, 0xff0000ff);
-    }
-
     private void VisualizeMesh(RcPolyMesh mesh)
     {
         for (int i = 0; i < mesh.npolys; ++i)
@@ -275,6 +201,5 @@ internal class DebugNavmesh : IDisposable
         _dd.DrawBox(ref mtx, color);
     }
 
-    private Vector3 GetContourVertex(RcContourSet cs, int[] verts, int index) => cs.bmin.RecastToSystem() + new Vector3(cs.cs, cs.ch, cs.cs) * new Vector3(verts[4 * index], verts[4 * index + 1], verts[4 * index + 2]);
     private Vector3 GetMeshVertex(RcPolyMesh mesh, int index) => mesh.bmin.RecastToSystem() + new Vector3(mesh.cs, mesh.ch, mesh.cs) * new Vector3(mesh.verts[3 * index], mesh.verts[3 * index + 1], mesh.verts[3 * index + 2]);
 }

@@ -4,6 +4,7 @@ using ImGuiNET;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -34,7 +35,7 @@ public unsafe class DebugDrawer : IDisposable
     private EffectBox.Data _boxDynamicData;
     private EffectBox.Data.Builder? _boxDynamicBuilder;
 
-    private List<(Vector2 from, Vector2 to, uint col)> _viewportLines = new();
+    private List<(Vector2 from, Vector2 to, uint col, int thickness)> _viewportLines = new();
 
     public DebugDrawer()
     {
@@ -111,7 +112,7 @@ public unsafe class DebugDrawer : IDisposable
 
         var dl = ImGui.GetWindowDrawList();
         foreach (var l in _viewportLines)
-            dl.AddLine(l.from, l.to, l.col);
+            dl.AddLine(l.from, l.to, l.col, l.thickness);
         _viewportLines.Clear();
 
         if (RenderTarget != null)
@@ -131,15 +132,21 @@ public unsafe class DebugDrawer : IDisposable
     public void DrawAABB(Vector3 min, Vector3 max, Vector4 colorTop, Vector4 colorSide) => GetDynamicBoxes().Add(min, max, colorTop, colorSide);
     public void DrawAABB(Vector3 min, Vector3 max, Vector4 color) => GetDynamicBoxes().Add(min, max, color, color);
 
-    public void DrawWorldLine(Vector3 start, Vector3 end, uint color)
+    public void DrawWorldLine(Vector3 start, Vector3 end, uint color, int thickness = 1)
     {
         var p1 = start.ToSharpDX();
         var p2 = end.ToSharpDX();
         if (ClipLineToNearPlane(ref p1, ref p2))
-            _viewportLines.Add((WorldToScreen(p1), WorldToScreen(p2), color));
+            _viewportLines.Add((WorldToScreen(p1), WorldToScreen(p2), color, thickness));
     }
 
-    public void DrawWorldSphere(Vector3 center, float radius, uint color)
+    public void DrawWorldPolygon(IEnumerable<Vector3> points, uint color, int thickness = 1)
+    {
+        foreach (var (a, b) in AdjacentPairs(points))
+            DrawWorldLine(a, b, color, thickness);
+    }
+
+    public void DrawWorldSphere(Vector3 center, float radius, uint color, int thickness = 1)
     {
         int numSegments = CurveApprox.CalculateCircleSegments(radius, 360.Degrees(), 0.1f);
         var prev1 = center + new Vector3(0, 0, radius);
@@ -151,23 +158,23 @@ public unsafe class DebugDrawer : IDisposable
             var curr1 = center + radius * new Vector3(dir.X, 0, dir.Y);
             var curr2 = center + radius * new Vector3(0, dir.Y, dir.X);
             var curr3 = center + radius * new Vector3(dir.Y, dir.X, 0);
-            DrawWorldLine(curr1, prev1, color);
-            DrawWorldLine(curr2, prev2, color);
-            DrawWorldLine(curr3, prev3, color);
+            DrawWorldLine(curr1, prev1, color, thickness);
+            DrawWorldLine(curr2, prev2, color, thickness);
+            DrawWorldLine(curr3, prev3, color, thickness);
             prev1 = curr1;
             prev2 = curr2;
             prev3 = curr3;
         }
     }
 
-    public void DrawWorldTriangle(Vector3 v1, Vector3 v2, Vector3 v3, uint color)
+    public void DrawWorldTriangle(Vector3 v1, Vector3 v2, Vector3 v3, uint color, int thickness = 1)
     {
-        DrawWorldLine(v1, v2, color);
-        DrawWorldLine(v2, v3, color);
-        DrawWorldLine(v3, v1, color);
+        DrawWorldLine(v1, v2, color, thickness);
+        DrawWorldLine(v2, v3, color, thickness);
+        DrawWorldLine(v3, v1, color, thickness);
     }
 
-    public void DrawWorldPoint(Vector3 p, uint color)
+    public void DrawWorldPoint(Vector3 p, float radius, uint color, int thickness = 1)
     {
         var pw = p.ToSharpDX();
         var nearPlane = ViewProj.Column3;
@@ -175,8 +182,8 @@ public unsafe class DebugDrawer : IDisposable
             return;
 
         var ps = WorldToScreen(pw);
-        foreach (var (from, to) in AdjacentPairs(CurveApprox.Circle(ps, 5, 1)))
-            _viewportLines.Add((from, to, color));
+        foreach (var (from, to) in AdjacentPairs(CurveApprox.Circle(ps, radius, 1)))
+            _viewportLines.Add((from, to, color, thickness));
     }
 
     private EffectMesh.Data.Builder GetDynamicMeshes() => _meshDynamicBuilder ??= _meshDynamicData.Map(RenderContext);
@@ -224,7 +231,7 @@ public unsafe class DebugDrawer : IDisposable
         return new Vector2(0.5f * ViewportSize.X * (1 + p.X), 0.5f * ViewportSize.Y * (1 - p.Y)) + ImGuiHelpers.MainViewport.Pos;
     }
 
-    private static IEnumerable<(Vector2, Vector2)> AdjacentPairs(IEnumerable<Vector2> v)
+    private static IEnumerable<(T, T)> AdjacentPairs<T>(IEnumerable<T> v) where T : struct
     {
         var en = v.GetEnumerator();
         if (!en.MoveNext())

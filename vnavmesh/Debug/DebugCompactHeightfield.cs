@@ -6,7 +6,7 @@ using System.Numerics;
 
 namespace Navmesh.Debug;
 
-public class DebugCompactHeightfield : IDisposable
+public class DebugCompactHeightfield : DebugRecast
 {
     private RcCompactHeightfield _chf;
     private UITree _tree;
@@ -18,6 +18,11 @@ public class DebugCompactHeightfield : IDisposable
     private int[] _regionsStartOffset;
 
     private static int _heightOffset = 0;
+
+    private static Vector4 _colAreaNull = new(0, 0, 0, 0.25f);
+    private static Vector4 _colAreaWalkable = new(0, 0.75f, 1.0f, 0.25f);
+    private static Vector4 AreaColor(int area) => area == 0 ? _colAreaNull : _colAreaWalkable; // TODO: other colors for other areas
+    private static Vector4 RegionColor(int region) => region != 0 ? IntColor(region, 0.75f) : _colAreaNull;
 
     public DebugCompactHeightfield(RcCompactHeightfield chf, UITree tree, DebugDrawer dd)
     {
@@ -33,7 +38,7 @@ public class DebugCompactHeightfield : IDisposable
             _regionsStartOffset[i] = _regionsStartOffset[i - 1] + _regionsNumSpans[i - 1];
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         _visuSolid?.Dispose();
         _visuDistance?.Dispose();
@@ -46,12 +51,8 @@ public class DebugCompactHeightfield : IDisposable
         if (!nr.Opened)
             return;
 
-        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
-        _tree.LeafNode($"Num cells: {_chf.width}x{_chf.height}");
-        _tree.LeafNode($"Bounds: [{_chf.bmin}] - [{_chf.bmax}]");
-        _tree.LeafNode($"Cell size: {_chf.cs}x{_chf.ch}");
+        DrawBaseInfo(_tree, _chf.width, _chf.height, _chf.bmin, _chf.bmax, _chf.cs, _chf.ch);
         _tree.LeafNode($"Config: walkable height={_chf.walkableHeight}, walkable climb={_chf.walkableClimb}, border={_chf.borderSize}");
-        _tree.LeafNode($"Player's cell: {(playerPos.X - _chf.bmin.X) / _chf.cs}x{(playerPos.Y - _chf.bmin.Y) / _chf.ch}x{(playerPos.Z - _chf.bmin.Z) / _chf.cs}");
 
         using (var nc = _tree.Node($"Cells ({_chf.spanCount} spans total)###cells"))
         {
@@ -279,19 +280,5 @@ public class DebugCompactHeightfield : IDisposable
             var to = _chf.bmin.RecastToSystem() + new Vector3(_chf.cs * (nx + 0.5f), _chf.ch * (ns.y + _heightOffset), _chf.cs * (nz + 0.5f));
             _dd.DrawWorldLine(from, to, 0xff00ffff);
         }
-    }
-
-    private static Vector4 _colAreaNull = new(0, 0, 0, 0.25f);
-    private static Vector4 _colAreaWalkable = new(0, 0.75f, 1.0f, 0.25f);
-    private static Vector4 AreaColor(int area) => area == 0 ? _colAreaNull : _colAreaWalkable; // TODO: other colors for other areas
-    private static Vector4 RegionColor(int region)
-    {
-        if (region == 0)
-            return _colAreaNull;
-        var mask = new BitMask((ulong)region);
-        float r = (mask[1] ? 0.25f : 0) + (mask[3] ? 0.5f : 0) + 0.25f;
-        float g = (mask[2] ? 0.25f : 0) + (mask[4] ? 0.5f : 0) + 0.25f;
-        float b = (mask[0] ? 0.25f : 0) + (mask[5] ? 0.5f : 0) + 0.25f;
-        return new(r, g, b, 0.75f);
     }
 }

@@ -52,7 +52,6 @@ public class EffectQuad : IDisposable
         public Data(RenderContext ctx, int maxCount, bool dynamic)
         {
             _buffer = new(ctx, maxCount, BindFlags.VertexBuffer, dynamic);
-            Service.Log.Debug($"EffectQuad: {_buffer.ElementSize}");
         }
 
         public void Dispose()

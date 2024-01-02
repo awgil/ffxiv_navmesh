@@ -5,16 +5,33 @@ using SharpDX.DXGI;
 using SharpDX;
 using System;
 using System.Runtime.InteropServices;
+using Matrix4x3 = FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3;
+using Vector3 = System.Numerics.Vector3;
+using Vector4 = System.Numerics.Vector4;
 
 namespace Navmesh.Render;
 
 public class EffectBox : IDisposable
 {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Constants
+    {
+        public Matrix ViewProj;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Instance
+    {
+        public Matrix4x3 World;
+        public Vector4 ColorTop;
+        public Vector4 ColorSide;
+    }
+
     public class Data : IDisposable
     {
         public class Builder : IDisposable
         {
-            private RenderBuffer.Builder _boxes;
+            private RenderBuffer<Instance>.Builder _boxes;
 
             internal Builder(RenderContext ctx, Data data)
             {
@@ -26,23 +43,22 @@ public class EffectBox : IDisposable
                 _boxes.Dispose();
             }
 
-            public void Add(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, System.Numerics.Vector4 colorTop, System.Numerics.Vector4 colorSide)
+            public void Add(ref Instance inst) => _boxes.Add(ref inst);
+            public void Add(ref Matrix4x3 world, Vector4 colorTop, Vector4 colorSide) => _boxes.Add(new Instance() { World = world, ColorTop = colorTop, ColorSide = colorSide });
+
+            public void Add(Vector3 min, Vector3 max, Vector4 colorTop, Vector4 colorSide)
             {
-                _boxes.Advance(1);
-                _boxes.Stream.Write(world.Row0);
-                _boxes.Stream.Write(world.Row1);
-                _boxes.Stream.Write(world.Row2);
-                _boxes.Stream.Write(world.Row3);
-                _boxes.Stream.Write(colorTop);
-                _boxes.Stream.Write(colorSide);
+                var center = (max + min) * 0.5f;
+                var extent = (max - min) * 0.5f;
+                _boxes.Add(new() { World = new() { M11 = extent.X, M22 = extent.Y, M33 = extent.Z, M41 = center.X, M42 = center.Y, M43 = center.Z }, ColorTop = colorTop, ColorSide = colorSide });
             }
         }
 
-        private RenderBuffer _buffer;
+        private RenderBuffer<Instance> _buffer;
 
         public Data(RenderContext ctx, int maxCount, bool dynamic)
         {
-            _buffer = new(ctx, 20 * 4, maxCount, BindFlags.VertexBuffer, dynamic);
+            _buffer = new(ctx, maxCount, BindFlags.VertexBuffer, dynamic);
         }
 
         public void Dispose()
@@ -60,12 +76,6 @@ public class EffectBox : IDisposable
         }
 
         public void DrawAll(RenderContext ctx) => DrawSubset(ctx, 0, _buffer.CurElements);
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct Constants
-    {
-        public Matrix ViewProj;
     }
 
     private SharpDX.Direct3D11.Buffer _constantBuffer;

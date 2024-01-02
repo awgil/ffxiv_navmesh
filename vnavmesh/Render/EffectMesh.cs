@@ -6,22 +6,58 @@ using SharpDX.DXGI;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using Vector3 = System.Numerics.Vector3;
+using Vector4 = System.Numerics.Vector4;
 
 namespace Navmesh.Render;
 
 public class EffectMesh : IDisposable
 {
     public record struct Mesh(int FirstVertex, int FirstPrimitive, int NumPrimitives, int NumInstances);
-    public record struct Instance(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 World, System.Numerics.Vector4 Color);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Constants
+    {
+        public Matrix ViewProj;
+        public float LightingWorldYThreshold; // to match recast demo, this should be equal to cos of max walkable angle
+    }
+
+    // can't use tuple of 3 ints directly because of alignment :(
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Triangle
+    {
+        public int V1;
+        public int V2;
+        public int V3;
+
+        public Triangle((int v1, int v2, int v3) tuple) => (V1, V2, V3) = tuple;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Instance
+    {
+        public Vector4 WorldColX;
+        public Vector4 WorldColY;
+        public Vector4 WorldColZ;
+        public Vector4 Color;
+
+        public Instance(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color)
+        {
+            WorldColX = new(world.M11, world.M21, world.M31, world.M41);
+            WorldColY = new(world.M12, world.M22, world.M32, world.M42);
+            WorldColZ = new(world.M13, world.M23, world.M33, world.M43);
+            Color = color;
+        }
+    }
 
     public class Data : IDisposable
     {
         public class Builder : IDisposable
         {
             private Data _data;
-            private RenderBuffer.Builder _vertices;
-            private RenderBuffer.Builder _primitives;
-            private RenderBuffer.Builder _instances;
+            private RenderBuffer<Vector3>.Builder _vertices;
+            private RenderBuffer<Triangle>.Builder _primitives;
+            private RenderBuffer<Instance>.Builder _instances;
 
             internal Builder(RenderContext ctx, Data data)
             {
@@ -42,48 +78,42 @@ public class EffectMesh : IDisposable
 
             public void Add(IMesh mesh, IEnumerable<Instance> instances)
             {
+                var nt = mesh.NumTriangles();
+                if (nt == 0)
+                    return;
+
                 var ni = 0;
                 foreach (var i in instances)
                 {
-                    _instances.Advance(1);
-                    _instances.Stream.Write(new System.Numerics.Vector4(i.World.M11, i.World.M21, i.World.M31, i.World.M41));
-                    _instances.Stream.Write(new System.Numerics.Vector4(i.World.M12, i.World.M22, i.World.M32, i.World.M42));
-                    _instances.Stream.Write(new System.Numerics.Vector4(i.World.M13, i.World.M23, i.World.M33, i.World.M43));
-                    _instances.Stream.Write(i.Color);
+                    _instances.Add(i);
                     ++ni;
                 }
+                if (ni == 0)
+                    return;
 
-                var nv = mesh.NumVertices();
-                var nt = mesh.NumTriangles();
                 _data._meshes.Add(new(_vertices.CurElements, _primitives.CurElements, nt, ni));
 
-                _vertices.Advance(nv);
+                var nv = mesh.NumVertices();
                 for (int i = 0; i < nv; ++i)
-                    _vertices.Stream.Write(mesh.Vertex(i));
+                    _vertices.Add(mesh.Vertex(i));
 
-                _primitives.Advance(nt);
                 for (int i = 0; i < nt; ++i)
-                {
-                    var (v1, v2, v3) = mesh.Triangle(i);
-                    _primitives.Stream.Write(v1);
-                    _primitives.Stream.Write(v2);
-                    _primitives.Stream.Write(v3);
-                }
+                    _primitives.Add(new(mesh.Triangle(i)));
             }
 
-            public void Add(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, System.Numerics.Vector4 color) => Add(mesh, [new(world, color)]);
+            public void Add(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => Add(mesh, [new(world, color)]);
         }
 
-        private RenderBuffer _vertexBuffer;
-        private RenderBuffer _primBuffer;
-        private RenderBuffer _instanceBuffer;
+        private RenderBuffer<Vector3> _vertexBuffer;
+        private RenderBuffer<Triangle> _primBuffer;
+        private RenderBuffer<Instance> _instanceBuffer;
         private List<Mesh> _meshes = new();
 
         public Data(RenderContext ctx, int maxVertices, int maxPrimitives, int maxInstances, bool dynamic)
         {
-            _vertexBuffer = new(ctx, 3 * 4, maxVertices, BindFlags.VertexBuffer, dynamic);
-            _primBuffer = new(ctx, 4 * 3, maxPrimitives, BindFlags.IndexBuffer, dynamic);
-            _instanceBuffer = new(ctx, 16 * 4, maxInstances, BindFlags.VertexBuffer, dynamic);
+            _vertexBuffer = new(ctx, maxVertices, BindFlags.VertexBuffer, dynamic);
+            _primBuffer = new(ctx, maxPrimitives, BindFlags.IndexBuffer, dynamic);
+            _instanceBuffer = new(ctx, maxInstances, BindFlags.VertexBuffer, dynamic);
         }
 
         public void Dispose()
@@ -107,13 +137,6 @@ public class EffectMesh : IDisposable
                 startInst += m.NumInstances;
             }
         }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct Constants
-    {
-        public Matrix ViewProj;
-        public float LightingWorldYThreshold; // to match recast demo, this should be equal to cos of max walkable angle
     }
 
     private SharpDX.Direct3D11.Buffer _constantBuffer;

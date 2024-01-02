@@ -1,6 +1,7 @@
 ﻿using SharpDX;
 using SharpDX.Direct3D11;
 using System;
+using System.Runtime.CompilerServices;
 using Buffer = SharpDX.Direct3D11.Buffer;
 
 namespace Navmesh.Render;
@@ -11,18 +12,18 @@ namespace Navmesh.Render;
 //   these are created with Dynamic usage + cpu Write access and mapped with WriteDiscard flag
 // - 'static' - suitable for buffers that are updated infrequenty
 //   these are created with Default usage + no cpu access, builder creates temporary Staging buffer, maps it, then copies over to main resource
-public class RenderBuffer : IDisposable
+public class RenderBuffer<T> : IDisposable where T : unmanaged
 {
     public class Builder : IDisposable
     {
         private RenderContext _ctx;
-        private RenderBuffer _buffer;
+        private RenderBuffer<T> _buffer;
         private DataStream _stream;
         private Buffer? _staging; // only for non-dynamic
 
         public int CurElements => _buffer.CurElements;
 
-        internal Builder(RenderContext ctx, RenderBuffer buffer)
+        internal Builder(RenderContext ctx, RenderBuffer<T> buffer)
         {
             _ctx = ctx;
             _buffer = buffer;
@@ -58,14 +59,14 @@ public class RenderBuffer : IDisposable
             }
         }
 
-        // TODO: reconsider this api
-        public DataStream Stream => _stream;
-        public void Advance(int count)
+        public unsafe void Add(ref T item)
         {
-            _buffer.CurElements += count;
-            if (_buffer.CurElements > _buffer.MaxElements)
+            if (_buffer.CurElements >= _buffer.MaxElements)
                 throw new ArgumentOutOfRangeException("Buffer overflow");
+            ++_buffer.CurElements;
+            _stream.Write((nint)Unsafe.AsPointer(ref item), 0, sizeof(T));
         }
+        public void Add(T item) => Add(ref item);
     }
 
     public bool Dynamic { get; init; }
@@ -74,15 +75,15 @@ public class RenderBuffer : IDisposable
     public int CurElements { get; private set; }
     public Buffer Buffer { get; init; }
 
-    public RenderBuffer(RenderContext ctx, int elementSize, int maxElements, BindFlags bindFlags, bool dynamic)
+    public unsafe RenderBuffer(RenderContext ctx, int maxElements, BindFlags bindFlags, bool dynamic)
     {
         dynamic = true; // TODO: figure why it doesn't work as expected..
         Dynamic = dynamic;
-        ElementSize = elementSize;
+        ElementSize = sizeof(T);
         MaxElements = maxElements;
         Buffer = new(ctx.Device, new()
         {
-            SizeInBytes = elementSize * maxElements,
+            SizeInBytes = ElementSize * maxElements,
             Usage = dynamic ? ResourceUsage.Dynamic : ResourceUsage.Default,
             BindFlags = bindFlags,
             CpuAccessFlags = dynamic ? CpuAccessFlags.Write : CpuAccessFlags.None,

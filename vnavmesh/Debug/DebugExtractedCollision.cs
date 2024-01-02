@@ -1,30 +1,38 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using System.Numerics;
 using Matrix4x3 = FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3;
 
 namespace Navmesh.Debug;
 
-public class DebugExtractedCollision
+public class DebugExtractedCollision : IDisposable
 {
+    private CollisionGeometryExtractor _geom;
     private UITree _tree;
     private DebugDrawer _dd;
+    // TODO: cache visualization
 
-    public DebugExtractedCollision(UITree tree, DebugDrawer dd)
+    public DebugExtractedCollision(CollisionGeometryExtractor geometry, UITree tree, DebugDrawer dd)
     {
+        _geom = geometry;
         _tree = tree;
         _dd = dd;
     }
 
-    public void Draw(CollisionGeometryExtractor geometry)
+    public void Dispose()
+    {
+    }
+
+    public void Draw()
     {
         using var nr = _tree.Node("Extracted geometry");
         if (nr.SelectedOrHovered)
-            Visualize(geometry);
+            Visualize();
         if (!nr.Opened)
             return;
 
-        _tree.LeafNode($"Bounds: {geometry.BoundsMin:f3} - {geometry.BoundsMax:f3}");
-        foreach (var (name, mesh) in geometry.Meshes)
+        _tree.LeafNode($"Bounds: {_geom.BoundsMin:f3} - {_geom.BoundsMax:f3}");
+        foreach (var (name, mesh) in _geom.Meshes)
         {
             using var nm = _tree.Node($"{name}: flags={mesh.Flags}");
             if (nm.SelectedOrHovered)
@@ -88,9 +96,9 @@ public class DebugExtractedCollision
         }
     }
 
-    private void Visualize(CollisionGeometryExtractor geometry)
+    private void Visualize()
     {
-        foreach (var mesh in geometry.Meshes.Values)
+        foreach (var mesh in _geom.Meshes.Values)
             VisualizeMeshInstances(mesh);
     }
 

@@ -17,19 +17,21 @@ internal class DebugNavmesh : IDisposable
 
     private UITree _tree = new();
     private DebugDrawer _dd;
-    private DebugExtractedCollision _drawExtracted;
+    private DebugExtractedCollision? _drawExtracted;
     private DebugSolidHeightfield? _drawSolidHeightfield;
+    private DebugCompactHeightfield? _drawCompactHeightfield;
 
     public DebugNavmesh(DebugDrawer dd, NavmeshBuilder navmesh)
     {
         _navmesh = navmesh;
         _dd = dd;
-        _drawExtracted = new(_tree, dd);
     }
 
     public void Dispose()
     {
+        _drawExtracted?.Dispose();
         _drawSolidHeightfield?.Dispose();
+        _drawCompactHeightfield?.Dispose();
     }
 
     public void Draw()
@@ -40,8 +42,12 @@ internal class DebugNavmesh : IDisposable
         {
             if (ImGui.Button("Rebuild navmesh"))
             {
+                _drawExtracted?.Dispose();
+                _drawExtracted = null;
                 _drawSolidHeightfield?.Dispose();
                 _drawSolidHeightfield = null;
+                _drawCompactHeightfield?.Dispose();
+                _drawCompactHeightfield = null;
                 _navmesh.Rebuild();
                 _waypoints.Clear();
             }
@@ -74,10 +80,12 @@ internal class DebugNavmesh : IDisposable
         }
 
         var intermediates = _navmesh.Intermediates!;
-        _drawExtracted.Draw(_navmesh.CollisionGeometry);
+        _drawExtracted ??= new(_navmesh.CollisionGeometry, _tree, _dd);
+        _drawExtracted.Draw();
         _drawSolidHeightfield ??= new(intermediates.GetSolidHeightfield(), _tree, _dd);
         _drawSolidHeightfield.Draw();
-        DrawCompactHeightfield(intermediates.GetCompactHeightfield());
+        _drawCompactHeightfield ??= new(intermediates.GetCompactHeightfield(), _tree, _dd);
+        _drawCompactHeightfield.Draw();
         DrawContourSet(intermediates.GetContourSet());
         DrawPolyMesh(intermediates.GetMesh());
     }
@@ -96,89 +104,6 @@ internal class DebugNavmesh : IDisposable
         ImGui.Checkbox("Filter low-hanging obstacles", ref _navmesh.FilterLowHangingObstacles);
         ImGui.Checkbox("Filter ledges", ref _navmesh.FilterLedgeSpans);
         ImGui.Checkbox("Filter low-height spans", ref _navmesh.FilterWalkableLowHeightSpans);
-    }
-
-    private void DrawCompactHeightfield(RcCompactHeightfield hf)
-    {
-        using var n = _tree.Node("Compact heightfield");
-        if (n.SelectedOrHovered)
-            VisualizeCompactHeightfield(hf);
-        if (!n.Opened)
-            return;
-
-        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
-        _tree.LeafNode($"Num cells: {hf.width}x{hf.height}");
-        _tree.LeafNode($"Bounds: [{hf.bmin}] - [{hf.bmax}]");
-        _tree.LeafNode($"Cell size: {hf.cs}x{hf.ch}");
-        _tree.LeafNode($"Config: walkable height={hf.walkableHeight}, walkable climb={hf.walkableClimb}, border={hf.borderSize}");
-        _tree.LeafNode($"Count: spans={hf.spanCount}, max dist={hf.maxDistance}, max region id={hf.maxRegions}");
-        _tree.LeafNode($"Player's cell: {(playerPos.X - hf.bmin.X) / hf.cs}x{(playerPos.Y - hf.bmin.Y) / hf.ch}x{(playerPos.Z - hf.bmin.Z) / hf.cs}");
-
-        using (var nc = _tree.Node("Cells"))
-        {
-            if (nc.Opened)
-            {
-                for (int z = 0; z < hf.height; ++z)
-                {
-                    UITree.NodeRaii? nz = null;
-                    for (int x = 0; x < hf.width; ++x)
-                    {
-                        ref var cell = ref hf.cells[z * hf.width + x];
-                        if (cell.count == 0)
-                            continue;
-
-                        nz ??= _tree.Node($"[*x{z}]");
-                        if (!nz.Value.Opened)
-                            break;
-
-                        using var nx = _tree.Node($"[{x}x{z}]: {cell.count} spans starting from {cell.index}");
-                        if (nx.SelectedOrHovered)
-                            VisualizeCompactHeightfieldCell(hf, x, z, true);
-                        if (nx.Opened)
-                        {
-                            for (int i = 0; i < cell.count; ++i)
-                            {
-                                ref var span = ref hf.spans[cell.index + i];
-                                if (_tree.LeafNode($"y={span.y}+{span.h}, conn={RcCommons.GetCon(ref span, 0)} {RcCommons.GetCon(ref span, 1)} {RcCommons.GetCon(ref span, 2)} {RcCommons.GetCon(ref span, 3)}, reg={span.reg}, dist={hf.dist[i]}, area={hf.areas[i]}").SelectedOrHovered)
-                                    VisualizeCompactHeightfieldSpan(hf, x, z, cell.index + i, true);
-                            }
-                        }
-                    }
-                    nz?.Dispose();
-                }
-            }
-        }
-
-        using (var nr = _tree.Node($"Regions ({hf.maxRegions})###regions"))
-        {
-            if (nr.Opened)
-            {
-                for (int i = 0; i < hf.maxRegions; ++i)
-                {
-                    using var nreg = _tree.Node($"Region {i}");
-                    if (nreg.SelectedOrHovered)
-                        VisualizeCompactHeightfieldRegion(hf, i);
-                    if (!nreg.Opened)
-                        continue;
-                    for (int z = 0; z < hf.height; ++z)
-                    {
-                        for (int x = 0; x < hf.width; ++x)
-                        {
-                            ref var cell = ref hf.cells[z * hf.width + x];
-                            for (int idx = 0; idx < cell.count; ++idx)
-                            {
-                                ref var span = ref hf.spans[cell.index + idx];
-                                if (span.reg != i)
-                                    continue;
-
-                                if (_tree.LeafNode($"[{x}x{z}]: y={span.y}+{span.h}").SelectedOrHovered)
-                                    VisualizeCompactHeightfieldSpan(hf, x, z, cell.index + idx, true);
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     private void DrawContourSet(RcContourSet cs)
@@ -289,61 +214,6 @@ internal class DebugNavmesh : IDisposable
                         _tree.LeafNode($"Adjacency {j}: {mesh.polys[i * 2 * mesh.nvp + mesh.nvp + j]:X}");
                 }
             }
-        }
-    }
-
-    private void VisualizeCompactHeightfield(RcCompactHeightfield hf)
-    {
-        for (int z = 0; z < hf.height; ++z)
-            for (int x = 0; x < hf.width; ++x)
-                VisualizeCompactHeightfieldCell(hf, x, z, false);
-    }
-
-    private void VisualizeCompactHeightfieldRegion(RcCompactHeightfield hf, int reg)
-    {
-        for (int z = 0; z < hf.height; ++z)
-        {
-            for (int x = 0; x < hf.width; ++x)
-            {
-                ref var cell = ref hf.cells[z * hf.width + x];
-                for (int idx = 0; idx < cell.count; ++idx)
-                    if (hf.spans[cell.index + idx].reg == reg)
-                        VisualizeCompactHeightfieldSpan(hf, x, z, cell.index + idx, true);
-            }
-        }
-    }
-
-    private void VisualizeCompactHeightfieldCell(RcCompactHeightfield hf, int x, int z, bool showConnections)
-    {
-        ref var cell = ref hf.cells[z * hf.width + x];
-        for (int i = 0; i < cell.count; ++i)
-            VisualizeCompactHeightfieldSpan(hf, x, z, cell.index + i, showConnections);
-    }
-
-    private void VisualizeCompactHeightfieldSpan(RcCompactHeightfield hf, int x, int z, int spanIndex, bool showConnections)
-    {
-        ref var span = ref hf.spans[spanIndex];
-        var y1 = span.y + span.h;
-        if (y1 == RcConstants.SPAN_MAX_HEIGHT)
-            y1 = span.y + 1;
-        VisualizeAABB(hf.bmin, hf.cs, hf.ch, x, z, span.y, y1, new(1, hf.areas[spanIndex] == 0 ? 0 : 1, 0, 1));
-        if (!showConnections)
-            return;
-        for (int dir = 0; dir < 4; ++dir)
-        {
-            var conn = RcCommons.GetCon(ref span, dir);
-            if (conn == RcConstants.RC_NOT_CONNECTED)
-                continue;
-            int nx = x + RcCommons.GetDirOffsetX(dir);
-            int nz = z + RcCommons.GetDirOffsetY(dir);
-            ref var nc = ref hf.cells[nz * hf.width + nx];
-            ref var ns = ref hf.spans[nc.index + conn];
-            var ny1 = ns.y + ns.h;
-            if (ny1 == RcConstants.SPAN_MAX_HEIGHT)
-                ny1 = ns.y + 1;
-            var from = hf.bmin.RecastToSystem() + new Vector3(hf.cs * (x + 0.5f), hf.ch * (span.y + y1) * 0.5f, hf.cs * (z + 0.5f));
-            var to = hf.bmin.RecastToSystem() + new Vector3(hf.cs * (nx + 0.5f), hf.ch * (ns.y + ny1) * 0.5f, hf.cs * (nz + 0.5f));
-            _dd.DrawWorldLine(from, to, 0xff00ffff);
         }
     }
 

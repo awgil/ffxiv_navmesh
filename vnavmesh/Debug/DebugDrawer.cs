@@ -15,6 +15,7 @@ public unsafe class DebugDrawer : IDisposable
     public RenderTarget? RenderTarget { get; private set; }
     public EffectMesh EffectMesh { get; init; }
     public EffectBox EffectBox { get; init; }
+    public EffectQuad EffectQuad { get; init; }
 
     public SharpDX.Matrix ViewProj { get; private set; }
     public SharpDX.Matrix Proj { get; private set; }
@@ -39,6 +40,7 @@ public unsafe class DebugDrawer : IDisposable
     {
         EffectMesh = new(RenderContext);
         EffectBox = new(RenderContext);
+        EffectQuad = new(RenderContext);
 
         _engineCoreSingleton = Marshal.GetDelegateForFunctionPointer<GetEngineCoreSingletonDelegate>(Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 48 8D 4C 24 ?? 48 89 4C 24 ?? 4C 8D 4D ?? 4C 8D 44 24 ??"))();
         _meshDynamicData = new(RenderContext, 16 * 1024 * 1024, 16 * 1024 * 1024, 128 * 1024, true);
@@ -51,6 +53,7 @@ public unsafe class DebugDrawer : IDisposable
         _boxDynamicData.Dispose();
         _meshDynamicBuilder?.Dispose();
         _meshDynamicData.Dispose();
+        EffectQuad.Dispose();
         EffectBox.Dispose();
         EffectMesh.Dispose();
         RenderTarget?.Dispose();
@@ -67,8 +70,9 @@ public unsafe class DebugDrawer : IDisposable
         CameraAltitude = MathF.Asin(View.Column3.Y);
         ViewportSize = ReadVec2(_engineCoreSingleton + 0x1F4);
 
-        EffectBox.UpdateConstants(RenderContext, new() { ViewProj = ViewProj });
         EffectMesh.UpdateConstants(RenderContext, new() { ViewProj = ViewProj, LightingWorldYThreshold = 45.Degrees().Cos() });
+        EffectBox.UpdateConstants(RenderContext, new() { ViewProj = ViewProj });
+        EffectQuad.UpdateConstants(RenderContext, new() { ViewProj = ViewProj });
 
         if (RenderTarget == null || RenderTarget.Size != ViewportSize)
         {

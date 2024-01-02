@@ -49,8 +49,6 @@ public class DebugSolidHeightfield : IDisposable
     public void Draw()
     {
         using var nr = _tree.Node("Solid heightfield");
-        if (nr.SelectedOrHovered && (_visu != null || nr.Opened))
-            Visualize();
         if (!nr.Opened)
             return;
 
@@ -61,6 +59,8 @@ public class DebugSolidHeightfield : IDisposable
         _tree.LeafNode($"Border size: {_hf.borderSize}");
         _tree.LeafNode($"Player's cell: {(playerPos.X - _hf.bmin.X) / _hf.cs}x{(playerPos.Y - _hf.bmin.Y) / _hf.ch}x{(playerPos.Z - _hf.bmin.Z) / _hf.cs}");
         using var nc = _tree.Node("Cells");
+        if (nc.SelectedOrHovered)
+            Visualize();
         if (!nc.Opened)
             return;
 

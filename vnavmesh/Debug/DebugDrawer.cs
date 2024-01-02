@@ -110,15 +110,15 @@ public unsafe class DebugDrawer : IDisposable
         ImGui.Begin("world_overlay", ImGuiWindowFlags.NoInputs | ImGuiWindowFlags.NoNav | ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoBackground);
         ImGui.SetWindowSize(ImGui.GetIO().DisplaySize);
 
-        var dl = ImGui.GetWindowDrawList();
-        foreach (var l in _viewportLines)
-            dl.AddLine(l.from, l.to, l.col, l.thickness);
-        _viewportLines.Clear();
-
         if (RenderTarget != null)
         {
             ImGui.GetWindowDrawList().AddImage(RenderTarget.ImguiHandle, new(), new(RenderTarget.Size.X, RenderTarget.Size.Y));
         }
+
+        var dl = ImGui.GetWindowDrawList();
+        foreach (var l in _viewportLines)
+            dl.AddLine(l.from, l.to, l.col, l.thickness);
+        _viewportLines.Clear();
 
         ImGui.End();
         ImGui.PopStyleVar();
@@ -184,6 +184,56 @@ public unsafe class DebugDrawer : IDisposable
         var ps = WorldToScreen(pw);
         foreach (var (from, to) in AdjacentPairs(CurveApprox.Circle(ps, radius, 1)))
             _viewportLines.Add((from, to, color, thickness));
+    }
+
+    // arrow with pointer at p coming from the direction of q
+    public void DrawWorldArrowPoint(Vector3 p, Vector3 q, float l, uint color, int thickness = 1)
+    {
+        var pw = p.ToSharpDX();
+        var nearPlane = ViewProj.Column3;
+        if (SharpDX.Vector4.Dot(new(pw, 1), nearPlane) <= 0)
+            return;
+
+        var qw = q.ToSharpDX();
+        ClipLineToNearPlane(ref pw, ref qw);
+        var ps = WorldToScreen(pw);
+        var qs = WorldToScreen(qw);
+        var d = Vector2.Normalize(qs - ps) * l;
+        var n = new Vector2(-d.Y, d.X) * 0.5f;
+        _viewportLines.Add((ps, ps + d + n, color, thickness));
+        _viewportLines.Add((ps, ps + d - n, color, thickness));
+    }
+
+    public void DrawWorldArc(Vector3 a, Vector3 b, float h, float arrowA, float arrowB, uint color, int thickness = 1)
+    {
+        var delta = b - a;
+        var len = delta.Length();
+        h *= len;
+        Vector3 Eval(Vector3 from, Vector3 delta, float u)
+        {
+            var res = from + u * delta;
+            var coeff = u * 2 - 1;
+            res.Y += h * (1 - coeff * coeff);
+            return res;
+        };
+
+        const int NumPoints = 8;
+        const float u0 = 0.05f;
+        const float du = (1.0f - u0 * 2) / NumPoints;
+        var from = Eval(a, delta, u0);
+
+        if (arrowA > 1)
+            DrawWorldArrowPoint(from, Eval(a, delta, 2 * u0), arrowA, color, thickness);
+
+        for (int i = 1; i <= NumPoints; ++i)
+        {
+            var to = Eval(a, delta, u0 + i * du);
+            DrawWorldLine(from, to, color, thickness);
+            from = to;
+        }
+
+        if (arrowB > 1)
+            DrawWorldArrowPoint(from, Eval(a, delta, 1 - 2 * u0), arrowB, color, thickness);
     }
 
     private EffectMesh.Data.Builder GetDynamicMeshes() => _meshDynamicBuilder ??= _meshDynamicData.Map(RenderContext);

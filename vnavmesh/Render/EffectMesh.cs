@@ -5,6 +5,7 @@ using SharpDX.Direct3D11;
 using SharpDX.DXGI;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Vector3 = System.Numerics.Vector3;
 using Vector4 = System.Numerics.Vector4;
@@ -13,7 +14,7 @@ namespace Navmesh.Render;
 
 public class EffectMesh : IDisposable
 {
-    public record struct Mesh(int FirstVertex, int FirstPrimitive, int NumPrimitives, int NumInstances);
+    public record struct Mesh(int FirstVertex, int FirstPrimitive, int NumPrimitives, int FirstInstance, int NumInstances);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Constants
@@ -82,6 +83,7 @@ public class EffectMesh : IDisposable
                 if (nt == 0)
                     return;
 
+                var fi = _instances.CurElements;
                 var ni = 0;
                 foreach (var i in instances)
                 {
@@ -91,7 +93,7 @@ public class EffectMesh : IDisposable
                 if (ni == 0)
                     return;
 
-                _data._meshes.Add(new(_vertices.CurElements, _primitives.CurElements, nt, ni));
+                _data._meshes.Add(new(_vertices.CurElements, _primitives.CurElements, nt, fi, ni));
 
                 var nv = mesh.NumVertices();
                 for (int i = 0; i < nv; ++i)
@@ -102,6 +104,12 @@ public class EffectMesh : IDisposable
             }
 
             public void Add(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => Add(mesh, [new(world, color)]);
+
+            // manually fill the mesh
+            public void AddVertex(Vector3 v) => _vertices.Add(v);
+            public void AddTriangle(int v1, int v2, int v3) => _primitives.Add(new((v1, v2, v3)));
+            public void AddInstance(Instance i) => _instances.Add(ref i);
+            public void AddMesh(int firstVertex, int firstPrimitive, int numPrimitives, int firstInstance, int numInstances) => _data._meshes.Add(new(firstVertex, firstPrimitive, numPrimitives, firstInstance, numInstances));
         }
 
         private RenderBuffer<Vector3> _vertexBuffer;
@@ -126,17 +134,15 @@ public class EffectMesh : IDisposable
         public Builder Map(RenderContext ctx) => new(ctx, this);
 
         // Draw* should be called after EffectBox.Bind set up its state
-        public void DrawAll(RenderContext ctx)
+        public void DrawSubset(RenderContext ctx, int firstMesh, int numMeshes)
         {
             ctx.Context.InputAssembler.SetVertexBuffers(0, new VertexBufferBinding(_vertexBuffer.Buffer, _vertexBuffer.ElementSize, 0), new VertexBufferBinding(_instanceBuffer.Buffer, _instanceBuffer.ElementSize, 0));
             ctx.Context.InputAssembler.SetIndexBuffer(_primBuffer.Buffer, Format.R32_UInt, 0);
-            int startInst = 0;
-            foreach (var m in _meshes)
-            {
-                ctx.Context.DrawIndexedInstanced(m.NumPrimitives * 3, m.NumInstances, m.FirstPrimitive * 3, m.FirstVertex, startInst);
-                startInst += m.NumInstances;
-            }
+            foreach (var m in _meshes.Skip(firstMesh).Take(numMeshes))
+                ctx.Context.DrawIndexedInstanced(m.NumPrimitives * 3, m.NumInstances, m.FirstPrimitive * 3, m.FirstVertex, m.FirstInstance);
         }
+
+        public void DrawAll(RenderContext ctx) => DrawSubset(ctx, 0, _meshes.Count);
     }
 
     private SharpDX.Direct3D11.Buffer _constantBuffer;
@@ -298,5 +304,11 @@ public class EffectMesh : IDisposable
     {
         Bind(ctx, false);
         data.DrawAll(ctx);
+    }
+
+    public void DrawSingle(RenderContext ctx, Data data, int index)
+    {
+        Bind(ctx, false);
+        data.DrawSubset(ctx, index, 1);
     }
 }

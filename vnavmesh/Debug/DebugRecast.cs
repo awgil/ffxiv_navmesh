@@ -10,8 +10,13 @@ public abstract class DebugRecast : IDisposable
 
     public static void DrawBaseInfo(UITree _tree, int gridW, int gridH, RcVec3f bbMin, RcVec3f bbMax, float cellSize, float cellHeight)
     {
-        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
         _tree.LeafNode($"Num cells: {gridW}x{gridH}");
+        DrawBaseInfo(_tree, bbMin, bbMax, cellSize, cellHeight);
+    }
+
+    public static void DrawBaseInfo(UITree _tree, RcVec3f bbMin, RcVec3f bbMax, float cellSize, float cellHeight)
+    {
+        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
         _tree.LeafNode($"Bounds: [{bbMin}] - [{bbMax}]");
         _tree.LeafNode($"Cell size: {cellSize}x{cellHeight}");
         _tree.LeafNode($"Player's cell: {(int)((playerPos.X - bbMin.X) / cellSize)}x{(int)((playerPos.Y - bbMin.Y) / cellHeight)}x{(int)((playerPos.Z - bbMin.Z) / cellSize)}");

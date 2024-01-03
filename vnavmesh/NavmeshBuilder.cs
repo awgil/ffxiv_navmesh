@@ -1,13 +1,10 @@
-﻿using Dalamud.Memory;
-using DotRecast.Core;
+﻿using DotRecast.Core;
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
 using DotRecast.Recast.Geom;
 using DotRecast.Recast.Toolset.Builder;
 using DotRecast.Recast.Toolset.Tools;
-using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
-using FFXIVClientStructs.Interop;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -190,7 +187,7 @@ public class NavmeshBuilder : IDisposable
             }
 
             // 6. build contours around regions, then simplify them to reduce vertex count
-            // contour set is just a list of contours, each of which is a simple non-convex polygon that belong to a single region with a single area id
+            // contour set is just a list of contours, each of which is (when projected to XZ plane) a simple non-convex polygon that belong to a single region with a single area id
             Service.Log.Debug("[navmesh] tracing and simplyfing contours");
             RcContourSet cset = RcContours.BuildContours(telemetry, chf, cfg.MaxSimplificationError, cfg.MaxEdgeLen, RcBuildContoursFlags.RC_CONTOUR_TESS_WALL_EDGES);
 
@@ -198,9 +195,10 @@ public class NavmeshBuilder : IDisposable
             Service.Log.Debug("[navmesh] building polygon mesh from contours");
             RcPolyMesh pmesh = RcMeshs.BuildPolyMesh(telemetry, cset, cfg.MaxVertsPerPoly);
 
-            // 8. not sure about this, apparently this is needed to provide height information?..
-            Service.Log.Debug("[navmesh] creating detail mesh");
-            RcPolyMeshDetail? dmesh = cfg.BuildMeshDetail ? RcMeshDetails.BuildPolyMeshDetail(telemetry, pmesh, chf, cfg.DetailSampleDist, cfg.DetailSampleMaxError) : null;
+            // 8. split polygonal mesh into triangular mesh with correct height
+            // this step is optional?..
+            Service.Log.Debug("[navmesh] creating detail triangle mesh");
+            RcPolyMeshDetail dmesh = RcMeshDetails.BuildPolyMeshDetail(telemetry, pmesh, chf, cfg.DetailSampleDist, cfg.DetailSampleMaxError);
             var rcResult = new RcBuilderResult(0, 0, solid.Heightfield, chf, cset, pmesh, dmesh, telemetry);
 
             Service.Log.Debug("[navmesh] detour navmesh build");

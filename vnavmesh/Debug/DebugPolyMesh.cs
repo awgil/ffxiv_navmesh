@@ -1,5 +1,4 @@
 ﻿using DotRecast.Recast;
-using ImGuiNET;
 using Navmesh.Render;
 using System;
 using System.Numerics;
@@ -16,7 +15,6 @@ public class DebugPolyMesh : DebugRecast
     private static int _heightOffset = 0;
     private static Vector4 _colAreaNull = new(0, 0, 0, 0.25f);
     private static Vector4 _colAreaWalkable = new(0, 0.75f, 1.0f, 0.25f);
-    private static Vector4 AreaColor(int area) => area == 0 ? _colAreaNull : _colAreaWalkable; // TODO: other colors for other areas
 
     public DebugPolyMesh(RcPolyMesh mesh, UITree tree, DebugDrawer dd)
     {
@@ -32,10 +30,8 @@ public class DebugPolyMesh : DebugRecast
 
     public void Draw()
     {
-        using var n = _tree.Node("Poly mesh");
-        if (n.SelectedOrHovered)
-            Visualize();
-        if (!n.Opened)
+        using var nr = _tree.Node("Poly mesh");
+        if (!nr.Opened)
             return;
 
         DrawBaseInfo(_tree, _mesh.bmin, _mesh.bmax, _mesh.cs, _mesh.ch);
@@ -55,6 +51,10 @@ public class DebugPolyMesh : DebugRecast
 
         using (var np = _tree.Node($"Polygons ({_mesh.npolys})###polys"))
         {
+            if (np.SelectedOrHovered)
+            {
+                Visualize();
+            }
             if (np.Opened)
             {
                 for (int i = 0; i < _mesh.npolys; ++i)
@@ -131,23 +131,6 @@ public class DebugPolyMesh : DebugRecast
     {
         _dd.EffectMesh.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), index);
         VisualizeEdges(index);
-
-        var offset = index * _mesh.nvp * 2;
-        var color = ImGui.ColorConvertFloat4ToU32(AreaColor(_mesh.areas[index]));
-        if (_mesh.polys[offset] != RcConstants.RC_MESH_NULL_IDX)
-        {
-            var from = GetVertex(_mesh.polys[offset]);
-            for (int i = 1; i < _mesh.nvp; ++i)
-            {
-                var v = _mesh.polys[offset + i];
-                if (v == RcConstants.RC_MESH_NULL_IDX)
-                    break;
-                var to = GetVertex(v);
-                _dd.DrawWorldLine(from, to, color, 2);
-                from = to;
-            }
-            _dd.DrawWorldLine(from, GetVertex(_mesh.polys[offset]), color, 2);
-        }
     }
 
     private void VisualizeEdges(int index)

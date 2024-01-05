@@ -21,6 +21,7 @@ internal class DebugNavmesh : IDisposable
     private DebugContourSet? _drawContourSet;
     private DebugPolyMesh? _drawPolyMesh;
     private DebugPolyMeshDetail? _drawPolyMeshDetail;
+    private DebugDetourNavmesh? _drawNavmesh;
 
     public DebugNavmesh(DebugDrawer dd, NavmeshBuilder navmesh)
     {
@@ -36,6 +37,7 @@ internal class DebugNavmesh : IDisposable
         _drawContourSet?.Dispose();
         _drawPolyMesh?.Dispose();
         _drawPolyMeshDetail?.Dispose();
+        _drawNavmesh?.Dispose();
     }
 
     public void Draw()
@@ -58,6 +60,8 @@ internal class DebugNavmesh : IDisposable
                 _drawPolyMesh = null;
                 _drawPolyMeshDetail?.Dispose();
                 _drawPolyMeshDetail = null;
+                _drawNavmesh?.Dispose();
+                _drawNavmesh = null;
                 _navmesh.Rebuild();
                 _waypoints.Clear();
             }
@@ -102,6 +106,8 @@ internal class DebugNavmesh : IDisposable
         _drawPolyMesh.Draw();
         _drawPolyMeshDetail ??= new(intermediates.GetMeshDetail(), _tree, _dd);
         _drawPolyMeshDetail.Draw();
+        _drawNavmesh ??= new(_navmesh.Navmesh!, _navmesh.Query!, _tree, _dd);
+        _drawNavmesh.Draw();
     }
 
     private void DrawConfig()

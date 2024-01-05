@@ -117,6 +117,8 @@ public class EffectMesh : IDisposable
         private RenderBuffer<Instance> _instanceBuffer;
         private List<Mesh> _meshes = new();
 
+        public IReadOnlyList<Mesh> Meshes => _meshes;
+
         public Data(RenderContext ctx, int maxVertices, int maxPrimitives, int maxInstances, bool dynamic)
         {
             _vertexBuffer = new(ctx, maxVertices, BindFlags.VertexBuffer, dynamic);
@@ -133,16 +135,30 @@ public class EffectMesh : IDisposable
 
         public Builder Map(RenderContext ctx) => new(ctx, this);
 
-        // Draw* should be called after EffectBox.Bind set up its state
-        public void DrawSubset(RenderContext ctx, int firstMesh, int numMeshes)
+        // bind buffers without drawing - useful for drawing multiple meshes manually in a loop
+        public void Bind(RenderContext ctx)
         {
             ctx.Context.InputAssembler.SetVertexBuffers(0, new VertexBufferBinding(_vertexBuffer.Buffer, _vertexBuffer.ElementSize, 0), new VertexBufferBinding(_instanceBuffer.Buffer, _instanceBuffer.ElementSize, 0));
             ctx.Context.InputAssembler.SetIndexBuffer(_primBuffer.Buffer, Format.R32_UInt, 0);
-            foreach (var m in _meshes.Skip(firstMesh).Take(numMeshes))
-                ctx.Context.DrawIndexedInstanced(m.NumPrimitives * 3, m.NumInstances, m.FirstPrimitive * 3, m.FirstVertex, m.FirstInstance);
         }
 
-        public void DrawAll(RenderContext ctx) => DrawSubset(ctx, 0, _meshes.Count);
+        // draw custom mesh; assumes both effect and data were bound
+        public void DrawManual(RenderContext ctx, Mesh mesh) => ctx.Context.DrawIndexedInstanced(mesh.NumPrimitives * 3, mesh.NumInstances, mesh.FirstPrimitive * 3, mesh.FirstVertex, mesh.FirstInstance);
+
+        // Draw* should be called after EffectBox.Bind set up its state
+        public void DrawSubset(RenderContext ctx, int firstMesh, int numMeshes)
+        {
+            Bind(ctx);
+            foreach (var m in _meshes.Skip(firstMesh).Take(numMeshes))
+                DrawManual(ctx, m);
+        }
+
+        public void DrawAll(RenderContext ctx)
+        {
+            Bind(ctx);
+            foreach (var m in _meshes)
+                DrawManual(ctx, m);
+        }
     }
 
     private SharpDX.Direct3D11.Buffer _constantBuffer;

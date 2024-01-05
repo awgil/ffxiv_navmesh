@@ -34,6 +34,8 @@ public class NavmeshRasterizer
             if (!include)
                 continue;
 
+            //Service.Log.Debug($"rasterizing {mesh.Instances.Count} instances of '{name}'");
+            //bool debug = name == "bg/ffxiv/sea_s1/twn/common/collision/s1t0_iw0_ter2.pcb";
             foreach (var world in mesh.Instances)
             {
                 foreach (var part in mesh.Parts)
@@ -43,9 +45,9 @@ public class NavmeshRasterizer
                     foreach (var v in part.Vertices)
                     {
                         var w = world.TransformCoordinate(v);
-                        _vertices[iv++] = v.X;
-                        _vertices[iv++] = v.Y;
-                        _vertices[iv++] = v.Z;
+                        _vertices[iv++] = w.X;
+                        _vertices[iv++] = w.Y;
+                        _vertices[iv++] = w.Z;
                     }
 
                     foreach (var p in part.Primitives)

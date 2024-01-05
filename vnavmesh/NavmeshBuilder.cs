@@ -2,8 +2,6 @@
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
-using DotRecast.Recast.Geom;
-using DotRecast.Recast.Toolset.Builder;
 using DotRecast.Recast.Toolset.Tools;
 using System;
 using System.Collections.Generic;
@@ -37,40 +35,47 @@ public class NavmeshBuilder : IDisposable
     public bool FilterLedgeSpans = true;
     public bool FilterWalkableLowHeightSpans = true;
 
-    // result
-    private CollisionGeometryExtractor _extractor = new(); // should not be accessed while task is running
-    private RcBuilderResult? _intermediates; // valid only when task is not running
-    private Task<DtNavMesh>? _navmesh;
+    // results - should not be accessed while task is running
+    private CollisionGeometryExtractor _extractor = new();
+    private RcBuilderResult? _intermediates;
+    private DtNavMesh? _navmesh;
+    private DtNavMeshQuery? _query;
+    private Task? _task;
 
-    public State CurrentState => _navmesh == null ? State.NotBuilt : !_navmesh.IsCompleted ? State.InProgress : _navmesh.IsFaulted ? State.Failed : State.Ready;
+    public State CurrentState => _task == null ? State.NotBuilt : !_task.IsCompleted ? State.InProgress : _task.IsFaulted ? State.Failed : State.Ready;
     public CollisionGeometryExtractor CollisionGeometry => _extractor;
-    public RcBuilderResult? Intermediates => _intermediates;
-    public DtNavMesh? Navmesh => _navmesh != null && _navmesh.IsCompletedSuccessfully ? _navmesh.Result : null;
+    public RcBuilderResult? Intermediates => _task != null && _task.IsCompletedSuccessfully ? _intermediates : null;
+    public DtNavMesh? Navmesh => _task != null && _task.IsCompletedSuccessfully ? _navmesh : null;
+    public DtNavMeshQuery? Query => _task != null && _task.IsCompletedSuccessfully ? _query : null;
 
     public void Dispose()
     {
         // i really don't want to join here...
-        //_navmesh?.Dispose();
+        //_task?.Dispose();
     }
 
     public void Rebuild()
     {
+        if (_task != null && !_task.IsCompleted)
+            _task.Wait();
         _intermediates = null;
+        _navmesh = null;
+        _query = null;
         _extractor.Clear();
         Service.Log.Debug("[navmesh] extract from scene");
         _extractor.FillFromGame(1); // layer 0 is where collision geometry is
         Service.Log.Debug("[navmesh] schedule async build");
-        _navmesh = Task.Run(BuildNavmesh);
+        _task = Task.Run(BuildNavmesh);
     }
 
     public List<Vector3> Pathfind(Vector3 from, Vector3 to)
     {
         var res = new List<Vector3>();
         var navmesh = Navmesh;
-        if (navmesh != null)
+        var query = Query;
+        if (navmesh != null && query != null)
         {
             var tool = new RcTestNavMeshTool();
-            var query = new DtNavMeshQuery(navmesh);
             DtQueryDefaultFilter filter = new DtQueryDefaultFilter();
             var success = query.FindNearestPoly(new(from.X, from.Y, from.Z), new(2, 2, 2), filter, out var startRef, out _, out _);
             Service.Log.Debug($"[pathfind] findsrc={success.Value:X} {startRef}");
@@ -86,20 +91,7 @@ public class NavmeshBuilder : IDisposable
         return res;
     }
 
-    private class DummyProvider : IInputGeomProvider
-    {
-        public void AddConvexVolume(RcConvexVolume convexVolume) { }
-        public void AddOffMeshConnection(RcVec3f start, RcVec3f end, float radius, bool bidir, int area, int flags) { }
-        public IList<RcConvexVolume> ConvexVolumes() => [];
-        public RcTriMesh GetMesh() => new([], []);
-        public RcVec3f GetMeshBoundsMax() => default;
-        public RcVec3f GetMeshBoundsMin() => default;
-        public List<RcOffMeshConnection> GetOffMeshConnections() => [];
-        public IEnumerable<RcTriMesh> Meshes() => Enumerable.Empty<RcTriMesh>();
-        public void RemoveOffMeshConnections(Predicate<RcOffMeshConnection> filter) { }
-    }
-
-    private DtNavMesh BuildNavmesh()
+    private void BuildNavmesh()
     {
         try
         {
@@ -194,6 +186,8 @@ public class NavmeshBuilder : IDisposable
             // 7. triangulate contours to build a mesh of convex polygons with adjacency information
             Service.Log.Debug("[navmesh] building polygon mesh from contours");
             RcPolyMesh pmesh = RcMeshs.BuildPolyMesh(telemetry, cset, cfg.MaxVertsPerPoly);
+            for (int i = 0; i < pmesh.npolys; ++i)
+                pmesh.flags[i] = 1;
 
             // 8. split polygonal mesh into triangular mesh with correct height
             // this step is optional?..
@@ -201,18 +195,40 @@ public class NavmeshBuilder : IDisposable
             RcPolyMeshDetail dmesh = RcMeshDetails.BuildPolyMeshDetail(telemetry, pmesh, chf, cfg.DetailSampleDist, cfg.DetailSampleMaxError);
             var rcResult = new RcBuilderResult(0, 0, solid.Heightfield, chf, cset, pmesh, dmesh, telemetry);
 
+            // 9. create detour navmesh
             Service.Log.Debug("[navmesh] detour navmesh build");
-            DtNavMeshCreateParams navmeshConfig = DemoNavMeshBuilder.GetNavMeshCreateParams(new DummyProvider(), CellSize, CellHeight, AgentHeight, AgentRadius, AgentMaxClimb, rcResult);
-            var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
-            if (navmeshData == null)
-                throw new Exception("Failed to create DtMeshData");
-            DemoNavMeshBuilder.UpdateAreaAndFlags(navmeshData);
+            var navmeshConfig = new DtNavMeshCreateParams()
+            {
+                verts = pmesh.verts,
+                vertCount = pmesh.nverts,
+                polys = pmesh.polys,
+                polyFlags = pmesh.flags,
+                polyAreas = pmesh.areas,
+                polyCount = pmesh.npolys,
+                nvp = pmesh.nvp,
 
+                detailMeshes = dmesh.meshes,
+                detailVerts = dmesh.verts,
+                detailVertsCount = dmesh.nverts,
+                detailTris = dmesh.tris,
+                detailTriCount = dmesh.ntris,
+
+                bmin = pmesh.bmin,
+                bmax = pmesh.bmax,
+                walkableHeight = AgentHeight,
+                walkableRadius = AgentRadius,
+                walkableClimb = AgentMaxClimb,
+                cs = CellSize,
+                ch = CellHeight,
+                buildBvTree = true,
+            };
+            var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
             var navmesh = new DtNavMesh(navmeshData, VertsPerPoly, 0);
 
             Service.Log.Debug("[navmesh] end");
             _intermediates = rcResult;
-            return navmesh;
+            _navmesh = navmesh;
+            _query = new DtNavMeshQuery(navmesh);
         }
         catch (Exception ex)
         {

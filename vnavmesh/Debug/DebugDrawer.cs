@@ -36,6 +36,7 @@ public unsafe class DebugDrawer : IDisposable
     private EffectBox.Data.Builder? _boxDynamicBuilder;
 
     private List<(Vector2 from, Vector2 to, uint col, int thickness)> _viewportLines = new();
+    private List<(Vector2 center, float radius, uint color)> _viewportCircles = new();
 
     public DebugDrawer()
     {
@@ -101,9 +102,6 @@ public unsafe class DebugDrawer : IDisposable
 
         RenderContext.Execute();
 
-        //if (_viewportLines.Count == 0)
-        //    return;
-
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
         ImGuiHelpers.ForceNextWindowMainViewport();
         ImGuiHelpers.SetNextWindowPosRelativeMainViewport(new Vector2(0, 0));
@@ -118,7 +116,10 @@ public unsafe class DebugDrawer : IDisposable
         var dl = ImGui.GetWindowDrawList();
         foreach (var l in _viewportLines)
             dl.AddLine(l.from, l.to, l.col, l.thickness);
+        foreach (var c in _viewportCircles)
+            dl.AddCircleFilled(c.center, c.radius, c.color);
         _viewportLines.Clear();
+        _viewportCircles.Clear();
 
         ImGui.End();
         ImGui.PopStyleVar();
@@ -184,6 +185,15 @@ public unsafe class DebugDrawer : IDisposable
         var ps = WorldToScreen(pw);
         foreach (var (from, to) in AdjacentPairs(CurveApprox.Circle(ps, radius, 1)))
             _viewportLines.Add((from, to, color, thickness));
+    }
+
+    public void DrawWorldPointFilled(Vector3 p, float radius, uint color)
+    {
+        var pw = p.ToSharpDX();
+        var nearPlane = ViewProj.Column3;
+        if (SharpDX.Vector4.Dot(new(pw, 1), nearPlane) <= 0)
+            return;
+        _viewportCircles.Add((WorldToScreen(pw), radius, color));
     }
 
     // arrow with pointer at p coming from the direction of q

@@ -80,10 +80,10 @@ public class RenderBuffer<T> : IDisposable where T : unmanaged
         dynamic = true; // TODO: figure why it doesn't work as expected..
         Dynamic = dynamic;
         ElementSize = sizeof(T);
-        MaxElements = maxElements;
+        MaxElements = Math.Max(1, maxElements);
         Buffer = new(ctx.Device, new()
         {
-            SizeInBytes = ElementSize * maxElements,
+            SizeInBytes = ElementSize * MaxElements,
             Usage = dynamic ? ResourceUsage.Dynamic : ResourceUsage.Default,
             BindFlags = bindFlags,
             CpuAccessFlags = dynamic ? CpuAccessFlags.Write : CpuAccessFlags.None,

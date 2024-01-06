@@ -7,21 +7,18 @@ namespace Navmesh;
 // utility to rasterize various meshes into a heightfield
 public class NavmeshRasterizer
 {
-    public RcHeightfield Heightfield;
-    private RcConfig _cfg;
+    private RcHeightfield _heightfield;
     private RcTelemetry _telemetry;
     private float[] _vertices = new float[3 * 256];
+    private int _walkableClimbThreshold; // if two spans have maximums within this number of voxels, their area is 'merged' (higher is selected)
     private float _walkableNormalThreshold; // triangle is considered 'walkable' if it's world-space normal's Y coordinate is >= this
 
-    public NavmeshRasterizer(RcConfig cfg, Vector3 bbMin, Vector3 bbMax, RcTelemetry telemetry)
+    public NavmeshRasterizer(RcHeightfield heightfield, Angle walkableMaxSlope, int walkableMaxClimb, RcTelemetry telemetry)
     {
-        var rcMin = bbMin.SystemToRecast();
-        var rcMax = bbMax.SystemToRecast();
-        RcCommons.CalcGridSize(rcMin, rcMax, cfg.Cs, out var width, out var height);
-        Heightfield = new RcHeightfield(width, height, rcMin, rcMax, cfg.Cs, cfg.Ch, cfg.BorderSize);
-        _cfg = cfg;
+        _heightfield = heightfield;
         _telemetry = telemetry;
-        _walkableNormalThreshold = cfg.WalkableSlopeAngle.Degrees().Cos();
+        _walkableClimbThreshold = walkableMaxClimb;
+        _walkableNormalThreshold = walkableMaxSlope.Cos();
     }
 
     public unsafe void Rasterize(CollisionGeometryExtractor geom, bool includeStreamed, bool includeLooseMeshes, bool includeAnalytic)
@@ -34,22 +31,24 @@ public class NavmeshRasterizer
             if (!include)
                 continue;
 
-            //Service.Log.Debug($"rasterizing {mesh.Instances.Count} instances of '{name}'");
-            //bool debug = name == "bg/ffxiv/sea_s1/twn/common/collision/s1t0_iw0_ter2.pcb";
-            foreach (var world in mesh.Instances)
+            foreach (var inst in mesh.Instances)
             {
+                if (inst.WorldBounds.Max.X <= _heightfield.bmin.X || inst.WorldBounds.Max.Z <= _heightfield.bmin.Z || inst.WorldBounds.Min.X >= _heightfield.bmax.X || inst.WorldBounds.Min.Z >= _heightfield.bmax.Z)
+                    continue;
+
                 foreach (var part in mesh.Parts)
                 {
                     // fill vertex buffer
                     int iv = 0;
                     foreach (var v in part.Vertices)
                     {
-                        var w = world.TransformCoordinate(v);
+                        var w = inst.WorldTransform.TransformCoordinate(v);
                         _vertices[iv++] = w.X;
                         _vertices[iv++] = w.Y;
                         _vertices[iv++] = w.Z;
                     }
 
+                    // TODO: move area-id calculations to extraction step + store indices in a form that allows using RasterizeTriangles()
                     foreach (var p in part.Primitives)
                     {
                         var v1 = CachedVertex(p.v1);
@@ -58,8 +57,8 @@ public class NavmeshRasterizer
                         var v12 = v2 - v1;
                         var v13 = v3 - v1;
                         var normal = Vector3.Normalize(Vector3.Cross(v12, v13));
-                        var areaId = normal.Y >= _walkableNormalThreshold ? _cfg.WalkableAreaMod.Value : 0;
-                        RcRasterizations.RasterizeTriangle(Heightfield, _vertices, p.v1, p.v2, p.v3, areaId, _cfg.WalkableClimb, _telemetry);
+                        var areaId = normal.Y >= _walkableNormalThreshold ? RcConstants.RC_WALKABLE_AREA : 0;
+                        RcRasterizations.RasterizeTriangle(_heightfield, _vertices, p.v1, p.v2, p.v3, areaId, _walkableClimbThreshold, _telemetry);
                     }
                 }
             }

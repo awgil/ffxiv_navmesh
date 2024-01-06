@@ -1,10 +1,5 @@
 ﻿using DotRecast.Detour;
-using DotRecast.Recast;
-using FFXIVClientStructs.FFXIV.Client.Game.MJI;
-using FFXIVClientStructs.FFXIV.Client.Game.UI;
-using ImGuiNET;
 using Navmesh.Render;
-using System;
 using System.Numerics;
 
 namespace Navmesh.Debug;
@@ -23,7 +18,6 @@ public class DebugDetourNavmesh : DebugRecast
     private DebugDrawer _dd;
     private PerTile[] _perTile;
 
-    private static bool _colorByArea = true;
     private static Vector4 _colAreaNull = new(0, 0, 0, 0.25f);
     private static Vector4 _colAreaWalkable = new(0, 0.75f, 1.0f, 0.5f);
     private static Vector4 _colClosedList = new(1.0f, 0.75f, 1.0f, 0.5f);
@@ -53,8 +47,6 @@ public class DebugDetourNavmesh : DebugRecast
         if (!nr.Opened)
             return;
 
-        ImGui.Checkbox("Color by area instead of by tile index", ref _colorByArea);
-
         ref readonly var param = ref _navmesh.GetParams();
         _tree.LeafNode($"Origin: {param.orig}");
         _tree.LeafNode($"Tile size: {param.tileWidth:f3}x{param.tileHeight:f3} (max {param.maxPolys} polys per tile)");
@@ -70,8 +62,6 @@ public class DebugDetourNavmesh : DebugRecast
                 if (tile.data == null)
                     continue;
                 using var ntile = _tree.Node($"Tile {i} at {tile.data.header.x}x{tile.data.header.y}x{tile.data.header.layer}: flags={tile.flags:X}, salt={tile.salt}, base poly ref={_navmesh.GetPolyRefBase(tile):X}###{i}");
-                if (ntile.SelectedOrHovered)
-                    VisualizeTile(tile);
                 if (!ntile.Opened)
                     continue;
 
@@ -81,7 +71,7 @@ public class DebugDetourNavmesh : DebugRecast
                 using (var np = _tree.Node($"Polygons ({tile.data.header.polyCount})"))
                 {
                     if (np.SelectedOrHovered)
-                        VisualizeRoughPolygons(tile);
+                        VisualizeRoughPolygons(tile, true);
                     if (np.Opened)
                     {
                         for (int j = 0; j < tile.data.header.polyCount; ++j)
@@ -89,7 +79,7 @@ public class DebugDetourNavmesh : DebugRecast
                             var p = tile.data.polys[j];
                             using var ntri = _tree.Node($"{p.index}: {p.vertCount} vertices, flags={p.flags:X}, area={p.GetArea()}, polytype={p.GetPolyType()}");
                             if (ntri.SelectedOrHovered)
-                                VisualizeRoughPolygon(tile, p);
+                                VisualizeRoughPolygon(tile, p, true);
                             if (ntri.Opened)
                             {
                                 for (int k = 0; k < p.vertCount; ++k)
@@ -113,7 +103,7 @@ public class DebugDetourNavmesh : DebugRecast
                 using (var nd = _tree.Node($"Detail ({tile.data.header.detailMeshCount} submeshes, {tile.data.header.detailVertCount} total verts, {tile.data.header.detailTriCount} total prims)"))
                 {
                     if (nd.SelectedOrHovered)
-                        VisualizeDetailPolygons(tile);
+                        VisualizeDetailPolygons(tile, true);
                     if (nd.Opened)
                     {
                         for (int j = 0; j < tile.data.header.detailMeshCount; ++j)
@@ -122,7 +112,7 @@ public class DebugDetourNavmesh : DebugRecast
                             ref var sub = ref tile.data.detailMeshes[j];
                             using var nsub = _tree.Node($"{j}: base verts={poly.vertCount}");
                             if (nsub.SelectedOrHovered)
-                                VisualizeDetailSubmesh(tile, j);
+                                VisualizeDetailSubmesh(tile, j, true);
                             if (!nsub.Opened)
                                 continue;
 
@@ -266,41 +256,36 @@ public class DebugDetourNavmesh : DebugRecast
         {
             var tile = _navmesh.GetTile(i);
             if (tile.data != null)
-                VisualizeTile(tile);
+                VisualizeDetailPolygons(tile, false);
         }
     }
 
-    private void VisualizeTile(DtMeshTile tile)
-    {
-        // TODO: ...
-    }
-
-    private void VisualizeRoughPolygons(DtMeshTile tile)
+    private void VisualizeRoughPolygons(DtMeshTile tile, bool colorByArea)
     {
         var visu = GetOrInitVisualizerRough(tile.index);
         _dd.EffectMesh.Bind(_dd.RenderContext, false);
         visu.Bind(_dd.RenderContext);
         for (int i = 0; i < tile.data.header.polyCount; ++i)
-            VisualizeRoughPolygon(tile, visu, tile.data.polys[i], false);
+            VisualizeRoughPolygon(tile, visu, tile.data.polys[i], colorByArea, false);
     }
 
-    private void VisualizeRoughPolygon(DtMeshTile tile, DtPoly poly)
+    private void VisualizeRoughPolygon(DtMeshTile tile, DtPoly poly, bool colorByArea)
     {
         var visu = GetOrInitVisualizerRough(tile.index);
         _dd.EffectMesh.Bind(_dd.RenderContext, false);
         visu.Bind(_dd.RenderContext);
-        VisualizeRoughPolygon(tile, visu, poly, true);
+        VisualizeRoughPolygon(tile, visu, poly, colorByArea, true);
     }
 
     // effect + data are expected to be already bound
-    private void VisualizeRoughPolygon(DtMeshTile tile, EffectMesh.Data visu, DtPoly poly, bool highlight)
+    private void VisualizeRoughPolygon(DtMeshTile tile, EffectMesh.Data visu, DtPoly poly, bool colorByArea, bool highlight)
     {
         if (poly.GetPolyType() != DtPolyTypes.DT_POLYTYPE_OFFMESH_CONNECTION)
         {
             if (poly.vertCount < 3)
                 return;
             // triangles
-            var instance = _query.IsInClosedList(DtNavMesh.EncodePolyId(tile.salt, tile.index, poly.index)) ? InstanceID.ClosedList : !_colorByArea ? InstanceID.Tile : poly.GetArea() == 0 ? InstanceID.AreaNull : InstanceID.AreaWalkable;
+            var instance = _query.IsInClosedList(DtNavMesh.EncodePolyId(tile.salt, tile.index, poly.index)) ? InstanceID.ClosedList : !colorByArea ? InstanceID.Tile : poly.GetArea() == 0 ? InstanceID.AreaNull : InstanceID.AreaWalkable;
             var mesh = visu.Meshes[poly.index] with { FirstInstance = (int)instance };
             visu.DrawManual(_dd.RenderContext, mesh);
 
@@ -344,13 +329,13 @@ public class DebugDetourNavmesh : DebugRecast
         }
     }
 
-    private void VisualizeDetailPolygons(DtMeshTile tile)
+    private void VisualizeDetailPolygons(DtMeshTile tile, bool colorByArea)
     {
         var visu = GetOrInitVisualizerDetail(tile.index);
         _dd.EffectMesh.Bind(_dd.RenderContext, false);
         visu.Bind(_dd.RenderContext);
         for (int i = 0; i < tile.data.header.detailMeshCount; ++i)
-            VisualizeDetailSubmeshWithEdges(tile, visu, tile.data.polys[i], false);
+            VisualizeDetailSubmeshWithEdges(tile, visu, tile.data.polys[i], colorByArea, false);
 
         // all vertices
         for (int i = 0; i < tile.data.header.vertCount; ++i)
@@ -359,7 +344,7 @@ public class DebugDetourNavmesh : DebugRecast
             _dd.DrawWorldPointFilled(GetDetailVertex(tile, i), 2, 0xff0000ff);
     }
 
-    private void VisualizeDetailSubmesh(DtMeshTile tile, int index)
+    private void VisualizeDetailSubmesh(DtMeshTile tile, int index, bool colorByArea)
     {
         var poly = tile.data.polys[index];
         ref var sub = ref tile.data.detailMeshes[poly.index];
@@ -367,7 +352,7 @@ public class DebugDetourNavmesh : DebugRecast
         var visu = GetOrInitVisualizerDetail(tile.index);
         _dd.EffectMesh.Bind(_dd.RenderContext, false);
         visu.Bind(_dd.RenderContext);
-        VisualizeDetailSubmeshWithEdges(tile, visu, poly, true);
+        VisualizeDetailSubmeshWithEdges(tile, visu, poly, colorByArea, true);
 
         // vertices
         for (int i = 0; i < poly.vertCount; ++i)
@@ -376,10 +361,10 @@ public class DebugDetourNavmesh : DebugRecast
             _dd.DrawWorldPointFilled(GetDetailVertex(tile, sub.vertBase + i), 2, 0xff0000ff);
     }
 
-    private void VisualizeDetailSubmeshWithEdges(DtMeshTile tile, EffectMesh.Data visu, DtPoly poly, bool highlight)
+    private void VisualizeDetailSubmeshWithEdges(DtMeshTile tile, EffectMesh.Data visu, DtPoly poly, bool colorByArea, bool highlight)
     {
         // triangles
-        var instance = _query.IsInClosedList(DtNavMesh.EncodePolyId(tile.salt, tile.index, poly.index)) ? InstanceID.ClosedList : !_colorByArea ? InstanceID.Tile : poly.GetArea() == 0 ? InstanceID.AreaNull : InstanceID.AreaWalkable;
+        var instance = _query.IsInClosedList(DtNavMesh.EncodePolyId(tile.salt, tile.index, poly.index)) ? InstanceID.ClosedList : !colorByArea ? InstanceID.Tile : poly.GetArea() == 0 ? InstanceID.AreaNull : InstanceID.AreaWalkable;
         var mesh = visu.Meshes[poly.index] with { FirstInstance = (int)instance };
         visu.DrawManual(_dd.RenderContext, mesh);
 

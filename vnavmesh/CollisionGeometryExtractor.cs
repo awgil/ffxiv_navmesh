@@ -30,10 +30,12 @@ public class CollisionGeometryExtractor
         public List<(int v1, int v2, int v3)> Primitives = new();
     }
 
+    public record struct MeshInstance(Matrix4x3 WorldTransform, AABB WorldBounds);
+
     public class Mesh
     {
         public List<MeshPart> Parts = new();
-        public List<Matrix4x3> Instances = new(); // world transforms
+        public List<MeshInstance> Instances = new();
         public Flags Flags;
     }
 
@@ -86,37 +88,37 @@ public class CollisionGeometryExtractor
                 {
                     case ColliderType.Streamed:
                         var collStreamed = (ColliderStreamed*)coll;
-                        if (collStreamed->Header == null || collStreamed->Elements == null)
+                        if (collStreamed->Header == null || collStreamed->Entries == null || collStreamed->Elements == null)
                             continue; // not loaded yet; TODO: consider just grabbing filename and loading it manually in background?..
                         var basePath = MemoryHelper.ReadStringNullTerminated((nint)collStreamed->PathBase);
                         AddBounds(ref collStreamed->Header->Bounds);
-                        foreach (ref var e in new Span<ColliderStreamed.Element>(collStreamed->Elements, collStreamed->Header->NumMeshes))
-                            AddInstance($"{basePath}/tr{e.MeshId:d4}.pcb", ref Matrix4x3.Identity, e.Mesh == null, Flags.FromFileMesh | Flags.FromStreamed); // add only if it's not streamed in, otherwise we'll add it while processing other collider
+                        for (int i = 0; i < collStreamed->Header->NumMeshes; ++i)
+                        {
+                            ref var e = ref collStreamed->Entries[i];
+                            AddInstance($"{basePath}/tr{e.MeshId:d4}.pcb", ref Matrix4x3.Identity, ref e.Bounds, collStreamed->Elements[i].Mesh == null, Flags.FromFileMesh | Flags.FromStreamed); // add only if it's not streamed in, otherwise we'll add it while processing other collider
+                        }
                         break;
                     case ColliderType.Mesh:
                         var collMesh = (ColliderMesh*)coll;
                         if (collMesh->MeshIsSimple)
                             continue; // TODO: if we ever get such meshes, reverse the format and add them too
-                        AddBounds(ref collMesh->WorldBoundingBox);
-                        if (collMesh->Resource != null)
-                            AddInstance(MemoryHelper.ReadStringNullTerminated((nint)collMesh->Resource->Path), ref collMesh->World, true, Flags.FromFileMesh);
-                        else // assume it's a cylinder placeholder
-                            AddInstance(_keyMeshCylinder, ref collMesh->World, true, Flags.None);
+                        var key = collMesh->Resource != null ? MemoryHelper.ReadStringNullTerminated((nint)collMesh->Resource->Path) : _keyMeshCylinder; // assume it's a cylinder placeholder if not loaded from file
+                        AddInstance(key, ref collMesh->World, ref collMesh->WorldBoundingBox, true, collMesh->Resource != null ? Flags.FromFileMesh : Flags.None);
                         break;
                     case ColliderType.Box:
                         var collBox = (ColliderBox*)coll;
-                        AddBounds(coll);
-                        AddInstance(_keyAnalyticBox, ref collBox->World, true, Flags.None);
+                        var bbBox = GetWorldBounds(coll);
+                        AddInstance(_keyAnalyticBox, ref collBox->World, ref bbBox, true, Flags.None);
                         break;
                     case ColliderType.Cylinder:
                         var collCylinder = (ColliderCylinder*)coll;
-                        AddBounds(coll);
-                        AddInstance(_keyAnalyticCylinder, ref collCylinder->World, true, Flags.None);
+                        var bbCylinder = GetWorldBounds(coll);
+                        AddInstance(_keyAnalyticCylinder, ref collCylinder->World, ref bbCylinder, true, Flags.None);
                         break;
                     case ColliderType.Sphere:
                         var collSphere = (ColliderSphere*)coll;
-                        AddBounds(coll);
-                        AddInstance(_keyAnalyticSphere, ref collSphere->World, true, Flags.None);
+                        var bbSphere = GetWorldBounds(coll);
+                        AddInstance(_keyAnalyticSphere, ref collSphere->World, ref bbSphere, true, Flags.None);
                         break;
                 }
             }
@@ -131,26 +133,27 @@ public class CollisionGeometryExtractor
                 FillFromFile(name, value);
     }
 
-    private void AddInstance(string key, ref Matrix4x3 world, bool add, Flags flags)
+    private void AddInstance(string key, ref Matrix4x3 worldTransform, ref AABB worldBounds, bool add, Flags flags)
     {
         if (!Meshes.TryGetValue(key, out var mesh))
             Meshes[key] = mesh = new();
         if (add)
-            mesh.Instances.Add(world);
+            mesh.Instances.Add(new(worldTransform, worldBounds));
         mesh.Flags |= flags;
-    }
-
-    private unsafe void AddBounds(Collider* coll)
-    {
-        AABB bb = new();
-        coll->GetWorldBB(&bb);
-        AddBounds(ref bb);
+        AddBounds(ref worldBounds);
     }
 
     private void AddBounds(ref AABB worldBB)
     {
         BoundsMin = Vector3.Min(BoundsMin, worldBB.Min);
         BoundsMax = Vector3.Max(BoundsMax, worldBB.Max);
+    }
+
+    private unsafe AABB GetWorldBounds(Collider* coll)
+    {
+        AABB bb = new();
+        coll->GetWorldBB(&bb);
+        return bb;
     }
 
     private unsafe void FillFromFile(string path, Mesh mesh)

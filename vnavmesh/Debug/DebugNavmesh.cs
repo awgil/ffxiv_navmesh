@@ -9,6 +9,25 @@ namespace Navmesh.Debug;
 
 internal class DebugNavmesh : IDisposable
 {
+    // TODO: should each debug drawer handle tiled geometry itself?
+    private class PerTile : IDisposable
+    {
+        public DebugSolidHeightfield? DrawSolidHeightfield;
+        public DebugCompactHeightfield? DrawCompactHeightfield;
+        public DebugContourSet? DrawContourSet;
+        public DebugPolyMesh? DrawPolyMesh;
+        public DebugPolyMeshDetail? DrawPolyMeshDetail;
+
+        public void Dispose()
+        {
+            DrawSolidHeightfield?.Dispose();
+            DrawCompactHeightfield?.Dispose();
+            DrawContourSet?.Dispose();
+            DrawPolyMesh?.Dispose();
+            DrawPolyMeshDetail?.Dispose();
+        }
+    }
+
     private NavmeshBuilder _navmesh;
     private Vector3 _target;
     private List<Vector3> _waypoints = new();
@@ -16,11 +35,7 @@ internal class DebugNavmesh : IDisposable
     private UITree _tree = new();
     private DebugDrawer _dd;
     private DebugExtractedCollision? _drawExtracted;
-    private DebugSolidHeightfield? _drawSolidHeightfield;
-    private DebugCompactHeightfield? _drawCompactHeightfield;
-    private DebugContourSet? _drawContourSet;
-    private DebugPolyMesh? _drawPolyMesh;
-    private DebugPolyMeshDetail? _drawPolyMeshDetail;
+    private PerTile[,]? _debugTiles;
     private DebugDetourNavmesh? _drawNavmesh;
 
     public DebugNavmesh(DebugDrawer dd, NavmeshBuilder navmesh)
@@ -32,17 +47,17 @@ internal class DebugNavmesh : IDisposable
     public void Dispose()
     {
         _drawExtracted?.Dispose();
-        _drawSolidHeightfield?.Dispose();
-        _drawCompactHeightfield?.Dispose();
-        _drawContourSet?.Dispose();
-        _drawPolyMesh?.Dispose();
-        _drawPolyMeshDetail?.Dispose();
+        if (_debugTiles != null)
+            foreach (var t in _debugTiles)
+                t?.Dispose();
         _drawNavmesh?.Dispose();
     }
 
     public void Draw()
     {
-        DrawConfig();
+        using (var nsettings = _tree.Node("Navmesh properties"))
+            if (nsettings.Opened)
+                _navmesh.Settings.Draw();
 
         using (var d = ImRaii.Disabled(_navmesh.CurrentState == NavmeshBuilder.State.InProgress))
         {
@@ -50,16 +65,10 @@ internal class DebugNavmesh : IDisposable
             {
                 _drawExtracted?.Dispose();
                 _drawExtracted = null;
-                _drawSolidHeightfield?.Dispose();
-                _drawSolidHeightfield = null;
-                _drawCompactHeightfield?.Dispose();
-                _drawCompactHeightfield = null;
-                _drawContourSet?.Dispose();
-                _drawContourSet = null;
-                _drawPolyMesh?.Dispose();
-                _drawPolyMesh = null;
-                _drawPolyMeshDetail?.Dispose();
-                _drawPolyMeshDetail = null;
+                if (_debugTiles != null)
+                    foreach (var t in _debugTiles)
+                        t.Dispose();
+                _debugTiles = null;
                 _drawNavmesh?.Dispose();
                 _drawNavmesh = null;
                 _navmesh.Rebuild();
@@ -93,36 +102,46 @@ internal class DebugNavmesh : IDisposable
             }
         }
 
-        var intermediates = _navmesh.Intermediates!;
+        var navmesh = _navmesh.Navmesh!;
+        navmesh.CalcTileLoc((Service.ClientState.LocalPlayer?.Position ?? default).SystemToRecast(), out var playerTileX, out var playerTileZ);
+        _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
+
         _drawExtracted ??= new(_navmesh.CollisionGeometry, _tree, _dd);
         _drawExtracted.Draw();
-        _drawSolidHeightfield ??= new(intermediates.GetSolidHeightfield(), _tree, _dd);
-        _drawSolidHeightfield.Draw();
-        _drawCompactHeightfield ??= new(intermediates.GetCompactHeightfield(), _tree, _dd);
-        _drawCompactHeightfield.Draw();
-        _drawContourSet ??= new(intermediates.GetContourSet(), _tree, _dd);
-        _drawContourSet.Draw();
-        _drawPolyMesh ??= new(intermediates.GetMesh(), _tree, _dd);
-        _drawPolyMesh.Draw();
-        _drawPolyMeshDetail ??= new(intermediates.GetMeshDetail(), _tree, _dd);
-        _drawPolyMeshDetail.Draw();
-        _drawNavmesh ??= new(_navmesh.Navmesh!, _navmesh.Query!, _tree, _dd);
+        var intermediates = _navmesh.Intermediates;
+        if (intermediates != null)
+        {
+            using var n = _tree.Node("Intermediates");
+            if (n.Opened)
+            {
+                _debugTiles ??= new PerTile[intermediates.NumTilesX, intermediates.NumTilesZ];
+                for (int z = 0; z < intermediates.NumTilesZ; ++z)
+                {
+                    for (int x = 0; x < intermediates.NumTilesX; ++x)
+                    {
+                        using var nt = _tree.Node($"Tile {x}x{z}");
+                        if (!nt.Opened)
+                            continue;
+
+                        var debug = _debugTiles[x, z] ??= new();
+                        debug.DrawSolidHeightfield ??= new(intermediates.SolidHeightfields[x, z], _tree, _dd);
+                        debug.DrawSolidHeightfield.Draw();
+                        debug.DrawCompactHeightfield ??= new(intermediates.CompactHeightfields[x, z], _tree, _dd);
+                        debug.DrawCompactHeightfield.Draw();
+                        debug.DrawContourSet ??= new(intermediates.ContourSets[x, z], _tree, _dd);
+                        debug.DrawContourSet.Draw();
+                        debug.DrawPolyMesh ??= new(intermediates.PolyMeshes[x, z], _tree, _dd);
+                        debug.DrawPolyMesh.Draw();
+                        if (intermediates.DetailMeshes[x, z] is var dmesh && dmesh != null)
+                        {
+                            debug.DrawPolyMeshDetail ??= new(dmesh, _tree, _dd);
+                            debug.DrawPolyMeshDetail.Draw();
+                        }
+                    }
+                }
+            }
+        }
+        _drawNavmesh ??= new(navmesh, _navmesh.Query!, _tree, _dd);
         _drawNavmesh.Draw();
-    }
-
-    private void DrawConfig()
-    {
-        using var n = _tree.Node("Navmesh properties");
-        if (!n.Opened)
-            return;
-
-        ImGui.InputFloat("The xz-plane cell size to use for fields. [Limit: > 0] [Units: wu]", ref _navmesh.CellSize);
-        ImGui.InputFloat("The y-axis cell size to use for fields. [Limit: > 0] [Units: wu]", ref _navmesh.CellHeight);
-        ImGui.InputFloat("The maximum slope that is considered walkable. [Limits: 0 <= value < 90] [Units: Degrees]", ref _navmesh.AgentMaxSlopeDeg);
-        ImGui.InputFloat("Maximum ledge height that is considered to still be traversable. [Limit: >= 0] [Units: wu]", ref _navmesh.AgentMaxClimb);
-        ImGui.InputFloat("Minimum floor to 'ceiling' height that will still allow the floor area to be considered walkable. [Limit: >= 3 * CellHeight] [Units: wu]", ref _navmesh.AgentHeight);
-        ImGui.Checkbox("Filter low-hanging obstacles", ref _navmesh.FilterLowHangingObstacles);
-        ImGui.Checkbox("Filter ledges", ref _navmesh.FilterLedgeSpans);
-        ImGui.Checkbox("Filter low-height spans", ref _navmesh.FilterWalkableLowHeightSpans);
     }
 }

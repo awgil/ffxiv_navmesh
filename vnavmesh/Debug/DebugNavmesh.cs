@@ -67,7 +67,7 @@ internal class DebugNavmesh : IDisposable
                 _drawExtracted = null;
                 if (_debugTiles != null)
                     foreach (var t in _debugTiles)
-                        t.Dispose();
+                        t?.Dispose();
                 _debugTiles = null;
                 _drawNavmesh?.Dispose();
                 _drawNavmesh = null;

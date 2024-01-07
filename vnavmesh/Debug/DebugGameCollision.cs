@@ -14,12 +14,14 @@ public unsafe class DebugGameCollision
     private UITree _tree = new();
     private DebugDrawer _debugGeom;
     private BitMask _shownLayers = new(ulong.MaxValue);
+    private BitMask _requiredMaterials;
     private bool _showZeroLayer = true;
     private bool _showOnlyFlagRaycast;
     private bool _showOnlyFlagVisit;
 
     private HashSet<nint> _streamedMeshes = new();
     private BitMask _availableLayers;
+    private BitMask _availableMaterials;
 
     public DebugGameCollision(DebugDrawer geom)
     {
@@ -49,11 +51,13 @@ public unsafe class DebugGameCollision
     {
         _streamedMeshes.Clear();
         _availableLayers.Reset();
+        _availableMaterials.Reset();
         foreach (var s in Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
         {
             foreach (var coll in s->Scene->Colliders)
             {
                 _availableLayers |= new BitMask(coll->LayerMask);
+                _availableMaterials |= new BitMask(coll->ObjectMaterialValue);
                 if (coll->GetColliderType() == ColliderType.Streamed)
                 {
                     var cast = (ColliderStreamed*)coll;
@@ -79,6 +83,9 @@ public unsafe class DebugGameCollision
             return false;
         if (_showOnlyFlagVisit && (coll->VisibilityFlags & 2) == 0)
             return false;
+        var matFilter = _availableMaterials & _requiredMaterials;
+        if (matFilter.Any() && (matFilter.Raw & coll->ObjectMaterialValue) == 0)
+            return false;
         return true;
     }
 
@@ -99,6 +106,20 @@ public unsafe class DebugGameCollision
                     var shown = _shownLayers[i];
                     if (ImGui.Checkbox($"Layer {i}", ref shown))
                         _shownLayers[i] = shown;
+                }
+            }
+        }
+
+        {
+            var matFilter = _requiredMaterials & _availableMaterials;
+            using var materials = ImRaii.Combo("Material filter", matFilter.None() ? "None" : matFilter.Raw.ToString("X"));
+            if (materials)
+            {
+                foreach (var i in _availableMaterials.SetBits())
+                {
+                    var filter = _requiredMaterials[i];
+                    if (ImGui.Checkbox($"Material {1u << i:X16}", ref filter))
+                        _requiredMaterials[i] = filter;
                 }
             }
         }
@@ -186,7 +207,7 @@ public unsafe class DebugGameCollision
             else if (collMesh->Resource == null)
                 color = 0xff00ffff;
         }
-        using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}", false, color);
+        using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}###{(nint)coll:X}", false, color);
         if (ImGui.BeginPopupContextItem())
         {
             ContextCollider(coll);

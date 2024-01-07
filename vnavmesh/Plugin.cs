@@ -62,16 +62,29 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "moveto":
                 if (args.Length > 3)
-                    MoveToCommand(args, false);
+                    MoveToCommand(args, false, false);
                 break;
             case "movedir":
                 if (args.Length > 3)
-                    MoveToCommand(args, true);
+                    MoveToCommand(args, true, false);
                 break;
             case "movetarget":
-                var target = Service.TargetManager.Target;
-                if (target != null)
-                    _wndMain.Path.MoveTo(target.Position);
+                var moveTarget = Service.TargetManager.Target;
+                if (moveTarget != null)
+                    _wndMain.Path.MoveTo(moveTarget.Position);
+                break;
+            case "flyto":
+                if (args.Length > 3)
+                    MoveToCommand(args, false, true);
+                break;
+            case "flydir":
+                if (args.Length > 3)
+                    MoveToCommand(args, true, true);
+                break;
+            case "flytarget":
+                var flyTarget = Service.TargetManager.Target;
+                if (flyTarget != null)
+                    _wndMain.Path.FlyTo(flyTarget.Position);
                 break;
             case "stop":
                 _wndMain.Path.Stop();
@@ -79,11 +92,14 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    private void MoveToCommand(string[] args, bool relativeToPlayer)
+    private void MoveToCommand(string[] args, bool relativeToPlayer, bool fly)
     {
         var originActor = relativeToPlayer ? Service.ClientState.LocalPlayer : null;
         var origin = originActor?.Position ?? new();
         var offset = new Vector3(float.Parse(args[1]), float.Parse(args[2]), float.Parse(args[3]));
-        _wndMain.Path.MoveTo(origin + offset);
+        if (fly)
+            _wndMain.Path.FlyTo(origin + offset);
+        else
+            _wndMain.Path.MoveTo(origin + offset);
     }
 }

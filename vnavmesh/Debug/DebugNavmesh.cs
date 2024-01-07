@@ -37,6 +37,7 @@ internal class DebugNavmesh : IDisposable
     private DebugExtractedCollision? _drawExtracted;
     private PerTile[,]? _debugTiles;
     private DebugDetourNavmesh? _drawNavmesh;
+    private DebugVoxelMap? _debugVoxelMap;
 
     public DebugNavmesh(DebugDrawer dd, NavmeshBuilder navmesh)
     {
@@ -51,6 +52,7 @@ internal class DebugNavmesh : IDisposable
             foreach (var t in _debugTiles)
                 t?.Dispose();
         _drawNavmesh?.Dispose();
+        _debugVoxelMap?.Dispose();
     }
 
     public void Draw()
@@ -63,16 +65,13 @@ internal class DebugNavmesh : IDisposable
         {
             if (ImGui.Button("Rebuild navmesh"))
             {
-                _drawExtracted?.Dispose();
-                _drawExtracted = null;
-                if (_debugTiles != null)
-                    foreach (var t in _debugTiles)
-                        t?.Dispose();
-                _debugTiles = null;
-                _drawNavmesh?.Dispose();
-                _drawNavmesh = null;
+                Clear();
                 _navmesh.Rebuild();
-                _waypoints.Clear();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Clear navmesh"))
+            {
+                Clear();
             }
             ImGui.SameLine();
             ImGui.TextUnformatted($"State: {_navmesh.CurrentState}");
@@ -89,8 +88,11 @@ internal class DebugNavmesh : IDisposable
         ImGui.SameLine();
         ImGui.TextUnformatted($"Current target: {_target}");
 
-        if (ImGui.Button("Pathfind to target"))
+        if (ImGui.Button("Pathfind to target using navmesh"))
             _waypoints = _navmesh.Pathfind(Service.ClientState.LocalPlayer?.Position ?? default, _target);
+        ImGui.SameLine();
+        if (ImGui.Button("Pathfind to target using volume"))
+            _waypoints = _navmesh.PathfindVolume(Service.ClientState.LocalPlayer?.Position ?? default, _target);
 
         if (_waypoints.Count > 0)
         {
@@ -143,5 +145,23 @@ internal class DebugNavmesh : IDisposable
         }
         _drawNavmesh ??= new(navmesh, _navmesh.Query!, _tree, _dd);
         _drawNavmesh.Draw();
+        _debugVoxelMap ??= new(_navmesh.Volume!, _tree, _dd);
+        _debugVoxelMap.Draw();
+    }
+
+    private void Clear()
+    {
+        _drawExtracted?.Dispose();
+        _drawExtracted = null;
+        if (_debugTiles != null)
+            foreach (var t in _debugTiles)
+                t?.Dispose();
+        _debugTiles = null;
+        _drawNavmesh?.Dispose();
+        _drawNavmesh = null;
+        _debugVoxelMap?.Dispose();
+        _debugVoxelMap = null;
+        _waypoints.Clear();
+        _navmesh.Clear();
     }
 }

@@ -1,15 +1,13 @@
 ﻿using DotRecast.Core;
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
-using DotRecast.Detour.TileCache;
 using DotRecast.Recast;
 using DotRecast.Recast.Toolset.Tools;
+using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
-using System.Data.Common;
 using System.Linq;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace Navmesh;
@@ -51,6 +49,8 @@ public class NavmeshBuilder : IDisposable
     private IntermediateData? _intermediates;
     private DtNavMesh? _navmesh;
     private DtNavMeshQuery? _query;
+    private VoxelMap? _volume;
+    private PathfindQuery? _volumeQuery;
     private Task? _task;
 
     public State CurrentState => _task == null ? State.NotBuilt : !_task.IsCompleted ? State.InProgress : _task.IsFaulted ? State.Failed : State.Ready;
@@ -58,25 +58,39 @@ public class NavmeshBuilder : IDisposable
     public IntermediateData? Intermediates => _task != null && _task.IsCompletedSuccessfully ? _intermediates : null;
     public DtNavMesh? Navmesh => _task != null && _task.IsCompletedSuccessfully ? _navmesh : null;
     public DtNavMeshQuery? Query => _task != null && _task.IsCompletedSuccessfully ? _query : null;
+    public VoxelMap? Volume => _task != null && _task.IsCompletedSuccessfully ? _volume : null;
+    public PathfindQuery? VolumeQuery => _task != null && _task.IsCompletedSuccessfully ? _volumeQuery : null;
 
     public void Dispose()
     {
-        // i really don't want to join here...
-        //_task?.Dispose();
+        Clear();
     }
 
     public void Rebuild()
     {
-        if (_task != null && !_task.IsCompleted)
-            _task.Wait();
-        _intermediates = null;
-        _navmesh = null;
-        _query = null;
-        _extractor.Clear();
+        Clear();
         Service.Log.Debug("[navmesh] extract from scene");
         _extractor.FillFromGame(1); // layer 0 is where collision geometry is
         Service.Log.Debug("[navmesh] schedule async build");
         _task = Task.Run(BuildNavmesh);
+    }
+
+    public void Clear()
+    {
+        if (_task != null)
+        {
+            if (!_task.IsCompleted)
+                _task.Wait();
+            _task.Dispose();
+            _task = null;
+        }
+        _intermediates = null;
+        _navmesh = null;
+        _query = null;
+        _volume = null;
+        _volumeQuery = null;
+        _extractor.Clear();
+        //GC.Collect();
     }
 
     public List<Vector3> Pathfind(Vector3 from, Vector3 to)
@@ -100,6 +114,11 @@ public class NavmeshBuilder : IDisposable
                 res.AddRange(smooth.Select(v => new Vector3(v.X, v.Y, v.Z)));
         }
         return res;
+    }
+
+    public List<Vector3> PathfindVolume(Vector3 from, Vector3 to)
+    {
+        return VolumeQuery?.FindPath(from, to) ?? new();
     }
 
     private void BuildNavmesh()
@@ -132,6 +151,7 @@ public class NavmeshBuilder : IDisposable
             navmeshParams.maxTiles = ntilesX * ntilesZ;
             navmeshParams.maxPolys = 1 << DtNavMesh.DT_POLY_BITS;
             var navmesh = new DtNavMesh(navmeshParams, Settings.PolyMaxVerts);
+            var volume = new VoxelMap(_extractor.BoundsMin, _extractor.BoundsMax, 512, 128, 512); // TODO: improve...
 
             // create tile data and add to navmesh
             _intermediates = new(ntilesX, ntilesZ);
@@ -139,7 +159,7 @@ public class NavmeshBuilder : IDisposable
             {
                 for (int x = 0; x < ntilesX; ++x)
                 {
-                    var tile = BuildNavmeshTile(x, z, _intermediates, _intermediates.Telemetry);
+                    var tile = BuildNavmeshTile(x, z, _intermediates, _intermediates.Telemetry, volume);
                     if (tile != null)
                         navmesh.AddTile(tile, 0, 0);
                 }
@@ -148,6 +168,8 @@ public class NavmeshBuilder : IDisposable
             Service.Log.Debug($"navmesh build time: {timer.Value().TotalMilliseconds}ms");
             _navmesh = navmesh;
             _query = new DtNavMeshQuery(navmesh);
+            _volume = volume;
+            _volumeQuery = new(volume);
         }
         catch (Exception ex)
         {
@@ -156,7 +178,7 @@ public class NavmeshBuilder : IDisposable
         }
     }
 
-    private DtMeshData? BuildNavmeshTile(int x, int z, IntermediateData? intermediates, RcTelemetry telemetry)
+    private DtMeshData? BuildNavmeshTile(int x, int z, IntermediateData? intermediates, RcTelemetry telemetry, VoxelMap volume)
     {
         var timer = Timer.Create();
 
@@ -301,6 +323,9 @@ public class NavmeshBuilder : IDisposable
             buildBvTree = true, // TODO: false if using layers?
         };
         var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
+
+        // 10. build nav volume data
+        volume.AddFromHeightfield(shf);
 
         // if we want to keep intermediates, store them
         if (intermediates != null)

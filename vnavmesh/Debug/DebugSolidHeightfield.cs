@@ -105,7 +105,6 @@ public class DebugSolidHeightfield : DebugRecast
             using var builder = _visu.Map(_dd.RenderContext);
 
             var timer = Timer.Create();
-            // this is unrolled for efficiency, still quite slow though :(
             // TODO: one thing i don't like about current visualization is the lack of edges and/or any depth cues
             int icell = 0;
             FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world = new() { M11 = _hf.cs * 0.5f, M33 = _hf.cs * 0.5f }; // x/z scale never changes

@@ -85,5 +85,13 @@ public class FollowPath : IDisposable
         _waypoints = _navmesh.Pathfind(player.Position, destination);
     }
 
+    public void FlyTo(Vector3 destination)
+    {
+        var player = Service.ClientState.LocalPlayer;
+        if (player == null)
+            return;
+        _waypoints = _navmesh.PathfindVolume(player.Position, destination);
+    }
+
     public void Stop() => _waypoints.Clear();
 }

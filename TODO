@@ -21,3 +21,4 @@
 - navmesh caching
 - area transitions & high-level zone graph
 - memory usage
+- better steering for volumes (unify with mesh as much as possible)

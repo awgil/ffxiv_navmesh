@@ -1,0 +1,23 @@
+- figure out max-slope used by game (hook raycasts and see how it is called)
+- figure out max-climb and ch (max-climb should be 0.5wu, do we need an extra voxel?)
+- draw geometry with per-triangle coloring by maxclimb threshold
+- figure out fly bounds (0x2021 material planes)
+- optimize voxelization
+-- just rewrite this shit and add unittest to compare with recast
+- volume nav:
+-- configurable voxelmap resolution
+-- optimize memory used by voxelmap pathfind query
+-- consider building equivalent of navmesh
+--- do we even need any compact representation? connectivity sounds hard for 3d spans...
+--- watershed-like partitioning - should be easy
+--- contour tracing - moderate?
+--- contour simplification - easy
+--- building simple polys - moderate?
+--- earcut triangulation - easy?
+--- theta* on mesh - easy?
+- walk/fly transitions
+- on-the-fly update navmesh tiles near player to account for loose geometry streaming
+- jump / drop markup (offmesh connections?)
+- navmesh caching
+- area transitions & high-level zone graph
+- memory usage

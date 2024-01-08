@@ -228,8 +228,8 @@ public class EffectMesh : IDisposable
                 // lighting calculations are taken from recast demo
                 float tint = 0.216 * (2 + normal.x + normal.z);
                 float3 lighting = float3(tint, tint, tint);
-                if (normal.y < k.lightingWorldYThreshold)
-                    lighting = lerp(lighting, float3(0.75, 0.5, 0), 0.25);
+                if (-normal.y < k.lightingWorldYThreshold)
+                    lighting = /*float3(0,0,0);*/lerp(lighting, float3(0.45, 0.15, 0), 0.4);
 
                 GSOutput v;
                 v.color = input[0].color;

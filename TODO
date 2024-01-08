@@ -1,6 +1,4 @@
-- figure out max-slope used by game
 - figure out max-climb and ch (max-climb should be 0.5wu, do we need an extra voxel?)
-- draw geometry with per-triangle coloring by maxclimb threshold
 - figure out fly bounds (0x2021 material planes)
 - optimize voxelization
 -- just rewrite this shit and add unittest to compare with recast

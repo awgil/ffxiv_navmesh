@@ -22,7 +22,7 @@ public class NavmeshSettings
     public float AgentHeight = 2.0f;
     public float AgentRadius = 0.5f;
     public float AgentMaxClimb = 0.8f;
-    public float AgentMaxSlopeDeg = 45f;
+    public float AgentMaxSlopeDeg = 55f;
     public Filter Filtering = Filter.LowHangingObstacles | Filter.LedgeSpans | Filter.WalkableLowHeightSpans;
     public float RegionMinSize = 8;
     public float RegionMergeSize = 20;

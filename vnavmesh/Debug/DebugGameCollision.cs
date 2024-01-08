@@ -1,18 +1,23 @@
-﻿using Dalamud.Interface.Utility.Raii;
+﻿using Dalamud.Hooking;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
 using Dalamud.Memory;
+using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Math;
 using ImGuiNET;
+using System;
 using System.Collections.Generic;
+using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
 
 namespace Navmesh.Debug;
 
-public unsafe class DebugGameCollision
+public unsafe class DebugGameCollision : IDisposable
 {
     private UITree _tree = new();
-    private DebugDrawer _debugGeom;
+    private DebugDrawer _dd;
     private BitMask _shownLayers = new(ulong.MaxValue);
     private BitMask _requiredMaterials;
     private bool _showZeroLayer = true;
@@ -23,13 +28,37 @@ public unsafe class DebugGameCollision
     private BitMask _availableLayers;
     private BitMask _availableMaterials;
 
-    public DebugGameCollision(DebugDrawer geom)
+    private delegate bool RaycastDelegate(SceneWrapper* self, RaycastHit* result, ulong layerMask, RaycastParams* param);
+    private Hook<RaycastDelegate>? _raycastHook;
+
+    public DebugGameCollision(DebugDrawer dd)
     {
-        _debugGeom = geom;
+        _dd = dd;
+
+        foreach (var s in Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
+        {
+            _raycastHook = Service.Hook.HookFromAddress<RaycastDelegate>((nint)s->VTable->Raycast, RaycastDetour);
+            break;
+        }
+    }
+
+    public void Dispose()
+    {
+        _raycastHook?.Dispose();
     }
 
     public void Draw()
     {
+        if (_raycastHook != null)
+        {
+            bool hook = _raycastHook.IsEnabled;
+            if (ImGui.Checkbox("Log raycasts", ref hook))
+                if (hook)
+                    _raycastHook.Enable();
+                else
+                    _raycastHook.Disable();
+        }
+
         var module = Framework.Instance()->BGCollisionModule;
         ImGui.TextUnformatted($"Module: {(nint)module:X}->{(nint)module->SceneManager:X} ({module->SceneManager->NumScenes} scenes, {module->LoadInProgressCounter} loads)");
         ImGui.TextUnformatted($"Streaming: {SphereStr(module->ForcedStreamingSphere)} / {SphereStr(module->SceneManager->StreamingSphere)}");
@@ -43,6 +72,7 @@ public unsafe class DebugGameCollision
         {
             DrawSceneColliders(s->Scene, i);
             DrawSceneQuadtree(s->Scene->Quadtree, i);
+            DrawSceneRaycasts(s, i);
             ++i;
         }
     }
@@ -183,6 +213,45 @@ public unsafe class DebugGameCollision
                         VisualizeCollider(coll);
                 }
             }
+        }
+    }
+
+    private void DrawSceneRaycasts(SceneWrapper* s, int index)
+    {
+        using var n = _tree.Node($"Scene {index}: raycasts");
+        if (!n.Opened)
+            return;
+
+        var screenPos = ImGui.GetMousePos() - ImGuiHelpers.MainViewport.Pos;
+        var windowSize = ImGuiHelpers.MainViewport.Size;
+        if (screenPos.X < 0 || screenPos.X > windowSize.X || screenPos.Y < 0 || screenPos.Y > windowSize.Y)
+        {
+            _tree.LeafNode("Mouse is outside window");
+            return;
+        }
+
+        var clipPos = new SharpDX.Vector3(2 * screenPos.X / _dd.ViewportSize.X - 1, 1 - 2 * screenPos.Y / _dd.ViewportSize.Y, 1);
+        var invViewProj = SharpDX.Matrix.Invert(_dd.ViewProj);
+        var cameraWorldPos = _dd.CameraWorld.Row4.ToSystem();
+        var cameraPosAtPlane = SharpDX.Vector3.TransformCoordinate(clipPos, invViewProj).ToSystem();
+        var dir = System.Numerics.Vector3.Normalize(cameraPosAtPlane - new System.Numerics.Vector3(cameraWorldPos.X, cameraWorldPos.Y, cameraWorldPos.Z));
+        _tree.LeafNode($"Mouse pos: screen={screenPos}, clip={clipPos}, dir={dir}");
+        float maxDist = 100000;
+        var filter = new RaycastMaterialFilter();
+        var res = new RaycastHit();
+        var arg = new RaycastParams() { Origin = &cameraWorldPos, Direction = &dir, MaxDistance = &maxDist, MaterialFilter = &filter };
+        if (s->Raycast(&res, ~0ul, &arg))
+        {
+            _tree.LeafNode($"Raycast: {cameraWorldPos} + {res.Distance} = {res.Point}");
+            DrawCollider((Collider*)res.Object);
+            VisualizeCollider((Collider*)res.Object);
+            _dd.DrawWorldLine(res.V1, res.V2, 0xff0000ff, 2);
+            _dd.DrawWorldLine(res.V2, res.V3, 0xff0000ff, 2);
+            _dd.DrawWorldLine(res.V3, res.V1, 0xff0000ff, 2);
+        }
+        else
+        {
+            _tree.LeafNode($"Raycast: N/A");
         }
     }
 
@@ -394,7 +463,7 @@ public unsafe class DebugGameCollision
                     var cast = (ColliderBox*)coll;
                     //var boxOBB = new AABB() { Min = new(-1), Max = new(+1) };
                     //VisualizeOBB(ref boxOBB, ref cast->World, 0xff0000ff);
-                    _debugGeom.DrawBox(ref cast->World, new(1, 0, 0, 1));
+                    _dd.DrawBox(ref cast->World, new(1, 0, 0, 1));
                 }
                 break;
             case ColliderType.Cylinder:
@@ -406,7 +475,7 @@ public unsafe class DebugGameCollision
             case ColliderType.Sphere:
                 {
                     var cast = (ColliderSphere*)coll;
-                    _debugGeom.DrawWorldSphere(cast->Translation, cast->Scale.X, 0xff0000ff);
+                    _dd.DrawWorldSphere(cast->Translation, cast->Scale.X, 0xff0000ff);
                 }
                 break;
             case ColliderType.Plane:
@@ -417,10 +486,10 @@ public unsafe class DebugGameCollision
                     var b = cast->World.TransformCoordinate(new(-1, -1, 0));
                     var c = cast->World.TransformCoordinate(new(+1, -1, 0));
                     var d = cast->World.TransformCoordinate(new(+1, +1, 0));
-                    _debugGeom.DrawWorldLine(a, b, 0xff0000ff);
-                    _debugGeom.DrawWorldLine(b, c, 0xff0000ff);
-                    _debugGeom.DrawWorldLine(c, d, 0xff0000ff);
-                    _debugGeom.DrawWorldLine(d, a, 0xff0000ff);
+                    _dd.DrawWorldLine(a, b, 0xff0000ff);
+                    _dd.DrawWorldLine(b, c, 0xff0000ff);
+                    _dd.DrawWorldLine(c, d, 0xff0000ff);
+                    _dd.DrawWorldLine(d, a, 0xff0000ff);
                 }
                 break;
         }
@@ -441,7 +510,7 @@ public unsafe class DebugGameCollision
             return;
         //foreach (ref var prim in node->Primitives)
         //    VisualizeTriangle(node, ref prim, ref world, color);
-        _debugGeom.DrawMesh(new PCBMesh(node), ref world, new Vector4(color & 0xFF, color >> 8 & 0xFF, color >> 16 & 0xFF, color >> 24 & 0xFF) / 255.0f);
+        _dd.DrawMesh(new PCBMesh(node), ref world, new Vector4(color & 0xFF, color >> 8 & 0xFF, color >> 16 & 0xFF, color >> 24 & 0xFF) / 255.0f);
         VisualizeColliderMeshPCBNode(node->Child1, ref world, color);
         VisualizeColliderMeshPCBNode(node->Child2, ref world, color);
     }
@@ -456,18 +525,18 @@ public unsafe class DebugGameCollision
         var bab = world.TransformCoordinate(new(localBB.Max.X, localBB.Min.Y, localBB.Max.Z));
         var bba = world.TransformCoordinate(new(localBB.Max.X, localBB.Max.Y, localBB.Min.Z));
         var bbb = world.TransformCoordinate(new(localBB.Max.X, localBB.Max.Y, localBB.Max.Z));
-        _debugGeom.DrawWorldLine(aaa, aab, color);
-        _debugGeom.DrawWorldLine(aab, bab, color);
-        _debugGeom.DrawWorldLine(bab, baa, color);
-        _debugGeom.DrawWorldLine(baa, aaa, color);
-        _debugGeom.DrawWorldLine(aba, abb, color);
-        _debugGeom.DrawWorldLine(abb, bbb, color);
-        _debugGeom.DrawWorldLine(bbb, bba, color);
-        _debugGeom.DrawWorldLine(bba, aba, color);
-        _debugGeom.DrawWorldLine(aaa, aba, color);
-        _debugGeom.DrawWorldLine(aab, abb, color);
-        _debugGeom.DrawWorldLine(baa, bba, color);
-        _debugGeom.DrawWorldLine(bab, bbb, color);
+        _dd.DrawWorldLine(aaa, aab, color);
+        _dd.DrawWorldLine(aab, bab, color);
+        _dd.DrawWorldLine(bab, baa, color);
+        _dd.DrawWorldLine(baa, aaa, color);
+        _dd.DrawWorldLine(aba, abb, color);
+        _dd.DrawWorldLine(abb, bbb, color);
+        _dd.DrawWorldLine(bbb, bba, color);
+        _dd.DrawWorldLine(bba, aba, color);
+        _dd.DrawWorldLine(aaa, aba, color);
+        _dd.DrawWorldLine(aab, abb, color);
+        _dd.DrawWorldLine(baa, bba, color);
+        _dd.DrawWorldLine(bab, bbb, color);
     }
 
     private void VisualizeCylinder(ref Matrix4x3 world, uint color)
@@ -480,26 +549,26 @@ public unsafe class DebugGameCollision
             var dir = (i * 360.0f / numSegments).Degrees().ToDirection();
             var curr1 = world.TransformCoordinate(new(dir.X, +1, dir.Y));
             var curr2 = world.TransformCoordinate(new(dir.X, -1, dir.Y));
-            _debugGeom.DrawWorldLine(curr1, prev1, color);
-            _debugGeom.DrawWorldLine(curr2, prev2, color);
-            _debugGeom.DrawWorldLine(curr1, curr2, color);
+            _dd.DrawWorldLine(curr1, prev1, color);
+            _dd.DrawWorldLine(curr2, prev2, color);
+            _dd.DrawWorldLine(curr1, curr2, color);
             prev1 = curr1;
             prev2 = curr2;
         }
     }
 
-    private void VisualizeSphere(Vector4 sphere, uint color) => _debugGeom.DrawWorldSphere(new(sphere.X, sphere.Y, sphere.Z), sphere.W, color);
+    private void VisualizeSphere(Vector4 sphere, uint color) => _dd.DrawWorldSphere(new(sphere.X, sphere.Y, sphere.Z), sphere.W, color);
 
-    private void VisualizeVertex(Vector3 worldPos, uint color) => _debugGeom.DrawWorldSphere(worldPos, 0.1f, color);
+    private void VisualizeVertex(Vector3 worldPos, uint color) => _dd.DrawWorldSphere(worldPos, 0.1f, color);
 
     private void VisualizeTriangle(MeshPCB.FileNode* node, ref Mesh.Primitive prim, ref Matrix4x3 world, uint color)
     {
         var v1 = world.TransformCoordinate(node->Vertex(prim.V1));
         var v2 = world.TransformCoordinate(node->Vertex(prim.V2));
         var v3 = world.TransformCoordinate(node->Vertex(prim.V3));
-        _debugGeom.DrawWorldLine(v1, v2, color);
-        _debugGeom.DrawWorldLine(v2, v3, color);
-        _debugGeom.DrawWorldLine(v3, v1, color);
+        _dd.DrawWorldLine(v1, v2, color);
+        _dd.DrawWorldLine(v2, v3, color);
+        _dd.DrawWorldLine(v3, v1, color);
     }
 
     private string SphereStr(Vector4 s) => $"[{s.X:f3}, {s.Y:f3}, {s.Z:f3}] R{s.W:f3}";
@@ -535,4 +604,11 @@ public unsafe class DebugGameCollision
         if (ImGui.Checkbox("Flag: global visit", ref globalVisit))
             coll->VisibilityFlags ^= 2;
     }
+
+    private bool RaycastDetour(SceneWrapper* self, RaycastHit* result, ulong layerMask, RaycastParams* param)
+    {
+        Service.Log.Debug($"Raycast: layer={layerMask:X}, algo={param->Algorithm}, origin={*param->Origin}, dir={*param->Direction}, maxnorm={param->MaxPlaneNormalY}, maxdist={*param->MaxDistance}, filter={param->MaterialFilter->Value:X}/{param->MaterialFilter->Mask:X}");
+        return _raycastHook!.Original(self, result, layerMask, param);
+    }
 }
+

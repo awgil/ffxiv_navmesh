@@ -3,7 +3,6 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using System;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using System.Reflection;
 
@@ -96,7 +95,10 @@ public sealed class Plugin : IDalamudPlugin
     {
         var originActor = relativeToPlayer ? Service.ClientState.LocalPlayer : null;
         var origin = originActor?.Position ?? new();
-        var offset = new Vector3(float.Parse(args[1]), float.Parse(args[2]), float.Parse(args[3]));
+        var offset = new Vector3(
+            float.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture),
+            float.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture),
+            float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture));
         if (fly)
             _wndMain.Path.FlyTo(origin + offset);
         else

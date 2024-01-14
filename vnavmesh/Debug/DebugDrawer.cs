@@ -29,10 +29,6 @@ public unsafe class DebugDrawer : IDisposable
     private delegate nint GetEngineCoreSingletonDelegate();
 
     private nint _engineCoreSingleton;
-    private EffectMesh.Data _meshDynamicData;
-    private EffectMesh.Data.Builder? _meshDynamicBuilder;
-    private EffectBox.Data _boxDynamicData;
-    private EffectBox.Data.Builder? _boxDynamicBuilder;
 
     private List<(Vector2 from, Vector2 to, uint col, int thickness)> _viewportLines = new();
     private List<(Vector2 center, float radius, uint color)> _viewportCircles = new();
@@ -42,18 +38,11 @@ public unsafe class DebugDrawer : IDisposable
         EffectMesh = new(RenderContext);
         EffectBox = new(RenderContext);
         EffectQuad = new(RenderContext);
-
         _engineCoreSingleton = Marshal.GetDelegateForFunctionPointer<GetEngineCoreSingletonDelegate>(Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 48 8D 4C 24 ?? 48 89 4C 24 ?? 4C 8D 4D ?? 4C 8D 44 24 ??"))();
-        _meshDynamicData = new(RenderContext, 16 * 1024 * 1024, 16 * 1024 * 1024, 128 * 1024, true);
-        _boxDynamicData = new(RenderContext, 16 * 1024 * 1024, true);
     }
 
     public void Dispose()
     {
-        _boxDynamicBuilder?.Dispose();
-        _boxDynamicData.Dispose();
-        _meshDynamicBuilder?.Dispose();
-        _meshDynamicData.Dispose();
         EffectQuad.Dispose();
         EffectBox.Dispose();
         EffectMesh.Dispose();
@@ -85,20 +74,6 @@ public unsafe class DebugDrawer : IDisposable
 
     public void EndFrame()
     {
-        if (_boxDynamicBuilder != null)
-        {
-            _boxDynamicBuilder.Dispose();
-            _boxDynamicBuilder = null;
-            EffectBox.Draw(RenderContext, _boxDynamicData);
-        }
-
-        if (_meshDynamicBuilder != null)
-        {
-            _meshDynamicBuilder.Dispose();
-            _meshDynamicBuilder = null;
-            EffectMesh.Draw(RenderContext, _meshDynamicData);
-        }
-
         RenderContext.Execute();
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
@@ -124,14 +99,6 @@ public unsafe class DebugDrawer : IDisposable
         ImGui.PopStyleVar();
     }
 
-    public void DrawMesh(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => GetDynamicMeshes().Add(mesh, ref world, color);
-    public void DrawMeshes(IMesh mesh, IEnumerable<EffectMesh.Instance> instances) => GetDynamicMeshes().Add(mesh, instances);
-
-    public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 colorTop, Vector4 colorSide) => GetDynamicBoxes().Add(ref world, colorTop, colorSide);
-    public void DrawBox(ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => GetDynamicBoxes().Add(ref world, color, color);
-    public void DrawAABB(Vector3 min, Vector3 max, Vector4 colorTop, Vector4 colorSide) => GetDynamicBoxes().Add(min, max, colorTop, colorSide);
-    public void DrawAABB(Vector3 min, Vector3 max, Vector4 color) => GetDynamicBoxes().Add(min, max, color, color);
-
     public void DrawWorldLine(Vector3 start, Vector3 end, uint color, int thickness = 1)
     {
         var p1 = start.ToSharpDX();
@@ -144,6 +111,32 @@ public unsafe class DebugDrawer : IDisposable
     {
         foreach (var (a, b) in AdjacentPairs(points))
             DrawWorldLine(a, b, color, thickness);
+    }
+
+    public void DrawWorldAABB(Vector3 origin, Vector3 halfSize, uint color, int thickness = 1)
+    {
+        var min = origin - halfSize;
+        var max = origin + halfSize;
+        var aaa = new Vector3(min.X, min.Y, min.Z);
+        var aab = new Vector3(min.X, min.Y, max.Z);
+        var aba = new Vector3(min.X, max.Y, min.Z);
+        var abb = new Vector3(min.X, max.Y, max.Z);
+        var baa = new Vector3(max.X, min.Y, min.Z);
+        var bab = new Vector3(max.X, min.Y, max.Z);
+        var bba = new Vector3(max.X, max.Y, min.Z);
+        var bbb = new Vector3(max.X, max.Y, max.Z);
+        DrawWorldLine(aaa, aab, color, thickness);
+        DrawWorldLine(aab, bab, color, thickness);
+        DrawWorldLine(bab, baa, color, thickness);
+        DrawWorldLine(baa, aaa, color, thickness);
+        DrawWorldLine(aba, abb, color, thickness);
+        DrawWorldLine(abb, bbb, color, thickness);
+        DrawWorldLine(bbb, bba, color, thickness);
+        DrawWorldLine(bba, aba, color, thickness);
+        DrawWorldLine(aaa, aba, color, thickness);
+        DrawWorldLine(aab, abb, color, thickness);
+        DrawWorldLine(baa, bba, color, thickness);
+        DrawWorldLine(bab, bbb, color, thickness);
     }
 
     public void DrawWorldSphere(Vector3 center, float radius, uint color, int thickness = 1)
@@ -244,9 +237,6 @@ public unsafe class DebugDrawer : IDisposable
         if (arrowB > 1)
             DrawWorldArrowPoint(from, Eval(a, delta, 1 - 2 * u0), arrowB, color, thickness);
     }
-
-    private EffectMesh.Data.Builder GetDynamicMeshes() => _meshDynamicBuilder ??= _meshDynamicData.Map(RenderContext);
-    private EffectBox.Data.Builder GetDynamicBoxes() => _boxDynamicBuilder ??= _boxDynamicData.Map(RenderContext);
 
     private unsafe SharpDX.Matrix ReadMatrix(nint address)
     {

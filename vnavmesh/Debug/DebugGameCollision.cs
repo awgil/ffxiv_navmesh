@@ -7,9 +7,9 @@ using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Math;
 using ImGuiNET;
+using Navmesh.Render;
 using System;
 using System.Collections.Generic;
-using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
 
 namespace Navmesh.Debug;
@@ -28,12 +28,20 @@ public unsafe class DebugGameCollision : IDisposable
     private BitMask _availableLayers;
     private BitMask _availableMaterials;
 
+    private EffectMesh.Data _meshDynamicData;
+    private EffectMesh.Data.Builder? _meshDynamicBuilder;
+    private EffectBox.Data _boxDynamicData;
+    private EffectBox.Data.Builder? _boxDynamicBuilder;
+
     private delegate bool RaycastDelegate(SceneWrapper* self, RaycastHit* result, ulong layerMask, RaycastParams* param);
     private Hook<RaycastDelegate>? _raycastHook;
 
     public DebugGameCollision(DebugDrawer dd)
     {
         _dd = dd;
+
+        _meshDynamicData = new(dd.RenderContext, 1024 * 1024, 1024 * 1024, 128 * 1024, true);
+        _boxDynamicData = new(dd.RenderContext, 16 * 1024, true);
 
         foreach (var s in Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
         {
@@ -45,6 +53,10 @@ public unsafe class DebugGameCollision : IDisposable
     public void Dispose()
     {
         _raycastHook?.Dispose();
+        _boxDynamicBuilder?.Dispose();
+        _boxDynamicData.Dispose();
+        _meshDynamicBuilder?.Dispose();
+        _meshDynamicData.Dispose();
     }
 
     public void Draw()
@@ -74,6 +86,20 @@ public unsafe class DebugGameCollision : IDisposable
             DrawSceneQuadtree(s->Scene->Quadtree, i);
             DrawSceneRaycasts(s, i);
             ++i;
+        }
+
+        if (_boxDynamicBuilder != null)
+        {
+            _boxDynamicBuilder.Dispose();
+            _boxDynamicBuilder = null;
+            _dd.EffectBox.Draw(_dd.RenderContext, _boxDynamicData);
+        }
+
+        if (_meshDynamicBuilder != null)
+        {
+            _meshDynamicBuilder.Dispose();
+            _meshDynamicBuilder = null;
+            _dd.EffectMesh.Draw(_dd.RenderContext, _meshDynamicData);
         }
     }
 
@@ -243,6 +269,10 @@ public unsafe class DebugGameCollision : IDisposable
         if (s->Raycast(&res, ~0ul, &arg))
         {
             _tree.LeafNode($"Raycast: {cameraWorldPos} + {res.Distance} = {res.Point}");
+            var ab = res.V2 - res.V1;
+            var ac = res.V3 - res.V1;
+            var normal = Vector3.Cross(ab, ac).Normalized;
+            _tree.LeafNode($"Normal: {normal} (slope={Angle.Acos(normal.Y)})");
             DrawCollider((Collider*)res.Object);
             VisualizeCollider((Collider*)res.Object);
             _dd.DrawWorldLine(res.V1, res.V2, 0xff0000ff, 2);
@@ -392,7 +422,7 @@ public unsafe class DebugGameCollision : IDisposable
 
         using var n = _tree.Node(tag);
         if (n.SelectedOrHovered)
-            VisualizeColliderMeshPCBNode(node, ref world, 0xff00ffff);
+            VisualizeColliderMeshPCBNode(node, ref world, new(1, 1, 0, 1));
         if (!n.Opened)
             return;
 
@@ -450,20 +480,20 @@ public unsafe class DebugGameCollision : IDisposable
                         for (int i = 0; i < cast->Header->NumMeshes; ++i)
                         {
                             var elem = cast->Elements + i;
-                            VisualizeColliderMesh(elem->Mesh, 0xff00ff00);
+                            VisualizeColliderMesh(elem->Mesh, new(0, 1, 0, 1));
                         }
                     }
                 }
                 break;
             case ColliderType.Mesh:
-                VisualizeColliderMesh((ColliderMesh*)coll, _streamedMeshes.Contains((nint)coll) ? 0xff00ff00 : 0xff00ffff);
+                VisualizeColliderMesh((ColliderMesh*)coll, new(_streamedMeshes.Contains((nint)coll) ? 0 : 1, 1, 0, 1));
                 break;
             case ColliderType.Box:
                 {
                     var cast = (ColliderBox*)coll;
                     //var boxOBB = new AABB() { Min = new(-1), Max = new(+1) };
                     //VisualizeOBB(ref boxOBB, ref cast->World, 0xff0000ff);
-                    _dd.DrawBox(ref cast->World, new(1, 0, 0, 1));
+                    GetDynamicBoxes().Add(ref cast->World, new(1, 0, 0, 1), new(1, 0, 0, 1));
                 }
                 break;
             case ColliderType.Cylinder:
@@ -495,7 +525,7 @@ public unsafe class DebugGameCollision : IDisposable
         }
     }
 
-    private void VisualizeColliderMesh(ColliderMesh* coll, uint color)
+    private void VisualizeColliderMesh(ColliderMesh* coll, Vector4 color)
     {
         if (coll != null && !coll->MeshIsSimple && coll->Mesh != null)
         {
@@ -504,13 +534,24 @@ public unsafe class DebugGameCollision : IDisposable
         }
     }
 
-    private void VisualizeColliderMeshPCBNode(MeshPCB.FileNode* node, ref Matrix4x3 world, uint color)
+    private void VisualizeColliderMeshPCBNode(MeshPCB.FileNode* node, ref Matrix4x3 world, Vector4 color)
     {
         if (node == null)
             return;
+
         //foreach (ref var prim in node->Primitives)
         //    VisualizeTriangle(node, ref prim, ref world, color);
-        _dd.DrawMesh(new PCBMesh(node), ref world, new Vector4(color & 0xFF, color >> 8 & 0xFF, color >> 16 & 0xFF, color >> 24 & 0xFF) / 255.0f);
+        if (node->NumPrims > 0)
+        {
+            var renderer = GetDynamicMeshes();
+            renderer.AddMesh(renderer.NumVertices, renderer.NumPrimitives, node->NumPrims, renderer.NumInstances, 1);
+            for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
+                renderer.AddVertex(node->Vertex(i));
+            foreach (ref var prim in node->Primitives)
+                renderer.AddTriangle(prim.V1, prim.V3, prim.V2); // change winding to what dx expects
+            renderer.AddInstance(new(world, color));
+        }
+
         VisualizeColliderMeshPCBNode(node->Child1, ref world, color);
         VisualizeColliderMeshPCBNode(node->Child2, ref world, color);
     }
@@ -604,6 +645,9 @@ public unsafe class DebugGameCollision : IDisposable
         if (ImGui.Checkbox("Flag: global visit", ref globalVisit))
             coll->VisibilityFlags ^= 2;
     }
+
+    private EffectMesh.Data.Builder GetDynamicMeshes() => _meshDynamicBuilder ??= _meshDynamicData.Map(_dd.RenderContext);
+    private EffectBox.Data.Builder GetDynamicBoxes() => _boxDynamicBuilder ??= _boxDynamicData.Map(_dd.RenderContext);
 
     private bool RaycastDetour(SceneWrapper* self, RaycastHit* result, ulong layerMask, RaycastParams* param)
     {

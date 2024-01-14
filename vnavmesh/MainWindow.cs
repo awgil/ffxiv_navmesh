@@ -10,8 +10,8 @@ public class MainWindow : Window, IDisposable
 {
     private NavmeshBuilder _navmesh = new();
     private FollowPath _path;
-    private DebugDrawer _debugGeom = new();
-    private DebugGameCollision _debugColl;
+    private DebugDrawer _dd = new();
+    private DebugGameCollision _debugGameColl;
     private DebugNavmesh _debugNavmesh;
 
     public FollowPath Path => _path; // TODO: reconsider
@@ -19,8 +19,8 @@ public class MainWindow : Window, IDisposable
     public MainWindow() : base("Navmesh")
     {
         _path = new(_navmesh);
-        _debugColl = new(_debugGeom);
-        _debugNavmesh = new(_debugGeom, _navmesh);
+        _debugGameColl = new(_dd);
+        _debugNavmesh = new(_dd, _navmesh);
     }
 
     public void Dispose()
@@ -28,8 +28,8 @@ public class MainWindow : Window, IDisposable
         _navmesh.Dispose();
         _path.Dispose();
         _debugNavmesh.Dispose();
-        _debugGeom.Dispose();
-        _debugColl.Dispose();
+        _debugGameColl.Dispose();
+        _dd.Dispose();
     }
 
     public override void PreOpenCheck()
@@ -39,20 +39,20 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
-        _debugGeom.StartFrame();
-        _path.DrawPath(_debugGeom);
+        _dd.StartFrame();
+        _path.DrawPath(_dd);
         using (var tabs = ImRaii.TabBar("Tabs"))
         {
             if (tabs)
             {
                 using (var tab = ImRaii.TabItem("Collision"))
                     if (tab)
-                        _debugColl.Draw();
+                        _debugGameColl.Draw();
                 using (var tab = ImRaii.TabItem("Navmesh"))
                     if (tab)
                         _debugNavmesh.Draw();
             }
         }
-        _debugGeom.EndFrame();
+        _dd.EndFrame();
     }
 }

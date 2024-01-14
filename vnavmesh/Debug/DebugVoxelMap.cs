@@ -97,8 +97,6 @@ public class DebugVoxelMap : IDisposable
 
     private void VisualizeCell(int x, int y, int z)
     {
-        var center = _vm.VoxelToWorld(x, y, z);
-        var halfSize = _vm.CellSize * 0.5f;
-        _dd.DrawAABB(center - halfSize, center + halfSize, new(1.0f, 0.5f, 0.0f, 1.0f));
+        _dd.DrawWorldAABB(_vm.VoxelToWorld(x, y, z), _vm.CellSize * 0.5f, 0xff0080ff, 1);
     }
 }

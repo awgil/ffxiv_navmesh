@@ -2,7 +2,6 @@
 using System;
 using System.Linq;
 using System.Numerics;
-using Matrix4x3 = FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3;
 
 namespace Navmesh.Debug;
 

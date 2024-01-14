@@ -60,6 +60,10 @@ public class EffectMesh : IDisposable
             private RenderBuffer<Triangle>.Builder _primitives;
             private RenderBuffer<Instance>.Builder _instances;
 
+            public int NumVertices => _vertices.CurElements;
+            public int NumPrimitives => _primitives.CurElements;
+            public int NumInstances => _instances.CurElements;
+
             internal Builder(RenderContext ctx, Data data)
             {
                 _data = data;
@@ -76,34 +80,6 @@ public class EffectMesh : IDisposable
                 _primitives.Dispose();
                 _instances.Dispose();
             }
-
-            public void Add(IMesh mesh, IEnumerable<Instance> instances)
-            {
-                var nt = mesh.NumTriangles();
-                if (nt == 0)
-                    return;
-
-                var fi = _instances.CurElements;
-                var ni = 0;
-                foreach (var i in instances)
-                {
-                    _instances.Add(i);
-                    ++ni;
-                }
-                if (ni == 0)
-                    return;
-
-                _data._meshes.Add(new(_vertices.CurElements, _primitives.CurElements, nt, fi, ni));
-
-                var nv = mesh.NumVertices();
-                for (int i = 0; i < nv; ++i)
-                    _vertices.Add(mesh.Vertex(i));
-
-                for (int i = 0; i < nt; ++i)
-                    _primitives.Add(new(mesh.Triangle(i)));
-            }
-
-            public void Add(IMesh mesh, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color) => Add(mesh, [new(world, color)]);
 
             // manually fill the mesh
             public void AddVertex(Vector3 v) => _vertices.Add(v);

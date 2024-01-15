@@ -13,3 +13,8 @@
 
 .lgb: similar, magic 'LGB1', main payload 'LGP1'
 LGP1: 0x10 byte header, then 4*numEntries entry offsets
+
+
+layoutinstances with collision:
+- part (1) (obviously)
+- derived from some base: 41, 43, 49, 57, 71, 86, 87, 88, 89

@@ -5,9 +5,9 @@ using SharpDX.DXGI;
 using SharpDX;
 using System;
 using System.Runtime.InteropServices;
-using Matrix4x3 = FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3;
 using Vector3 = System.Numerics.Vector3;
 using Vector4 = System.Numerics.Vector4;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 
 namespace Navmesh.Render;
 

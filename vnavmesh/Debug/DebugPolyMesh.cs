@@ -1,4 +1,5 @@
 ﻿using DotRecast.Recast;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using Navmesh.Render;
 using System;
 using System.Numerics;
@@ -94,8 +95,8 @@ public class DebugPolyMesh : DebugRecast
             var timer = Timer.Create();
 
             // one 'instance' per area
-            builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, _colAreaNull));
-            builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, _colAreaWalkable));
+            builder.AddInstance(new(Matrix4x3.Identity, _colAreaNull));
+            builder.AddInstance(new(Matrix4x3.Identity, _colAreaWalkable));
 
             for (int i = 0; i < _mesh.nverts; ++i)
                 builder.AddVertex(GetVertex(i));

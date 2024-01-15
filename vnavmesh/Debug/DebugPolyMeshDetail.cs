@@ -1,4 +1,5 @@
 ﻿using DotRecast.Recast;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using Navmesh.Render;
 using System.Numerics;
 
@@ -75,7 +76,7 @@ public class DebugPolyMeshDetail : DebugRecast
                 builder.AddTriangle(_mesh.tris[i * 4], _mesh.tris[i * 4 + 2], _mesh.tris[i * 4 + 1]); // invert winding for dx
             for (int i = 0; i < _mesh.nmeshes; ++i)
             {
-                builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, IntColor(i, 0.75f)));
+                builder.AddInstance(new(Matrix4x3.Identity, IntColor(i, 0.75f)));
                 builder.AddMesh(_mesh.meshes[i * 4], _mesh.meshes[i * 4 + 2], _mesh.meshes[i * 4 + 3], i, 1);
             }
             Service.Log.Debug($"detail polymesh visualization build time: {timer.Value().TotalMilliseconds:f3}ms");

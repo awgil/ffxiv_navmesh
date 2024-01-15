@@ -1,5 +1,6 @@
 ﻿using Dalamud.Memory;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -15,7 +16,7 @@ public class DebugExportObj
         public List<Vector3> Vertices = new();
         public List<(int v1, int v2, int v3)> Triangles = new();
 
-        public unsafe void AddPCB(MeshPCB.FileNode* node, ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world)
+        public unsafe void AddPCB(MeshPCB.FileNode* node, ref Matrix4x3 world)
         {
             if (node == null)
                 return;
@@ -60,7 +61,7 @@ public class DebugExportObj
                             var data = (MeshPCB.FileHeader*)Unsafe.AsPointer(ref f.Data[0]);
                             if (data->Version is 1 or 4)
                             {
-                                res.AddPCB((MeshPCB.FileNode*)(data + 1), ref FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity);
+                                res.AddPCB((MeshPCB.FileNode*)(data + 1), ref Matrix4x3.Identity);
                             }
                         }
                     }

@@ -1,4 +1,5 @@
 ﻿using DotRecast.Detour;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using Navmesh.Render;
 using System.Numerics;
 
@@ -172,10 +173,10 @@ public class DebugDetourNavmesh : DebugRecast
             var timer = Timer.Create();
 
             // instances differ only by color
-            builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, IntColor(tileIndex, 0.75f)));
-            builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, _colAreaNull));
-            builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, _colAreaWalkable));
-            builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, _colClosedList));
+            builder.AddInstance(new(Matrix4x3.Identity, IntColor(tileIndex, 0.75f)));
+            builder.AddInstance(new(Matrix4x3.Identity, _colAreaNull));
+            builder.AddInstance(new(Matrix4x3.Identity, _colAreaWalkable));
+            builder.AddInstance(new(Matrix4x3.Identity, _colClosedList));
 
             for (int i = 0; i < tile.data.header.vertCount; ++i)
                 builder.AddVertex(GetVertex(tile, i));
@@ -215,10 +216,10 @@ public class DebugDetourNavmesh : DebugRecast
             var timer = Timer.Create();
 
             // instances differ only by color
-            builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, IntColor(tileIndex, 0.75f)));
-            builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, _colAreaNull));
-            builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, _colAreaWalkable));
-            builder.AddInstance(new(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3.Identity, _colClosedList));
+            builder.AddInstance(new(Matrix4x3.Identity, IntColor(tileIndex, 0.75f)));
+            builder.AddInstance(new(Matrix4x3.Identity, _colAreaNull));
+            builder.AddInstance(new(Matrix4x3.Identity, _colAreaWalkable));
+            builder.AddInstance(new(Matrix4x3.Identity, _colClosedList));
 
             for (int i = 0; i < tile.data.header.vertCount; ++i)
                 builder.AddVertex(GetVertex(tile, i));

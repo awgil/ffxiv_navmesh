@@ -1,11 +1,10 @@
 ﻿using Dalamud.Memory;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using AABB = FFXIVClientStructs.FFXIV.Common.Math.AABB;
-using Matrix4x3 = FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3;
 
 namespace Navmesh;
 

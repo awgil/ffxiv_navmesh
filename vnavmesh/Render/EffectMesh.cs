@@ -1,4 +1,5 @@
-﻿using SharpDX;
+﻿using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+using SharpDX;
 using SharpDX.D3DCompiler;
 using SharpDX.Direct3D;
 using SharpDX.Direct3D11;
@@ -42,7 +43,7 @@ public class EffectMesh : IDisposable
         public Vector4 WorldColZ;
         public Vector4 Color;
 
-        public Instance(FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world, Vector4 color)
+        public Instance(Matrix4x3 world, Vector4 color)
         {
             WorldColX = new(world.M11, world.M21, world.M31, world.M41);
             WorldColY = new(world.M12, world.M22, world.M32, world.M42);

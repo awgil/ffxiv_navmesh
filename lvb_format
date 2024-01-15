@@ -1,0 +1,15 @@
+.lvb: header followed by payloads
+- 0x0: header (size 0xC)
+-- DWORD magic 'LVB1'
+-- DWORD ???
+-- DWORD numPayloads
+- 0xC: payload 1
+-- DWORD magic (eg 'SCN1')
+-- DWORD size (including 8 header bytes)
+-- data...
+- 0xC + payload[0].size: payload 2 ...
+
+
+
+.lgb: similar, magic 'LGB1', main payload 'LGP1'
+LGP1: 0x10 byte header, then 4*numEntries entry offsets

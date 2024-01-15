@@ -5,6 +5,7 @@ using Dalamud.Memory;
 using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using FFXIVClientStructs.FFXIV.Common.Math;
 using ImGuiNET;
 using Navmesh.Render;
@@ -582,7 +583,7 @@ public unsafe class DebugGameCollision : IDisposable
 
     private void VisualizeCylinder(ref Matrix4x3 world, uint color)
     {
-        int numSegments = CurveApprox.CalculateCircleSegments(world.Row0.Magnitude, 360.Degrees(), 0.1f);
+        int numSegments = CurveApprox.CalculateCircleSegments(world.Row0.Length(), 360.Degrees(), 0.1f);
         var prev1 = world.TransformCoordinate(new(0, +1, 1));
         var prev2 = world.TransformCoordinate(new(0, -1, 1));
         for (int i = 1; i <= numSegments; ++i)

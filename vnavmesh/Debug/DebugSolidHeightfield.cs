@@ -1,4 +1,5 @@
 ﻿using DotRecast.Recast;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using Navmesh.Render;
 using System.Numerics;
 
@@ -107,7 +108,7 @@ public class DebugSolidHeightfield : DebugRecast
             var timer = Timer.Create();
             // TODO: one thing i don't like about current visualization is the lack of edges and/or any depth cues
             int icell = 0;
-            FFXIVClientStructs.FFXIV.Common.Math.Matrix4x3 world = new() { M11 = _hf.cs * 0.5f, M33 = _hf.cs * 0.5f }; // x/z scale never changes
+            Matrix4x3 world = new() { M11 = _hf.cs * 0.5f, M33 = _hf.cs * 0.5f }; // x/z scale never changes
             world.M43 = _hf.bmin.Z + _hf.cs * 0.5f;
             var x0 = _hf.bmin.X + _hf.cs * 0.5f;
             var chh = _hf.ch * 0.5f;

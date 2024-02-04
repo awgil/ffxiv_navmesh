@@ -34,15 +34,17 @@ internal class DebugNavmesh : IDisposable
 
     private UITree _tree = new();
     private DebugDrawer _dd;
+    private DebugGameCollision _coll;
     private DebugExtractedCollision? _drawExtracted;
     private PerTile[,]? _debugTiles;
     private DebugDetourNavmesh? _drawNavmesh;
     private DebugVoxelMap? _debugVoxelMap;
 
-    public DebugNavmesh(DebugDrawer dd, NavmeshBuilder navmesh)
+    public DebugNavmesh(DebugDrawer dd, DebugGameCollision coll, NavmeshBuilder navmesh)
     {
         _navmesh = navmesh;
         _dd = dd;
+        _coll = coll;
     }
 
     public void Dispose()
@@ -108,7 +110,7 @@ internal class DebugNavmesh : IDisposable
         navmesh.CalcTileLoc((Service.ClientState.LocalPlayer?.Position ?? default).SystemToRecast(), out var playerTileX, out var playerTileZ);
         _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
 
-        _drawExtracted ??= new(_navmesh.CollisionGeometry, _tree, _dd);
+        _drawExtracted ??= new(_navmesh.Scene!, _navmesh.Extractor!, _tree, _dd, _coll);
         _drawExtracted.Draw();
         var intermediates = _navmesh.Intermediates;
         if (intermediates != null)

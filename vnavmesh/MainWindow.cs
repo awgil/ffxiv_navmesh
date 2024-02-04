@@ -20,7 +20,7 @@ public class MainWindow : Window, IDisposable
     {
         _path = new(_navmesh);
         _debugGameColl = new(_dd);
-        _debugNavmesh = new(_dd, _navmesh);
+        _debugNavmesh = new(_dd, _debugGameColl, _navmesh);
         _debugLayout = new(_debugGameColl);
     }
 

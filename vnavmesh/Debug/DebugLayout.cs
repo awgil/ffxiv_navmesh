@@ -60,8 +60,8 @@ public unsafe class DebugLayout : IDisposable
         var collider = inst->GetCollider();
         if (ni.Opened)
         {
-            tree.LeafNode($"Primary: {inst->HavePrimary()} '{ReadString(inst->GetPrimaryPath())}'");
-            tree.LeafNode($"Secondary: {inst->HaveSecondary()} '{ReadString(inst->GetSecondaryPath())}'");
+            tree.LeafNode($"Primary: {inst->HavePrimary()} '{LayoutUtils.ReadString(inst->GetPrimaryPath())}'");
+            tree.LeafNode($"Secondary: {inst->HaveSecondary()} '{LayoutUtils.ReadString(inst->GetSecondaryPath())}'");
             tree.LeafNode($"Translation: {*inst->GetTranslationImpl()}");
             tree.LeafNode($"Rotation: {*inst->GetRotationImpl()}");
             tree.LeafNode($"Scale: {*inst->GetScaleImpl()}");
@@ -80,7 +80,7 @@ public unsafe class DebugLayout : IDisposable
                         {
                             if (k == instBgPart->CollisionMeshPathCrc)
                             {
-                                tree.LeafNode($"Collider path: {ReadString(v.Value->Data)}");
+                                tree.LeafNode($"Collider path: {LayoutUtils.ReadString(v.Value->Data)}");
                                 break;
                             }
                         }
@@ -129,8 +129,8 @@ public unsafe class DebugLayout : IDisposable
                     break;
                 case InstanceType.ColliderGeneric:
                     var instCollGeneric = (ColliderGenericLayoutInstance*)inst;
-                    var pcbPath = instCollGeneric->PcbPathCrc != 0 ? LayoutUtils.Find(ref layout->CrcToPath, instCollGeneric->PcbPathCrc) : null;
-                    tree.LeafNode($"Type: {instCollGeneric->ColliderLayoutInstance.Type} (pcb={instCollGeneric->PcbPathCrc:X} '{ReadString(pcbPath != null ? pcbPath->Data : null)}')");
+                    var pcbPath = instCollGeneric->PcbPathCrc != 0 ? LayoutUtils.FindPtr(ref layout->CrcToPath, instCollGeneric->PcbPathCrc) : null;
+                    tree.LeafNode($"Type: {instCollGeneric->ColliderLayoutInstance.Type} (pcb={instCollGeneric->PcbPathCrc:X} '{LayoutUtils.ReadString(pcbPath != null ? pcbPath->Data : null)}')");
                     tree.LeafNode($"Layer: {instCollGeneric->ColliderLayoutInstance.GetLayerMask():X} (is-43h={instCollGeneric->LayerMaskIs43h})");
                     tree.LeafNode($"Material: {instCollGeneric->MaterialIdHigh:X8}{instCollGeneric->MaterialIdLow:X8}/{instCollGeneric->MaterialMaskHigh:X8}{instCollGeneric->MaterialMaskLow:X8}");
                     tree.LeafNode($"Misc: active-by-default={instCollGeneric->ColliderLayoutInstance.ActiveByDefault}, unk70={instCollGeneric->ColliderLayoutInstance.u70}");
@@ -213,7 +213,7 @@ public unsafe class DebugLayout : IDisposable
             {
                 foreach (var (k, v) in manager->Terrains)
                 {
-                    var nterr = _tree.LeafNode($"{k:X8} = {(nint)v.Value:X}, path={ReadString(v.Value->Path)}, coll={(nint)v.Value->Collider:X}");
+                    var nterr = _tree.LeafNode($"{k:X8} = {(nint)v.Value:X}, path={LayoutUtils.ReadString(v.Value->Path)}, coll={(nint)v.Value->Collider:X}");
                     if (nterr.SelectedOrHovered && v.Value->Collider != null)
                         _coll.VisualizeCollider(&v.Value->Collider->Collider);
                 }
@@ -253,7 +253,7 @@ public unsafe class DebugLayout : IDisposable
             {
                 foreach (var (k, v) in manager->CrcToPath)
                 {
-                    _tree.LeafNode($"{k:X8} = [{v.Value->NumRefs}] {ReadString(v.Value->Data)}");
+                    _tree.LeafNode($"{k:X8} = [{v.Value->NumRefs}] {LayoutUtils.ReadString(v.Value->Data)}");
                 }
             }
         }
@@ -310,7 +310,7 @@ public unsafe class DebugLayout : IDisposable
         if (!n.Opened)
             return;
         foreach (var str in strings.Strings.Span)
-            _tree.LeafNode($"[{str.Value->NumRefs}] {ReadString(str.Value->Data)}");
+            _tree.LeafNode($"[{str.Value->NumRefs}] {LayoutUtils.ReadString(str.Value->Data)}");
     }
 
     private void DrawResourceHandle(string tag, ResourceHandle* rsrc)
@@ -360,10 +360,10 @@ public unsafe class DebugLayout : IDisposable
             return false;
         var general = header->General;
         _tree.LeafNode($"Have layer groups: {general->HaveLayerGroups}");
-        _tree.LeafNode($"Terrain: {ReadString(general->PathTerrain)}");
+        _tree.LeafNode($"Terrain: {LayoutUtils.ReadString(general->PathTerrain)}");
         _tree.LeafNode($"Env spaces: {general->NumEnvSpaces} at +{general->OffsetEnvSpaces}");
-        _tree.LeafNode($"Sky visibility: {ReadString(general->PathSkyVisibility)}");
-        _tree.LeafNode($"LCB: {ReadString(general->PathLCB)} (uw={general->u_haveLCBUW})");
+        _tree.LeafNode($"Sky visibility: {LayoutUtils.ReadString(general->PathSkyVisibility)}");
+        _tree.LeafNode($"LCB: {LayoutUtils.ReadString(general->PathLCB)} (uw={general->u_haveLCBUW})");
         using (var ng = _tree.Node($"Embedded layer groups ({header->NumEmbeddedLayerGroups} at +{header->OffsetEmbeddedLayerGroups})", header->NumEmbeddedLayerGroups == 0))
         {
             if (ng.Opened)
@@ -380,7 +380,7 @@ public unsafe class DebugLayout : IDisposable
             {
                 for (int i = 0; i < header->NumLayerGroupResources; ++i)
                 {
-                    DrawFile($"Layer group {i}", ReadString(header->LayerGroupResource(header->LayerGroupResourceOffsets[i])));
+                    DrawFile($"Layer group {i}", LayoutUtils.ReadString(header->LayerGroupResource(header->LayerGroupResourceOffsets[i])));
                 }
             }
         }
@@ -404,7 +404,7 @@ public unsafe class DebugLayout : IDisposable
 
     private bool DrawFileSectionLayerGroup(string tag, FileLayerGroupHeader* header)
     {
-        using var n = _tree.Node($"{tag}: {header->Id} '{ReadString(header->LayerName)}', {header->NumLayers} layers at +{header->OffsetLayers}", header->NumLayers == 0);
+        using var n = _tree.Node($"{tag}: {header->Id} '{LayoutUtils.ReadString(header->LayerName)}', {header->NumLayers} layers at +{header->OffsetLayers}", header->NumLayers == 0);
         if (!n.Opened)
             return false;
         foreach (var layerOffset in header->LayerOffsets)
@@ -427,8 +427,8 @@ public unsafe class DebugLayout : IDisposable
                         {
                             case InstanceType.BgPart:
                                 var instanceBgPart = (FileLayerGroupInstanceBgPart*)instance;
-                                _tree.LeafNode($"Mdl: {ReadString(instanceBgPart->PathMdl)}");
-                                _tree.LeafNode($"Pcb: {ReadString(instanceBgPart->PathPcb)}");
+                                _tree.LeafNode($"Mdl: {LayoutUtils.ReadString(instanceBgPart->PathMdl)}");
+                                _tree.LeafNode($"Pcb: {LayoutUtils.ReadString(instanceBgPart->PathPcb)}");
                                 _tree.LeafNode($"Collider type: {instanceBgPart->ColliderType}");
                                 _tree.LeafNode($"Material: {instanceBgPart->MaterialIdHigh:X8}{instanceBgPart->MaterialIdLow:X8}/{instanceBgPart->MaterialMaskHigh:X8}{instanceBgPart->MaterialMaskLow:X8}");
                                 _tree.LeafNode($"unks: {instanceBgPart->u50} {instanceBgPart->u51} {instanceBgPart->u52} {instanceBgPart->u53} {instanceBgPart->u54} {instanceBgPart->u58}");
@@ -448,7 +448,7 @@ public unsafe class DebugLayout : IDisposable
                             case InstanceType.Prefab:
                             case InstanceType.Prefab2:
                                 var instancePrefab = (FileLayerGroupInstancePrefab*)instance;
-                                DrawFile("Path", ReadString(instancePrefab->Path));
+                                DrawFile("Path", LayoutUtils.ReadString(instancePrefab->Path));
                                 _tree.LeafNode($"Unks: types={instancePrefab->u34} {instancePrefab->u40}, other={instancePrefab->u38} {instancePrefab->u3C}");
                                 break;
                             case InstanceType.ColliderGeneric:
@@ -456,7 +456,7 @@ public unsafe class DebugLayout : IDisposable
                                 _tree.LeafNode($"Type: {instanceCollGen->FileLayerGroupInstanceCollider.Type}");
                                 _tree.LeafNode($"Material: {instanceCollGen->MaterialIdHigh:X8}{instanceCollGen->MaterialIdLow:X8}/{instanceCollGen->MaterialMaskHigh:X8}{instanceCollGen->MaterialMaskLow:X8}");
                                 _tree.LeafNode($"Misc: u34={instanceCollGen->FileLayerGroupInstanceCollider.u34}, active={instanceCollGen->FileLayerGroupInstanceCollider.ActiveByDefault}, layer43h={instanceCollGen->Layer43h}");
-                                _tree.LeafNode($"Pcb: {ReadString(instanceCollGen->Path)}");
+                                _tree.LeafNode($"Pcb: {LayoutUtils.ReadString(instanceCollGen->Path)}");
                                 break;
                         }
                     }
@@ -509,7 +509,7 @@ public unsafe class DebugLayout : IDisposable
         }
         foreach (var off in scene->LayerGroupResourceOffsets)
         {
-            var lcb = Service.DataManager.GetFile(ReadString(scene->LayerGroupResource(off)));
+            var lcb = Service.DataManager.GetFile(LayoutUtils.ReadString(scene->LayerGroupResource(off)));
             if (lcb != null)
                 fixed (byte* lcbData = &lcb.Data[0])
                     FillInstancesFromFileLayerGroup(FindSection<FileLayerGroupHeader>((FileHeader*)lcbData, 0x3150474C), filterId, festivals);
@@ -565,7 +565,7 @@ public unsafe class DebugLayout : IDisposable
             if (inst->Type is InstanceType.Prefab or InstanceType.Prefab2)
             {
                 var instPrefab = (FileLayerGroupInstancePrefab*)inst;
-                var sgb = Service.DataManager.GetFile(ReadString(instPrefab->Path));
+                var sgb = Service.DataManager.GetFile(LayoutUtils.ReadString(instPrefab->Path));
                 if (sgb != null)
                     fixed (byte* sgbData = &sgb.Data[0])
                         FillInstancesFromFilePrefab(FindSection<FileSceneHeader>((FileHeader*)sgbData, 0x314E4353), layerGroupId, layerId, key, subShift - 8, expectedInGame);
@@ -664,6 +664,4 @@ public unsafe class DebugLayout : IDisposable
     {
         tree.LeafNode($"{tag} [{v.NumRefs}] {(FileLayerGroupAnalyticCollider.Type)v.Transform.Type} {v.u8:X} {v.uC} {v.u3C} {v.u60} {v.u64} trans=[{v.Transform.Translation} {v.Transform.Rotation} {v.Transform.Scale}] bb=[{v.BoundsMin}-{v.BoundsMax}], mat={v.MaterialId:X}/{v.MaterialMask:X}");
     }
-
-    private static string ReadString(byte* data) => data != null ? MemoryHelper.ReadStringNullTerminated((nint)data) : "";
 }

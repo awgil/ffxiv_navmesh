@@ -1,4 +1,5 @@
-﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+﻿using Dalamud.Memory;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.Interop;
 using FFXIVClientStructs.STD;
 using System;
@@ -7,7 +8,10 @@ namespace Navmesh;
 
 public unsafe static class LayoutUtils
 {
-    public static unsafe V* Find<K, V>(ref this StdMap<K, Pointer<V>> map, K key) where K : unmanaged, IComparable where V : unmanaged
+    public static string ReadString(byte* data) => data != null ? MemoryHelper.ReadStringNullTerminated((nint)data) : "";
+    public static string ReadString(RefCountedString* data) => data != null ? ReadString(data->Data) : "";
+
+    public static V* Find<K, V>(ref this StdMap<K, V> map, K key) where K : unmanaged, IComparable where V : unmanaged
     {
         var result = map.Head;
         var trynode = map.Head->Parent;
@@ -25,14 +29,20 @@ public unsafe static class LayoutUtils
         }
         if (result->IsNil || key.CompareTo(result->KeyValuePair.Item1) < 0)
             result = map.Head;
-        return result != map.Head ? result->KeyValuePair.Item2.Value : null;
+        return result != map.Head ? &result->KeyValuePair.Item2 : null;
+    }
+
+    public static V* FindPtr<K, V>(ref this StdMap<K, Pointer<V>> map, K key) where K : unmanaged, IComparable where V : unmanaged
+    {
+        var res = Find(ref map, key);
+        return res != null ? res->Value : null;
     }
 
     public static ILayoutInstance* FindInstance(LayoutManager* layout, ulong key)
     {
         foreach (var (ikt, ikv) in layout->InstancesByType)
         {
-            var iter = ikv.Value->Find(key);
+            var iter = ikv.Value->FindPtr(key);
             if (iter != null)
                 return iter;
         }
@@ -49,7 +59,7 @@ public unsafe static class LayoutUtils
             foreach (var (k, v) in layout->Filters)
                 if (v.Value->TerritoryTypeId == layout->TerritoryTypeId)
                     return v.Value;
-        return layout->TerritoryTypeId == 0 ? Find(ref layout->Filters, layout->FilterKey) : null;
+        return layout->TerritoryTypeId == 0 ? FindPtr(ref layout->Filters, layout->FilterKey) : null;
     }
 
     public static bool LayerActiveFestival(FileLayerGroupLayer* layer, Span<uint> festivals)

@@ -5,10 +5,9 @@
 -- remove unneeded libs
 -- follow/target update
 - optimize memory used by voxelmap pathfind query
-- caching and on-the-fly build/update
--- on-the-fly update navmesh tiles near player to account for loose geometry streaming
+- navmesh caching
 -- do not store intermediates unless needed for debug
--- navmesh caching per zone
+-- navmesh caching per zone (terr-id + cfcid + filtered festivals)
 -- per-zone custom markup (tighter borders? shapes to ignore?)
 - walk/fly transitions
 - figure out max-climb and ch (max-climb should be 0.5wu, do we need an extra voxel?)

@@ -21,12 +21,12 @@ public class NavmeshRasterizer
         _walkableNormalThreshold = walkableMaxSlope.Cos();
     }
 
-    public unsafe void Rasterize(CollisionGeometryExtractor geom, bool includeStreamed, bool includeLooseMeshes, bool includeAnalytic)
+    public unsafe void Rasterize(SceneExtractor geom, bool includeStreamed, bool includeLooseMeshes, bool includeAnalytic)
     {
         foreach (var (name, mesh) in geom.Meshes)
         {
-            var streamed = mesh.Flags.HasFlag(CollisionGeometryExtractor.Flags.FromStreamed);
-            var analytic = mesh.Flags.HasFlag(CollisionGeometryExtractor.Flags.FromAnalyticShape);
+            var streamed = mesh.Flags.HasFlag(SceneExtractor.Flags.FromTerrain);
+            var analytic = mesh.Flags.HasFlag(SceneExtractor.Flags.FromAnalyticShape);
             bool include = streamed ? includeStreamed : analytic ? includeAnalytic : includeLooseMeshes;
             if (!include)
                 continue;

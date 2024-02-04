@@ -1,5 +1,6 @@
 ﻿using Dalamud.Interface.Utility;
 using Dalamud.Utility;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using ImGuiNET;
 using Navmesh.Render;
 using System;
@@ -138,6 +139,7 @@ public unsafe class DebugDrawer : IDisposable
         DrawWorldLine(baa, bba, color, thickness);
         DrawWorldLine(bab, bbb, color, thickness);
     }
+    public void DrawWorldAABB(AABB aabb, uint color, int thickness = 1) => DrawWorldAABB((aabb.Min + aabb.Max) * 0.5f, (aabb.Max - aabb.Min) * 0.5f, color, thickness);
 
     public void DrawWorldSphere(Vector3 center, float radius, uint color, int thickness = 1)
     {

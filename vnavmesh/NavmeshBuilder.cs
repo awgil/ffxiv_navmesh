@@ -45,7 +45,8 @@ public class NavmeshBuilder : IDisposable
     public NavmeshSettings Settings = new();
 
     // results - should not be accessed while task is running
-    private CollisionGeometryExtractor _extractor = new();
+    private SceneDefinition? _scene;
+    private SceneExtractor? _extractor;
     private IntermediateData? _intermediates;
     private DtNavMesh? _navmesh;
     private DtNavMeshQuery? _query;
@@ -54,7 +55,8 @@ public class NavmeshBuilder : IDisposable
     private Task? _task;
 
     public State CurrentState => _task == null ? State.NotBuilt : !_task.IsCompleted ? State.InProgress : _task.IsFaulted ? State.Failed : State.Ready;
-    public CollisionGeometryExtractor CollisionGeometry => _extractor;
+    public SceneDefinition? Scene => _task != null && _task.IsCompletedSuccessfully ? _scene : null;
+    public SceneExtractor? Extractor => _task != null && _task.IsCompletedSuccessfully ? _extractor : null;
     public IntermediateData? Intermediates => _task != null && _task.IsCompletedSuccessfully ? _intermediates : null;
     public DtNavMesh? Navmesh => _task != null && _task.IsCompletedSuccessfully ? _navmesh : null;
     public DtNavMeshQuery? Query => _task != null && _task.IsCompletedSuccessfully ? _query : null;
@@ -70,9 +72,10 @@ public class NavmeshBuilder : IDisposable
     {
         Clear();
         Service.Log.Debug("[navmesh] extract from scene");
-        _extractor.FillFromGame(1); // layer 0 is where collision geometry is
+        _scene = new();
+        _scene.FillFromActiveLayout();
         Service.Log.Debug("[navmesh] schedule async build");
-        _task = Task.Run(BuildNavmesh);
+        _task = Task.Run(() => BuildNavmesh(_scene));
     }
 
     public void Clear()
@@ -84,12 +87,13 @@ public class NavmeshBuilder : IDisposable
             _task.Dispose();
             _task = null;
         }
+        _scene = null;
+        _extractor = null;
         _intermediates = null;
         _navmesh = null;
         _query = null;
         _volume = null;
         _volumeQuery = null;
-        _extractor.Clear();
         //GC.Collect();
     }
 
@@ -121,7 +125,7 @@ public class NavmeshBuilder : IDisposable
         return VolumeQuery?.FindPath(from, to) ?? new();
     }
 
-    private void BuildNavmesh()
+    private void BuildNavmesh(SceneDefinition scene)
     {
         try
         {
@@ -129,7 +133,7 @@ public class NavmeshBuilder : IDisposable
             var telemetry = new RcTelemetry();
 
             // load all meshes
-            _extractor.Extract();
+            _extractor = new(scene);
 
             int ntilesX = 1, ntilesZ = 1;
             if (Settings.TileSize > 0)
@@ -159,7 +163,7 @@ public class NavmeshBuilder : IDisposable
             {
                 for (int x = 0; x < ntilesX; ++x)
                 {
-                    var tile = BuildNavmeshTile(x, z, _intermediates, _intermediates.Telemetry, volume);
+                    var tile = BuildNavmeshTile(x, z, _extractor, _intermediates, _intermediates.Telemetry, volume);
                     if (tile != null)
                         navmesh.AddTile(tile, 0, 0);
                 }
@@ -178,7 +182,7 @@ public class NavmeshBuilder : IDisposable
         }
     }
 
-    private DtMeshData? BuildNavmeshTile(int x, int z, IntermediateData? intermediates, RcTelemetry telemetry, VoxelMap volume)
+    private DtMeshData? BuildNavmeshTile(int x, int z, SceneExtractor extractor, IntermediateData? intermediates, RcTelemetry telemetry, VoxelMap volume)
     {
         var timer = Timer.Create();
 
@@ -186,8 +190,8 @@ public class NavmeshBuilder : IDisposable
         var walkableHeightVoxels = (int)MathF.Ceiling(Settings.AgentHeight / Settings.CellHeight);
         var walkableRadiusVoxels = (int)MathF.Ceiling(Settings.AgentRadius / Settings.CellSize);
         int borderSizeVoxels = 0;
-        var boundsMin = _extractor.BoundsMin;
-        var boundsMax = _extractor.BoundsMax;
+        var boundsMin = extractor.BoundsMin;
+        var boundsMax = extractor.BoundsMax;
         int widthVoxels, heightVoxels;
         if (Settings.TileSize > 0)
         {
@@ -220,7 +224,7 @@ public class NavmeshBuilder : IDisposable
         // each span contains an 'area id', which is either walkable (if normal is good) or not (otherwise); areas outside spans contains no geometry at all
         var shf = new RcHeightfield(widthVoxels, heightVoxels, boundsMin.SystemToRecast(), boundsMax.SystemToRecast(), Settings.CellSize, Settings.CellHeight, borderSizeVoxels);
         var rasterizer = new NavmeshRasterizer(shf, Settings.AgentMaxSlopeDeg.Degrees(), walkableClimbVoxels, telemetry);
-        rasterizer.Rasterize(_extractor, true, true, false); // TODO: some analytic meshes are used for things like doors - their raycast flag is removed when they are opened ... :(
+        rasterizer.Rasterize(extractor, true, true, false); // TODO: some analytic meshes are used for things like doors - their raycast flag is removed when they are opened ... :(
 
         // 2. perform a bunch of postprocessing on a heightfield
         if (Settings.Filtering.HasFlag(NavmeshSettings.Filter.LowHangingObstacles))

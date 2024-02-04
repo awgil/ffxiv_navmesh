@@ -3,6 +3,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Memory;
 using Dalamud.Utility;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
@@ -89,6 +90,11 @@ public unsafe class DebugGameCollision : IDisposable
             ++i;
         }
 
+        DrawVisualizers();
+    }
+
+    public void DrawVisualizers()
+    {
         if (_boxDynamicBuilder != null)
         {
             _boxDynamicBuilder.Dispose();
@@ -274,6 +280,7 @@ public unsafe class DebugGameCollision : IDisposable
             var ac = res.V3 - res.V1;
             var normal = Vector3.Cross(ab, ac).Normalized;
             _tree.LeafNode($"Normal: {normal} (slope={Angle.Acos(normal.Y)})");
+            _tree.LeafNode($"Material: {res.Material:X}");
             DrawCollider((Collider*)res.Object);
             VisualizeCollider((Collider*)res.Object);
             _dd.DrawWorldLine(res.V1, res.V2, 0xff0000ff, 2);
@@ -296,7 +303,8 @@ public unsafe class DebugGameCollision : IDisposable
         var flagsText = raycastFlag ? globalVisitFlag ? "raycast, global visit" : "raycast" : globalVisitFlag ? "global visit" : "none";
 
         var type = coll->GetColliderType();
-        var color = 0xffffffff;
+        var layoutInstance = LayoutUtils.FindInstance(LayoutWorld.Instance()->ActiveLayout, (coll->LayoutObjectId << 32) | (coll->LayoutObjectId >> 32));
+        var color = layoutInstance == null || layoutInstance->Id.Type is not InstanceType.BgPart and not InstanceType.ColliderGeneric ? 0xff00ffff : 0xffffffff;
         if (type == ColliderType.Mesh)
         {
             var collMesh = (ColliderMesh*)coll;
@@ -304,10 +312,8 @@ public unsafe class DebugGameCollision : IDisposable
                 color = 0xff00ff00;
             else if (collMesh->MeshIsSimple)
                 color = 0xff0000ff;
-            else if (collMesh->Resource == null)
-                color = 0xff00ffff;
         }
-        using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}###{(nint)coll:X}", false, color);
+        using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, layout-id={coll->LayoutObjectId:X16}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}###{(nint)coll:X}", false, color);
         if (ImGui.BeginPopupContextItem())
         {
             ContextCollider(coll);
@@ -393,6 +399,9 @@ public unsafe class DebugGameCollision : IDisposable
                 }
                 break;
         }
+
+        if (layoutInstance != null)
+            DebugLayout.DrawInstance(_tree, "Layout instance:", LayoutWorld.Instance()->ActiveLayout, layoutInstance);
     }
 
     private void DrawColliderMesh(ColliderMesh* coll)
@@ -469,7 +478,7 @@ public unsafe class DebugGameCollision : IDisposable
         }
     }
 
-    private void VisualizeCollider(Collider* coll)
+    public void VisualizeCollider(Collider* coll)
     {
         switch (coll->GetColliderType())
         {

@@ -18,3 +18,12 @@ LGP1: 0x10 byte header, then 4*numEntries entry offsets
 layoutinstances with collision:
 - part (1) (obviously)
 - derived from some base: 41, 43, 49, 57, 71, 86, 87, 88, 89
+-- 41 = layermask 0x6
+-- 43 = layermask 0xA
+-- 49 = layermask 0x12
+-- 57 = generic collider? layermask can be any...
+-- 71 = layermask 0x22
+-- 86 = layermask 0x82
+-- 87 = layermask 0x102
+-- 88 = layermask 0x202
+-- 89 = layermask 0x402

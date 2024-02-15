@@ -5,11 +5,8 @@
 -- remove unneeded libs
 -- follow/target update
 - optimize memory used by voxelmap pathfind query
-- navmesh caching
--- do not store intermediates unless needed for debug
--- navmesh caching per zone (terr-id + cfcid + filtered festivals)
--- per-zone custom markup (tighter borders? shapes to ignore?)
 - walk/fly transitions
+- per-zone custom markup (tighter borders? shapes to ignore?)
 - figure out max-climb and ch (max-climb should be 0.5wu, do we need an extra voxel?)
 - optimize voxelization
 -- figure out fly bounds (0x2021 material planes)

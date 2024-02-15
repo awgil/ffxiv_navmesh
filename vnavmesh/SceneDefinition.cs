@@ -1,9 +1,7 @@
 ﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
-using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using System.Collections.Generic;
 using System.Numerics;
-using ColliderType = FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType;
 
 namespace Navmesh;
 
@@ -11,6 +9,7 @@ namespace Navmesh;
 // the goal is to fill it quickly on main thread, and then extract real data in background thread
 public class SceneDefinition
 {
+    public SortedSet<uint> FestivalLayers = new();
     public List<string> Terrains = new();
     public Dictionary<uint, (Transform transform, Vector3 bbMin, Vector3 bbMax)> AnalyticShapes = new(); // key = crc; used by bgparts
     public Dictionary<uint, string> MeshPaths = new(); // key = crc, value = pcb path; used by all colliders
@@ -21,8 +20,16 @@ public class SceneDefinition
 
     public unsafe void FillFromLayout(LayoutManager* layout)
     {
-        if (layout == null)
+        if (layout == null || layout->InitState != 7 || layout->FestivalStatus is > 0 and < 5)
             return;
+
+        foreach (var (k, v) in layout->Layers)
+        {
+            if (v.Value->FestivalId != 0)
+            {
+                FestivalLayers.Add(((uint)v.Value->FestivalSubId << 16) | v.Value->FestivalId);
+            }
+        }
 
         foreach (var (k, v) in layout->CrcToAnalyticShapeData)
         {

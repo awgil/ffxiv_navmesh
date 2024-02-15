@@ -1,5 +1,4 @@
-﻿using Dalamud.Memory;
-using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
@@ -662,6 +661,6 @@ public unsafe class DebugLayout : IDisposable
 
     private static void DrawAnalyticShape(UITree tree, string tag, AnalyticShapeData v)
     {
-        tree.LeafNode($"{tag} [{v.NumRefs}] {(FileLayerGroupAnalyticCollider.Type)v.Transform.Type} {v.u8:X} {v.uC} {v.u3C} {v.u60} {v.u64} trans=[{v.Transform.Translation} {v.Transform.Rotation} {v.Transform.Scale}] bb=[{v.BoundsMin}-{v.BoundsMax}], mat={v.MaterialId:X}/{v.MaterialMask:X}");
+        tree.LeafNode($"{tag} [{v.NumRefs}] {v.Type} {v.u8:X} {v.uC} {v.u3C} {v.u60} {v.u64} trans=[{v.Transform.Translation} {v.Transform.Rotation} {v.Transform.Scale}] bb=[{v.BoundsMin}-{v.BoundsMax}], mat={v.MaterialId:X}/{v.MaterialMask:X}");
     }
 }

@@ -1,6 +1,8 @@
 ﻿using Dalamud.Common;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
+using Navmesh.Movement;
 using System;
 using System.IO;
 using System.Numerics;
@@ -11,13 +13,14 @@ namespace Navmesh;
 public sealed class Plugin : IDalamudPlugin
 {
     private WindowSystem WindowSystem = new("vnavmesh");
+    private NavmeshManager _navmeshManager;
+    private FollowPath _followPath;
     private MainWindow _wndMain;
 
     public Plugin(DalamudPluginInterface dalamud)
     {
-        var dir = dalamud.ConfigDirectory;
-        if (!dir.Exists)
-            dir.Create();
+        if (!dalamud.ConfigDirectory.Exists)
+            dalamud.ConfigDirectory.Create();
         var dalamudRoot = dalamud.GetType().Assembly.
                 GetType("Dalamud.Service`1", true)!.MakeGenericType(dalamud.GetType().Assembly.GetType("Dalamud.Dalamud", true)!).
                 GetMethod("Get")!.Invoke(null, BindingFlags.Default, null, Array.Empty<object>(), null);
@@ -27,7 +30,10 @@ public sealed class Plugin : IDalamudPlugin
 
         dalamud.Create<Service>();
 
-        _wndMain = new();
+        _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
+        _followPath = new(_navmeshManager);
+
+        _wndMain = new(_navmeshManager, _followPath);
         WindowSystem.AddWindow(_wndMain);
 
         dalamud.UiBuilder.Draw += WindowSystem.Draw;
@@ -35,13 +41,26 @@ public sealed class Plugin : IDalamudPlugin
         Service.CommandManager.AddHandler("/vnavmesh", new(OnCommand));
 
         _wndMain.IsOpen = true;
+
+        Service.Framework.Update += OnUpdate;
     }
 
     public void Dispose()
     {
+        Service.Framework.Update -= OnUpdate;
+
         Service.CommandManager.RemoveHandler("/vnavmesh");
         WindowSystem.RemoveAllWindows();
         _wndMain.Dispose();
+
+        _followPath.Dispose();
+        _navmeshManager.Dispose();
+    }
+
+    private void OnUpdate(IFramework fwk)
+    {
+        _navmeshManager.Update();
+        _followPath.Update();
     }
 
     private void OnCommand(string command, string arguments)
@@ -56,8 +75,11 @@ public sealed class Plugin : IDalamudPlugin
         var args = arguments.Split(' ');
         switch (args[0])
         {
+            case "reload":
+                _navmeshManager.Reload(true);
+                break;
             case "rebuild":
-                _wndMain.Path.RebuildNavmesh();
+                _navmeshManager.Reload(false);
                 break;
             case "moveto":
                 if (args.Length > 3)
@@ -70,7 +92,7 @@ public sealed class Plugin : IDalamudPlugin
             case "movetarget":
                 var moveTarget = Service.TargetManager.Target;
                 if (moveTarget != null)
-                    _wndMain.Path.MoveTo(moveTarget.Position);
+                    _followPath.MoveTo(moveTarget.Position);
                 break;
             case "flyto":
                 if (args.Length > 3)
@@ -83,10 +105,10 @@ public sealed class Plugin : IDalamudPlugin
             case "flytarget":
                 var flyTarget = Service.TargetManager.Target;
                 if (flyTarget != null)
-                    _wndMain.Path.FlyTo(flyTarget.Position);
+                    _followPath.FlyTo(flyTarget.Position);
                 break;
             case "stop":
-                _wndMain.Path.Stop();
+                _followPath.Stop();
                 break;
         }
     }
@@ -100,8 +122,8 @@ public sealed class Plugin : IDalamudPlugin
             float.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture),
             float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture));
         if (fly)
-            _wndMain.Path.FlyTo(origin + offset);
+            _followPath.FlyTo(origin + offset);
         else
-            _wndMain.Path.MoveTo(origin + offset);
+            _followPath.MoveTo(origin + offset);
     }
 }

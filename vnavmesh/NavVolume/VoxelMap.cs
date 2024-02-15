@@ -22,7 +22,7 @@ public class VoxelMap
         set => Voxels[VoxelToIndex(x, y, z)] = value;
     }
 
-    public VoxelMap(Vector3 boundsMin, Vector3 boundsMax, int nx, int ny, int nz)
+    public VoxelMap(Vector3 boundsMin, Vector3 boundsMax, int nx, int ny, int nz, byte[]? initialData = null)
     {
         BoundsMin = boundsMin;
         BoundsMax = boundsMax;
@@ -31,7 +31,15 @@ public class VoxelMap
         NumCellsX = nx;
         NumCellsY = ny;
         NumCellsZ = nz;
-        Voxels = new(nx * ny * nz);
+        if (initialData == null)
+        {
+            Voxels = new(nx * ny * nz);
+        }
+        else
+        {
+            Voxels = new(initialData);
+            Voxels.Length = nx * ny * nz;
+        }
     }
 
     public void AddFromHeightfield(RcHeightfield hf)

@@ -1,26 +1,33 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Navmesh.Debug;
 
 namespace Navmesh.Movement;
 
 public class FollowPath : IDisposable
 {
+    public bool MovementAllowed = true;
     public float Tolerance = 0.5f;
 
-    private NavmeshBuilder _navmesh;
+    public NavmeshQuery? Query => _query;
+    public IReadOnlyList<Vector3> Waypoints => _waypoints;
+
+    private NavmeshManager _manager;
+    private NavmeshQuery? _query;
     private List<Vector3> _waypoints = new();
     private OverrideCamera _camera = new();
     private OverrideMovement _movement = new();
 
-    public FollowPath(NavmeshBuilder navmesh)
+    public FollowPath(NavmeshManager manager)
     {
-        _navmesh = navmesh;
+        _manager = manager;
+        _manager.OnNavmeshChanged += OnNavmeshChanged;
+        OnNavmeshChanged(_manager.Navmesh);
     }
 
     public void Dispose()
     {
+        _manager.OnNavmeshChanged -= OnNavmeshChanged;
         _camera.Dispose();
         _movement.Dispose();
     }
@@ -47,7 +54,7 @@ public class FollowPath : IDisposable
         }
         else
         {
-            _movement.Enabled = true;
+            _movement.Enabled = MovementAllowed;
             //_camera.Enabled = true;
             _movement.DesiredPosition = _waypoints[0];
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
@@ -55,43 +62,29 @@ public class FollowPath : IDisposable
         }
     }
 
-    public void DrawPath(DebugDrawer drawer)
-    {
-        var player = Service.ClientState.LocalPlayer;
-        if (player == null)
-            return;
-        var from = player.Position;
-        var color = 0xff00ff00;
-        foreach (var to in _waypoints)
-        {
-            drawer.DrawWorldLine(from, to, color);
-            from = to;
-            color = 0xff00ffff;
-        }
-    }
-
-    public void RebuildNavmesh()
-    {
-        if (_navmesh.CurrentState == NavmeshBuilder.State.InProgress)
-            return;
-        _navmesh.Rebuild();
-    }
-
     public void MoveTo(Vector3 destination)
     {
         var player = Service.ClientState.LocalPlayer;
-        if (player == null)
+        if (player == null || _query == null)
             return;
-        _waypoints = _navmesh.Pathfind(player.Position, destination);
+        _waypoints = _query.PathfindMesh(player.Position, destination);
     }
 
     public void FlyTo(Vector3 destination)
     {
         var player = Service.ClientState.LocalPlayer;
-        if (player == null)
+        if (player == null || _query == null)
             return;
-        _waypoints = _navmesh.PathfindVolume(player.Position, destination);
+        _waypoints = _query.PathfindVolume(player.Position, destination);
     }
 
     public void Stop() => _waypoints.Clear();
+
+    private void OnNavmeshChanged(Navmesh? navmesh)
+    {
+        _query = null;
+        _waypoints.Clear();
+        if (navmesh != null)
+            _query = new(navmesh);
+    }
 }

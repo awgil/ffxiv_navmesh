@@ -14,7 +14,7 @@ public class DebugDetourNavmesh : DebugRecast
     }
 
     private DtNavMesh _navmesh;
-    private DtNavMeshQuery _query;
+    private DtNavMeshQuery? _query;
     private UITree _tree;
     private DebugDrawer _dd;
     private PerTile[] _perTile;
@@ -24,7 +24,7 @@ public class DebugDetourNavmesh : DebugRecast
     private static Vector4 _colClosedList = new(1.0f, 0.75f, 1.0f, 0.5f);
     private enum InstanceID { Tile, AreaNull, AreaWalkable, ClosedList, Count };
 
-    public DebugDetourNavmesh(DtNavMesh navmesh, DtNavMeshQuery query, UITree tree, DebugDrawer dd)
+    public DebugDetourNavmesh(DtNavMesh navmesh, DtNavMeshQuery? query, UITree tree, DebugDrawer dd)
     {
         _navmesh = navmesh;
         _query = query;
@@ -286,7 +286,7 @@ public class DebugDetourNavmesh : DebugRecast
             if (poly.vertCount < 3)
                 return;
             // triangles
-            var instance = _query.IsInClosedList(DtNavMesh.EncodePolyId(tile.salt, tile.index, poly.index)) ? InstanceID.ClosedList : !colorByArea ? InstanceID.Tile : poly.GetArea() == 0 ? InstanceID.AreaNull : InstanceID.AreaWalkable;
+            var instance = _query != null && _query.IsInClosedList(DtNavMesh.EncodePolyId(tile.salt, tile.index, poly.index)) ? InstanceID.ClosedList : !colorByArea ? InstanceID.Tile : poly.GetArea() == 0 ? InstanceID.AreaNull : InstanceID.AreaWalkable;
             var mesh = visu.Meshes[poly.index] with { FirstInstance = (int)instance };
             visu.DrawManual(_dd.RenderContext, mesh);
 
@@ -365,7 +365,7 @@ public class DebugDetourNavmesh : DebugRecast
     private void VisualizeDetailSubmeshWithEdges(DtMeshTile tile, EffectMesh.Data visu, DtPoly poly, bool colorByArea, bool highlight)
     {
         // triangles
-        var instance = _query.IsInClosedList(DtNavMesh.EncodePolyId(tile.salt, tile.index, poly.index)) ? InstanceID.ClosedList : !colorByArea ? InstanceID.Tile : poly.GetArea() == 0 ? InstanceID.AreaNull : InstanceID.AreaWalkable;
+        var instance = _query != null && _query.IsInClosedList(DtNavMesh.EncodePolyId(tile.salt, tile.index, poly.index)) ? InstanceID.ClosedList : !colorByArea ? InstanceID.Tile : poly.GetArea() == 0 ? InstanceID.AreaNull : InstanceID.AreaWalkable;
         var mesh = visu.Meshes[poly.index] with { FirstInstance = (int)instance };
         visu.DrawManual(_dd.RenderContext, mesh);
 

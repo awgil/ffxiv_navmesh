@@ -1,7 +1,6 @@
 - better pathfind
 -- navmesh debug visu for the process
 -- use same string-pulling idea for navvolumes
--- remove unneeded libs
 -- follow/target update
 - optimize memory used by voxelmap pathfind query
 - walk/fly transitions

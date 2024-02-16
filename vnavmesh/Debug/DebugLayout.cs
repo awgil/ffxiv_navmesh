@@ -214,7 +214,7 @@ public unsafe class DebugLayout : IDisposable
                 {
                     var nterr = _tree.LeafNode($"{k:X8} = {(nint)v.Value:X}, path={LayoutUtils.ReadString(v.Value->Path)}, coll={(nint)v.Value->Collider:X}");
                     if (nterr.SelectedOrHovered && v.Value->Collider != null)
-                        _coll.VisualizeCollider(&v.Value->Collider->Collider);
+                        _coll.VisualizeCollider(&v.Value->Collider->Collider, default, default);
                 }
             }
         }
@@ -298,7 +298,7 @@ public unsafe class DebugLayout : IDisposable
             var collider = inst->GetCollider();
             if (collider != null)
             {
-                _coll.VisualizeCollider(collider);
+                _coll.VisualizeCollider(collider, default, default);
             }
         }
     }
@@ -652,7 +652,7 @@ public unsafe class DebugLayout : IDisposable
             var color = !inst.InFile ? 0xff0000ff : inGame != inst.ExpectedToBeInGame ? 0xffff00ff : !inGame ? 0xff00ffff : inst.Collider == null ? 0xff00ff00 : 0xffffffff;
             using var n = _tree.Node($"{inst.Type} {inst.InstanceId:X8}.{inst.SubId:X8} L{inst.LayerId:X4} LG{inst.LayerGroupId:X}: in-file={inst.InFile}, in-game={(nint)inst.Instance:X}, coll={(nint)inst.Collider:X}###{inst.InstanceId:X}.{inst.SubId:X}", inst.Instance == null, color);
             if (n.SelectedOrHovered && inst.Collider != null)
-                _coll.VisualizeCollider(inst.Collider);
+                _coll.VisualizeCollider(inst.Collider, default, default);
             if (!n.Opened)
                 continue;
             DrawInstance("Game", inst.Instance->Layout, inst.Instance);

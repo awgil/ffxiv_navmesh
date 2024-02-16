@@ -12,6 +12,7 @@ using ImGuiNET;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
+using System.Reflection.Metadata.Ecma335;
 using Vector4 = System.Numerics.Vector4;
 
 namespace Navmesh.Debug;
@@ -21,7 +22,8 @@ public unsafe class DebugGameCollision : IDisposable
     private UITree _tree = new();
     private DebugDrawer _dd;
     private BitMask _shownLayers = new(ulong.MaxValue);
-    private BitMask _requiredMaterials;
+    private BitMask _materialMask;
+    private BitMask _materialId;
     private bool _showZeroLayer = true;
     private bool _showOnlyFlagRaycast;
     private bool _showOnlyFlagVisit;
@@ -121,7 +123,9 @@ public unsafe class DebugGameCollision : IDisposable
             {
                 _availableLayers |= new BitMask(coll->LayerMask);
                 _availableMaterials |= new BitMask(coll->ObjectMaterialValue);
-                if (coll->GetColliderType() == ColliderType.Streamed)
+
+                var collType = coll->GetColliderType();
+                if (collType == ColliderType.Streamed)
                 {
                     var cast = (ColliderStreamed*)coll;
                     if (cast->Header != null && cast->Elements != null)
@@ -132,6 +136,16 @@ public unsafe class DebugGameCollision : IDisposable
                             if (m != null)
                                 _streamedMeshes.Add((nint)m);
                         }
+                    }
+                }
+                else if (collType == ColliderType.Mesh)
+                {
+                    var cast = (ColliderMesh*)coll;
+                    if (!cast->MeshIsSimple && cast->Mesh != null)
+                    {
+                        var mesh = (MeshPCB*)cast->Mesh;
+                        var mask = new BitMask(coll->ObjectMaterialMask);
+                        GatherMeshNodeMaterials(mesh->RootNode, ~mask);
                     }
                 }
             }
@@ -146,9 +160,9 @@ public unsafe class DebugGameCollision : IDisposable
             return false;
         if (_showOnlyFlagVisit && (coll->VisibilityFlags & 2) == 0)
             return false;
-        var matFilter = _availableMaterials & _requiredMaterials;
-        if (matFilter.Any() && (matFilter.Raw & coll->ObjectMaterialValue) == 0)
-            return false;
+        var matFilter = _availableMaterials & _materialMask;
+        if (matFilter.Any() && coll->GetColliderType() != ColliderType.Mesh)
+            return /*_materialId.None() ? (matFilter.Raw & coll->ObjectMaterialValue) != 0 :*/ (matFilter.Raw & (coll->ObjectMaterialValue ^ _materialId.Raw)) == 0;
         return true;
     }
 
@@ -174,15 +188,29 @@ public unsafe class DebugGameCollision : IDisposable
         }
 
         {
-            var matFilter = _requiredMaterials & _availableMaterials;
-            using var materials = ImRaii.Combo("Material filter", matFilter.None() ? "None" : matFilter.Raw.ToString("X"));
+            var matMask = _materialMask & _availableMaterials;
+            using var materials = ImRaii.Combo("Material mask", matMask.None() ? "None" : matMask.Raw.ToString("X"));
             if (materials)
             {
                 foreach (var i in _availableMaterials.SetBits())
                 {
-                    var filter = _requiredMaterials[i];
+                    var filter = _materialMask[i];
                     if (ImGui.Checkbox($"Material {1u << i:X16}", ref filter))
-                        _requiredMaterials[i] = filter;
+                        _materialMask[i] = filter;
+                }
+            }
+        }
+
+        {
+            var matId = _materialId & _availableMaterials;
+            using var materials = ImRaii.Combo("Material id", matId.None() ? "None" : matId.Raw.ToString("X"));
+            if (materials)
+            {
+                foreach (var i in _availableMaterials.SetBits())
+                {
+                    var filter = _materialId[i];
+                    if (ImGui.Checkbox($"Material {1u << i:X16}", ref filter))
+                        _materialId[i] = filter;
                 }
             }
         }
@@ -203,7 +231,7 @@ public unsafe class DebugGameCollision : IDisposable
         if (n.SelectedOrHovered)
             foreach (var coll in s->Colliders)
                 if (FilterCollider(coll))
-                    VisualizeCollider(coll);
+                    VisualizeCollider(coll, _materialId, _materialMask);
         if (n.Opened)
             foreach (var coll in s->Colliders)
                 DrawCollider(coll);
@@ -243,7 +271,7 @@ public unsafe class DebugGameCollision : IDisposable
                 {
                     // TODO: visualize cell bounds?
                     foreach (var coll in node.Colliders)
-                        VisualizeCollider(coll);
+                        VisualizeCollider(coll, _materialId, _materialMask);
                 }
             }
         }
@@ -270,10 +298,10 @@ public unsafe class DebugGameCollision : IDisposable
         var dir = System.Numerics.Vector3.Normalize(cameraPosAtPlane - new System.Numerics.Vector3(cameraWorldPos.X, cameraWorldPos.Y, cameraWorldPos.Z));
         _tree.LeafNode($"Mouse pos: screen={screenPos}, clip={clipPos}, dir={dir}");
         float maxDist = 100000;
-        var filter = new RaycastMaterialFilter();
+        var filter = new RaycastMaterialFilter() { Mask = _materialMask.Raw, Value = _materialId.Raw };
         var res = new RaycastHit();
         var arg = new RaycastParams() { Origin = &cameraWorldPos, Direction = &dir, MaxDistance = &maxDist, MaterialFilter = &filter };
-        if (s->Raycast(&res, ~0ul, &arg))
+        if (s->Raycast(&res, _shownLayers.Raw, &arg))
         {
             _tree.LeafNode($"Raycast: {cameraWorldPos} + {res.Distance} = {res.Point}");
             var ab = res.V2 - res.V1;
@@ -282,7 +310,7 @@ public unsafe class DebugGameCollision : IDisposable
             _tree.LeafNode($"Normal: {normal} (slope={Angle.Acos(normal.Y)})");
             _tree.LeafNode($"Material: {res.Material:X}");
             DrawCollider((Collider*)res.Object);
-            VisualizeCollider((Collider*)res.Object);
+            VisualizeCollider((Collider*)res.Object, _materialId, _materialMask);
             _dd.DrawWorldLine(res.V1, res.V2, 0xff0000ff, 2);
             _dd.DrawWorldLine(res.V2, res.V3, 0xff0000ff, 2);
             _dd.DrawWorldLine(res.V3, res.V1, 0xff0000ff, 2);
@@ -320,7 +348,7 @@ public unsafe class DebugGameCollision : IDisposable
             ImGui.EndPopup();
         }
         if (n.SelectedOrHovered)
-            VisualizeCollider(coll);
+            VisualizeCollider(coll, _materialId, _materialMask);
         if (!n.Opened)
             return;
 
@@ -346,7 +374,7 @@ public unsafe class DebugGameCollision : IDisposable
                             var entryRaw = (uint*)entry;
                             using var mn = _tree.Node($"Mesh {i}: file=tr{entry->MeshId:d4}.pcb, bounds={AABBStr(entry->Bounds)} == {(nint)elem->Mesh:X}###mesh_{i}", elem->Mesh == null);
                             if (mn.SelectedOrHovered && elem->Mesh != null)
-                                VisualizeCollider(&elem->Mesh->Collider);
+                                VisualizeCollider(&elem->Mesh->Collider, _materialId, _materialMask);
                             if (mn.Opened)
                                 DrawColliderMesh(elem->Mesh);
                         }
@@ -422,17 +450,17 @@ public unsafe class DebugGameCollision : IDisposable
             return;
 
         var mesh = (MeshPCB*)coll->Mesh;
-        DrawColliderMeshPCBNode("Root", mesh->RootNode, ref coll->World);
+        DrawColliderMeshPCBNode("Root", mesh->RootNode, ref coll->World, coll->Collider.ObjectMaterialValue & coll->Collider.ObjectMaterialMask, ~coll->Collider.ObjectMaterialMask);
     }
 
-    private void DrawColliderMeshPCBNode(string tag, MeshPCB.FileNode* node, ref Matrix4x3 world)
+    private void DrawColliderMeshPCBNode(string tag, MeshPCB.FileNode* node, ref Matrix4x3 world, ulong objMatId, ulong objMatInvMask)
     {
         if (node == null)
             return;
 
         using var n = _tree.Node(tag);
         if (n.SelectedOrHovered)
-            VisualizeColliderMeshPCBNode(node, ref world, new(1, 1, 0, 1));
+            VisualizeColliderMeshPCBNode(node, ref world, new(1, 1, 0, 1), objMatId, objMatId, _materialId, _materialMask);
         if (!n.Opened)
             return;
 
@@ -462,8 +490,8 @@ public unsafe class DebugGameCollision : IDisposable
                         VisualizeTriangle(node, ref prim, ref world, 0xff00ffff);
             }
         }
-        DrawColliderMeshPCBNode($"Child 1 (+{node->Child1Offset})", node->Child1, ref world);
-        DrawColliderMeshPCBNode($"Child 2 (+{node->Child2Offset})", node->Child2, ref world);
+        DrawColliderMeshPCBNode($"Child 1 (+{node->Child1Offset})", node->Child1, ref world, objMatId, objMatId);
+        DrawColliderMeshPCBNode($"Child 2 (+{node->Child2Offset})", node->Child2, ref world, objMatId, objMatId);
     }
 
     private void DrawResource(Resource* res)
@@ -478,7 +506,7 @@ public unsafe class DebugGameCollision : IDisposable
         }
     }
 
-    public void VisualizeCollider(Collider* coll)
+    public void VisualizeCollider(Collider* coll, BitMask filterId, BitMask filterMask)
     {
         switch (coll->GetColliderType())
         {
@@ -490,13 +518,13 @@ public unsafe class DebugGameCollision : IDisposable
                         for (int i = 0; i < cast->Header->NumMeshes; ++i)
                         {
                             var elem = cast->Elements + i;
-                            VisualizeColliderMesh(elem->Mesh, new(0, 1, 0, 1));
+                            VisualizeColliderMesh(elem->Mesh, new(0, 1, 0, 1), _materialId, _materialMask);
                         }
                     }
                 }
                 break;
             case ColliderType.Mesh:
-                VisualizeColliderMesh((ColliderMesh*)coll, new(_streamedMeshes.Contains((nint)coll) ? 0 : 1, 1, 0, 1));
+                VisualizeColliderMesh((ColliderMesh*)coll, new(_streamedMeshes.Contains((nint)coll) ? 0 : 1, 1, 0, 1), _materialId, _materialMask);
                 break;
             case ColliderType.Box:
                 {
@@ -535,22 +563,20 @@ public unsafe class DebugGameCollision : IDisposable
         }
     }
 
-    private void VisualizeColliderMesh(ColliderMesh* coll, Vector4 color)
+    private void VisualizeColliderMesh(ColliderMesh* coll, Vector4 color, BitMask filterId, BitMask filterMask)
     {
         if (coll != null && !coll->MeshIsSimple && coll->Mesh != null)
         {
             var mesh = (MeshPCB*)coll->Mesh;
-            VisualizeColliderMeshPCBNode(mesh->RootNode, ref coll->World, color);
+            VisualizeColliderMeshPCBNode(mesh->RootNode, ref coll->World, color, coll->Collider.ObjectMaterialValue & coll->Collider.ObjectMaterialMask, ~coll->Collider.ObjectMaterialMask, filterId, filterMask);
         }
     }
 
-    private void VisualizeColliderMeshPCBNode(MeshPCB.FileNode* node, ref Matrix4x3 world, Vector4 color)
+    private void VisualizeColliderMeshPCBNode(MeshPCB.FileNode* node, ref Matrix4x3 world, Vector4 color, ulong objMatId, ulong objMatInvMask, BitMask filterId, BitMask filterMask)
     {
         if (node == null)
             return;
 
-        //foreach (ref var prim in node->Primitives)
-        //    VisualizeTriangle(node, ref prim, ref world, color);
         if (node->NumPrims > 0)
         {
             var renderer = GetDynamicMeshes();
@@ -558,12 +584,27 @@ public unsafe class DebugGameCollision : IDisposable
             for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
                 renderer.AddVertex(node->Vertex(i));
             foreach (ref var prim in node->Primitives)
-                renderer.AddTriangle(prim.V1, prim.V3, prim.V2); // change winding to what dx expects
-            renderer.AddInstance(new(world, color));
+            {
+                bool pass = true;
+                if (filterMask.Any())
+                {
+                    var effMat = objMatId | objMatInvMask & prim.Material;
+                    pass = /*filterId.None() ? (filterMask.Raw & effMat) != 0 :*/ (filterMask.Raw & (effMat ^ filterId.Raw)) == 0;
+                }
+                if (pass)
+                {
+                    renderer.AddTriangle(prim.V1, prim.V3, prim.V2); // change winding to what dx expects
+                }
+                else
+                {
+                    renderer.AddTriangle(prim.V1, prim.V1, prim.V1); // TODO: avoid degenerates...
+                }
+                renderer.AddInstance(new(world, color));
+            }
         }
 
-        VisualizeColliderMeshPCBNode(node->Child1, ref world, color);
-        VisualizeColliderMeshPCBNode(node->Child2, ref world, color);
+        VisualizeColliderMeshPCBNode(node->Child1, ref world, color, objMatId, objMatInvMask, filterId, filterMask);
+        VisualizeColliderMeshPCBNode(node->Child2, ref world, color, objMatId, objMatInvMask, filterId, filterMask);
     }
 
     private void VisualizeOBB(ref AABB localBB, ref Matrix4x3 world, uint color)
@@ -620,6 +661,16 @@ public unsafe class DebugGameCollision : IDisposable
         _dd.DrawWorldLine(v1, v2, color);
         _dd.DrawWorldLine(v2, v3, color);
         _dd.DrawWorldLine(v3, v1, color);
+    }
+
+    private void GatherMeshNodeMaterials(MeshPCB.FileNode* node, BitMask invMask)
+    {
+        if (node == null)
+            return;
+        foreach (ref var prim in node->Primitives)
+            _availableMaterials |= invMask & new BitMask(prim.Material);
+        GatherMeshNodeMaterials(node->Child1, invMask);
+        GatherMeshNodeMaterials(node->Child2, invMask);
     }
 
     private string SphereStr(Vector4 s) => $"[{s.X:f3}, {s.Y:f3}, {s.Z:f3}] R{s.W:f3}";

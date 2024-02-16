@@ -73,7 +73,7 @@ public class DebugExtractedCollision : IDisposable
                         var info = _extractor.ExtractBgPartInfo(_scene, p.key, p.transform, p.crc, p.analytic);
                         _dd.DrawWorldAABB(info.bounds, 0xff0000ff);
                         if (coll != null)
-                            _coll.VisualizeCollider(coll);
+                            _coll.VisualizeCollider(coll, default, default);
                     }
                     if (n.Opened)
                     {
@@ -102,7 +102,7 @@ public class DebugExtractedCollision : IDisposable
                         var info = _extractor.ExtractColliderInfo(_scene, c.key, c.transform, c.crc, c.type);
                         _dd.DrawWorldAABB(info.bounds, 0xff0000ff);
                         if (coll != null)
-                            _coll.VisualizeCollider(coll);
+                            _coll.VisualizeCollider(coll, default, default);
                     }
                     if (n.Opened)
                     {

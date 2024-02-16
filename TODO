@@ -1,6 +1,5 @@
 - better pathfind
 -- navmesh debug visu for the process
--- remove reliance on follow tool
 -- use same string-pulling idea for navvolumes
 -- remove unneeded libs
 -- follow/target update

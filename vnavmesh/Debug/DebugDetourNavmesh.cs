@@ -30,7 +30,7 @@ public class DebugDetourNavmesh : DebugRecast
         _query = query;
         _tree = tree;
         _dd = dd;
-        _perTile = new PerTile[navmesh.GetTileCount()];
+        _perTile = new PerTile[navmesh.GetParams().maxTiles];
     }
 
     public override void Dispose()

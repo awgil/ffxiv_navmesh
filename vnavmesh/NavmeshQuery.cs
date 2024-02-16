@@ -1,6 +1,4 @@
-﻿using DotRecast.Core.Numerics;
-using DotRecast.Detour;
-using DotRecast.Recast.Toolset.Tools;
+﻿using DotRecast.Detour;
 using Navmesh.NavVolume;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,6 +10,7 @@ public class NavmeshQuery
 {
     public DtNavMeshQuery MeshQuery;
     public PathfindQuery VolumeQuery;
+    private IDtQueryFilter _filter = new DtQueryDefaultFilter();
 
     public NavmeshQuery(Navmesh navmesh)
     {
@@ -21,24 +20,50 @@ public class NavmeshQuery
 
     public List<Vector3> PathfindMesh(Vector3 from, Vector3 to)
     {
-        var res = new List<Vector3>();
-        var tool = new RcTestNavMeshTool();
-        DtQueryDefaultFilter filter = new DtQueryDefaultFilter();
-        var success = MeshQuery.FindNearestPoly(new(from.X, from.Y, from.Z), new(2, 2, 2), filter, out var startRef, out _, out _);
-        Service.Log.Debug($"[pathfind] findsrc={success.Value:X} {startRef}");
-        success = MeshQuery.FindNearestPoly(new(to.X, to.Y, to.Z), new(2, 2, 2), filter, out var endRef, out _, out _);
-        Service.Log.Debug($"[pathfind] finddst={success.Value:X} {endRef}");
-        List<long> polys = new();
-        List<RcVec3f> smooth = new();
-        success = tool.FindFollowPath(MeshQuery.GetAttachedNavMesh(), MeshQuery, startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), filter, true, ref polys, ref smooth);
-        Service.Log.Debug($"[pathfind] findpath={success.Value:X}");
-        if (success.Succeeded())
-            res.AddRange(smooth.Select(v => new Vector3(v.X, v.Y, v.Z)));
-        return res;
+        var startRef = FindNearestMeshPoly(from);
+        var endRef = FindNearestMeshPoly(to);
+        Service.Log.Debug($"[pathfind] poly {startRef:X} -> {endRef:X}");
+        if (startRef == 0 || endRef == 0)
+        {
+            Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find polygon on a mesh");
+            return new();
+        }
+
+        var polysPath = new List<long>();
+        var opt = new DtFindPathOption(DtFindPathOptions.DT_FINDPATH_ANY_ANGLE, float.MaxValue);
+        MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _filter, ref polysPath, opt);
+        if (polysPath.Count == 0)
+        {
+            Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find path on mesh");
+            return new();
+        }
+
+        // In case of partial path, make sure the end point is clamped to the last polygon.
+        var endPos = to.SystemToRecast();
+        if (polysPath.Last() != endRef)
+            if (MeshQuery.ClosestPointOnPoly(polysPath.Last(), endPos, out var closest, out _).Succeeded())
+                endPos = closest;
+
+        var straightPath = new List<DtStraightPath>();
+        var success = MeshQuery.FindStraightPath(from.SystemToRecast(), endPos, polysPath, ref straightPath, 256, 0);
+        if (success.Failed())
+        {
+            Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find straight path ({success.Value:X})");
+            return new();
+        }
+
+        return straightPath.Select(p => p.pos.RecastToSystem()).ToList();
     }
 
     public List<Vector3> PathfindVolume(Vector3 from, Vector3 to)
     {
         return VolumeQuery.FindPath(from, to);
+    }
+
+    // returns 0 if not found, otherwise polygon ref
+    public long FindNearestMeshPoly(Vector3 p, float radius = 2)
+    {
+        MeshQuery.FindNearestPoly(p.SystemToRecast(), new(radius), _filter, out var nearestRef, out _, out _);
+        return nearestRef;
     }
 }

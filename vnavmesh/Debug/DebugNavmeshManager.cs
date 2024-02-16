@@ -84,8 +84,11 @@ class DebugNavmeshManager : IDisposable
             }
         }
 
-        _manager.Navmesh.Mesh.CalcTileLoc((Service.ClientState.LocalPlayer?.Position ?? default).SystemToRecast(), out var playerTileX, out var playerTileZ);
+        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
+        _manager.Navmesh.Mesh.CalcTileLoc(playerPos.SystemToRecast(), out var playerTileX, out var playerTileZ);
         _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
+        _tree.LeafNode($"Player poly: {_path.Query?.FindNearestMeshPoly(playerPos):X}");
+        _tree.LeafNode($"Target poly: {_path.Query?.FindNearestMeshPoly(_target):X}");
 
         _drawNavmesh ??= new(_manager.Navmesh.Mesh, _path.Query?.MeshQuery, _tree, _dd);
         _drawNavmesh.Draw();

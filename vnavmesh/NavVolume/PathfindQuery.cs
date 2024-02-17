@@ -25,6 +25,50 @@ public class PathfindQuery
         _nodes = new Node[volume.Voxels.Length];
     }
 
+    public int FindNearestEmptyVoxel(Vector3 center, float radius)
+    {
+        var (cx, cy, cz) = _volume.WorldToVoxel(center);
+        if (!_volume[cx, cy, cz])
+            return _volume.VoxelToIndex(cx, cy, cz); // fast path: the cell is empty already
+
+        var maxDistSq = radius * radius;
+
+        // search plane at z = cz
+        var res = FindNearestEmptyVoxelXY(center, ref maxDistSq, 0, cx, cy, cz);
+
+        // search nearby planes
+        var distFromNeg = center.Z - (_volume.BoundsMin.Z + cz * _volume.CellSize.Z);
+        var distFromPos = _volume.CellSize.Z - distFromNeg;
+        for (int dz = 1; ; ++dz)
+        {
+            bool outOfBounds = true;
+            // search plane at -dz
+            var d = distFromNeg * distFromNeg;
+            if (d <= maxDistSq)
+            {
+                var alt = FindNearestEmptyVoxelXY(center, ref maxDistSq, d, cx, cy, cz - dz);
+                if (alt >= 0)
+                    res = alt;
+                outOfBounds = false;
+            }
+            // search plane at +dz
+            d = distFromPos * distFromPos;
+            if (d <= maxDistSq)
+            {
+                var alt = FindNearestEmptyVoxelXY(center, ref maxDistSq, d, cx, cy, cz + dz);
+                if (alt >= 0)
+                    res = alt;
+                outOfBounds = false;
+            }
+
+            if (outOfBounds)
+                break;
+            distFromNeg += _volume.CellSize.Z;
+            distFromPos += _volume.CellSize.Z;
+        }
+        return res;
+    }
+
     public List<Vector3> FindPath(Vector3 from, Vector3 to)
     {
         Start(from, to);
@@ -76,6 +120,92 @@ public class PathfindQuery
         while (ExecuteStep())
             ;
         return CurrentResult();
+    }
+
+    // utilities for nearest voxel search
+    private int FindNearestEmptyVoxelXY(Vector3 center, ref float maxDistSq, float planeDistSq, int cx, int cy, int cz)
+    {
+        // search column at (cx,cz)
+        var res = FindNearestEmptyVoxelY(center, ref maxDistSq, planeDistSq, cx, cy, cz);
+
+        // search nearby columns
+        var distFromNeg = center.X - (_volume.BoundsMin.X + cx * _volume.CellSize.X);
+        var distFromPos = _volume.CellSize.X - distFromNeg;
+        for (int dx = 1; ; ++dx)
+        {
+            bool outOfBounds = true;
+            // search column at -dx
+            var d = distFromNeg * distFromNeg + planeDistSq;
+            if (d <= maxDistSq)
+            {
+                var alt = FindNearestEmptyVoxelY(center, ref maxDistSq, d, cx - dx, cy, cz);
+                if (alt >= 0)
+                    res = alt;
+                outOfBounds = false;
+            }
+            // search column at +dx
+            d = distFromPos * distFromPos + planeDistSq;
+            if (d <= maxDistSq)
+            {
+                var alt = FindNearestEmptyVoxelY(center, ref maxDistSq, d, cx + dx, cy, cz);
+                if (alt >= 0)
+                    res = alt;
+                outOfBounds = false;
+            }
+
+            if (outOfBounds)
+                break;
+            distFromNeg += _volume.CellSize.X;
+            distFromPos += _volume.CellSize.X;
+        }
+        return res;
+    }
+
+    private int FindNearestEmptyVoxelY(Vector3 center, ref float maxDistSq, float columnDistSq, int cx, int cy, int cz)
+    {
+        // check voxel at cy
+        if (!_volume[cx, cy, cz])
+        {
+            maxDistSq = columnDistSq;
+            return _volume.VoxelToIndex(cx, cy, cz);
+        }
+
+        // search up and down
+        var distFromNeg = center.Y - (_volume.BoundsMin.Y + cy * _volume.CellSize.Y);
+        var distFromPos = _volume.CellSize.Y - distFromNeg;
+        int res = -1;
+        for (int dy = 1; ; ++dy)
+        {
+            bool outOfBounds = true;
+            // search voxel at -dy
+            var d = distFromNeg * distFromNeg + columnDistSq;
+            if (d <= maxDistSq)
+            {
+                if (!_volume[cx, cy - dy, cz])
+                {
+                    maxDistSq = d;
+                    res = _volume.VoxelToIndex(cx, cy - dy, cz);
+                }
+                outOfBounds = false;
+            }
+            // search voxel at +dy
+            d = distFromPos * distFromPos + columnDistSq;
+            if (d <= maxDistSq)
+            {
+                if (!_volume[cx, cy + dy, cz])
+                {
+                    maxDistSq = d;
+                    res = _volume.VoxelToIndex(cx, cy + dy, cz);
+                }
+                outOfBounds = false;
+            }
+
+            if (outOfBounds)
+                break;
+            distFromNeg += _volume.CellSize.Y;
+            distFromPos += _volume.CellSize.Y;
+        }
+        return res;
     }
 
     private List<Vector3> BuildPathToVisitedNode(int nodeIndex)

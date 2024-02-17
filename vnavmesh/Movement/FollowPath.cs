@@ -7,6 +7,8 @@ namespace Navmesh.Movement;
 public class FollowPath : IDisposable
 {
     public bool MovementAllowed = true;
+    public bool UseRaycasts = true;
+    public bool UseStringPulling = true;
     public float Tolerance = 0.5f;
 
     public NavmeshQuery? Query => _query;
@@ -67,7 +69,7 @@ public class FollowPath : IDisposable
         var player = Service.ClientState.LocalPlayer;
         if (player == null || _query == null)
             return;
-        _waypoints = _query.PathfindMesh(player.Position, destination);
+        _waypoints = _query.PathfindMesh(player.Position, destination, UseRaycasts, UseStringPulling);
     }
 
     public void FlyTo(Vector3 destination)
@@ -75,7 +77,7 @@ public class FollowPath : IDisposable
         var player = Service.ClientState.LocalPlayer;
         if (player == null || _query == null)
             return;
-        _waypoints = _query.PathfindVolume(player.Position, destination);
+        _waypoints = _query.PathfindVolume(player.Position, destination, UseRaycasts, UseStringPulling);
     }
 
     public void Stop() => _waypoints.Clear();

@@ -65,6 +65,8 @@ class DebugNavmeshManager : IDisposable
         ImGui.TextUnformatted($"Current target: {_target}");
 
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
+        ImGui.Checkbox("Use raycasts", ref _path.UseRaycasts);
+        ImGui.Checkbox("Use string pulling", ref _path.UseStringPulling);
         if (ImGui.Button("Pathfind to target using navmesh"))
             _path.MoveTo(_target);
         ImGui.SameLine();
@@ -89,6 +91,8 @@ class DebugNavmeshManager : IDisposable
         _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
         _tree.LeafNode($"Player poly: {_path.Query?.FindNearestMeshPoly(playerPos):X}");
         _tree.LeafNode($"Target poly: {_path.Query?.FindNearestMeshPoly(_target):X}");
+        _tree.LeafNode($"Player voxel: {_path.Query?.FindNearestVolumeVoxel(playerPos):X}");
+        _tree.LeafNode($"Target voxel: {_path.Query?.FindNearestVolumeVoxel(_target):X}");
 
         _drawNavmesh ??= new(_manager.Navmesh.Mesh, _path.Query?.MeshQuery, _tree, _dd);
         _drawNavmesh.Draw();

@@ -8,15 +8,18 @@ namespace Navmesh.NavVolume;
 // utility to build a 'straight' path (funnel/string-pulling) from the path returned by query
 // we exploit heavily the axis-oriented nature of voxel map
 // - we start with a path containing starting point (if it's inside starting voxel - otherwise we find the closest point on the boundary of the starting voxel)
-// - each successive voxel touches previous by a face, edge or a point
-// - in addition to path, we maintain a list of edges we have to select apex points on; these all have same direction and one of the coordinates (otherwise we'd have to select a point)
+// - each successive voxel touches previous by a face; if last point is inside/on the border of the same voxel, the whole face is the new funnel
+// - otherwise we project the previous funnel on the plane of the new face and calculate intersection (unfortunately, this means that eventually funnel can become an arbitrary polygon; some projected points could be at infinity, but we still care about directions...)
+// - if intersection is non-empty, it's our new funnel
+// - otherwise - we add a new point on the edge of the previous funnel (TODO: how to determine it?) and set new face as our new funnel
 //public class VoxelStraighten
 //{
 //    private VoxelMap _volume;
 //    private List<Vector3> _path = new();
 //    private (int x, int y, int z) _prevVoxel;
-//    private (int dx, int dy, int dz) _prevPlaneNormal;
-//    private Vector3 _prevPlaneCenter;
+//    private (int dx, int dy, int dz) _funnelNormal;
+//    private Vector3 _funnelCenter;
+//    private Vector3 _funnelSize;
 //    private (int dx, int dy, int dz) _pendingEdgeDir;
 //    private List<Vector3> _pendingEdgeCenters = new();
 

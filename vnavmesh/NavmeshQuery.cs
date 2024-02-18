@@ -94,5 +94,5 @@ public class NavmeshQuery
     }
 
     // returns -1 if not found, otherwise voxel index
-    public int FindNearestVolumeVoxel(Vector3 p, float radius = 5) => VolumeQuery.FindNearestEmptyVoxel(p, radius);
+    public int FindNearestVolumeVoxel(Vector3 p, float radius = 5) => VoxelSearch.FindNearestEmptyVoxel(VolumeQuery.Volume, p, radius);
 }

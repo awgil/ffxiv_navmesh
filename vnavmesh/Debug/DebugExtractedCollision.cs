@@ -132,7 +132,7 @@ public class DebugExtractedCollision : IDisposable
         int meshIndex = 0;
         foreach (var (name, mesh) in _extractor.Meshes)
         {
-            using var nm = _tree.Node($"{name}: flags={mesh.Flags}");
+            using var nm = _tree.Node($"{name}: flags={mesh.MeshFlags}");
             if (nm.SelectedOrHovered)
                 VisualizeMeshInstances(meshIndex);
 
@@ -169,10 +169,10 @@ public class DebugExtractedCollision : IDisposable
                                         int j = 0;
                                         foreach (var t in p.Primitives)
                                         {
-                                            var v1 = p.Vertices[t.v1];
-                                            var v2 = p.Vertices[t.v2];
-                                            var v3 = p.Vertices[t.v3];
-                                            if (_tree.LeafNode($"{j++}: {t.v1}x{t.v2}x{t.v3} ({v1:f3} x {v2:f3} x {v3:f3})").SelectedOrHovered)
+                                            var v1 = p.Vertices[t.V1];
+                                            var v2 = p.Vertices[t.V2];
+                                            var v3 = p.Vertices[t.V3];
+                                            if (_tree.LeafNode($"{j++}: {t.V1}x{t.V2}x{t.V3} ({v1:f3} x {v2:f3} x {v3:f3}) ({t.Flags})").SelectedOrHovered)
                                                 VisualizeTriangle(mesh, v1, v2, v3);
                                         }
                                     }
@@ -191,7 +191,7 @@ public class DebugExtractedCollision : IDisposable
                         int instIndex = 0;
                         foreach (var i in mesh.Instances)
                         {
-                            if (_tree.LeafNode($"{instIndex}: R0 = {i.WorldTransform.Row0:f3}, R1 = {i.WorldTransform.Row1:f3}, R2 = {i.WorldTransform.Row2:f3}, R3 = {i.WorldTransform.Row3:f3}, {i.WorldBounds.Min:f3} - {i.WorldBounds.Max:f3}").SelectedOrHovered)
+                            if (_tree.LeafNode($"{instIndex}: R0 = {i.WorldTransform.Row0:f3}, R1 = {i.WorldTransform.Row1:f3}, R2 = {i.WorldTransform.Row2:f3}, R3 = {i.WorldTransform.Row3:f3}, {i.WorldBounds.Min:f3} - {i.WorldBounds.Max:f3} (force-set={i.ForceSetPrimFlags}, force-clear={i.ForceClearPrimFlags})").SelectedOrHovered)
                                 VisualizeMeshInstance(meshIndex, instIndex);
                             ++instIndex;
                         }
@@ -232,7 +232,7 @@ public class DebugExtractedCollision : IDisposable
                     foreach (var v in part.Vertices)
                         builder.AddVertex(v);
                     foreach (var p in part.Primitives)
-                        builder.AddTriangle(nvm + p.v1, nvm + p.v3, nvm + p.v2); // dx winding
+                        builder.AddTriangle(nvm + p.V1, nvm + p.V3, nvm + p.V2); // dx winding
                     nvm += part.Vertices.Count;
                     npm += part.Primitives.Count;
                 }
@@ -304,7 +304,7 @@ public class DebugExtractedCollision : IDisposable
     }
 
     private Vector4 MeshColor(SceneExtractor.Mesh mesh) =>
-        mesh.Flags.HasFlag(SceneExtractor.Flags.FromTerrain) ? new(0, 1, 0, 0.75f) :
-        mesh.Flags.HasFlag(SceneExtractor.Flags.FromFileMesh) ? new(1, 1, 0, 0.75f) :
+        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain) ? new(0, 1, 0, 0.75f) :
+        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromFileMesh) ? new(1, 1, 0, 0.75f) :
         new(1, 0, 0, 0.75f);
 }

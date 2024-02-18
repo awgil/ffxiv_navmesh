@@ -1,8 +1,7 @@
 - better pathfind
 -- use same string-pulling idea for navvolumes
 -- follow/target update
-- explicitly unwalkable materials
-- walk-only blocker materials
+- rasterize planes
 - improve nearest search for blocked voxels to prefer voxels on correct side
 - walk/fly transitions
 - per-zone custom markup (tighter borders? shapes to ignore?)

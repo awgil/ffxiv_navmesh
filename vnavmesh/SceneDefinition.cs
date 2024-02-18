@@ -13,8 +13,8 @@ public class SceneDefinition
     public List<string> Terrains = new();
     public Dictionary<uint, (Transform transform, Vector3 bbMin, Vector3 bbMax)> AnalyticShapes = new(); // key = crc; used by bgparts
     public Dictionary<uint, string> MeshPaths = new(); // key = crc, value = pcb path; used by all colliders
-    public List<(ulong key, Transform transform, uint crc, bool analytic)> BgParts = new();
-    public List<(ulong key, Transform transform, uint crc, ColliderType type)> Colliders = new();
+    public List<(ulong key, Transform transform, uint crc, ulong matId, ulong matMask, bool analytic)> BgParts = new();
+    public List<(ulong key, Transform transform, uint crc, ulong matId, ulong matMask, ColliderType type)> Colliders = new();
 
     public unsafe void FillFromActiveLayout() => FillFromLayout(LayoutWorld.Instance()->ActiveLayout);
 
@@ -49,13 +49,13 @@ public class SceneDefinition
                 var cast = (BgPartsLayoutInstance*)v.Value;
                 if (cast->AnalyticShapeDataCrc != 0)
                 {
-                    BgParts.Add((k, *v.Value->GetTransformImpl(), cast->AnalyticShapeDataCrc, true));
+                    BgParts.Add((k, *v.Value->GetTransformImpl(), cast->AnalyticShapeDataCrc, ((ulong)cast->CollisionMaterialIdHigh << 32) | cast->CollisionMaterialIdLow, ((ulong)cast->CollisionMaterialMaskHigh << 32) | cast->CollisionMaterialMaskLow, true));
                 }
                 else if (cast->CollisionMeshPathCrc != 0)
                 {
                     if (!MeshPaths.ContainsKey(cast->CollisionMeshPathCrc))
                         MeshPaths[cast->CollisionMeshPathCrc] = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref layout->CrcToPath, cast->CollisionMeshPathCrc));
-                    BgParts.Add((k, *v.Value->GetTransformImpl(), cast->CollisionMeshPathCrc, false));
+                    BgParts.Add((k, *v.Value->GetTransformImpl(), cast->CollisionMeshPathCrc, ((ulong)cast->CollisionMaterialIdHigh << 32) | cast->CollisionMaterialIdLow, ((ulong)cast->CollisionMaterialMaskHigh << 32) | cast->CollisionMaterialMaskLow, false));
                 }
             }
         }
@@ -70,7 +70,7 @@ public class SceneDefinition
                     continue; // TODO: reconsider... (this aims to filter out doors that are opened when you get near them, not sure whether it's the right condition)
                 if (cast->PcbPathCrc != 0 && !MeshPaths.ContainsKey(cast->PcbPathCrc))
                     MeshPaths[cast->PcbPathCrc] = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref layout->CrcToPath, cast->PcbPathCrc));
-                Colliders.Add((k, cast->ColliderLayoutInstance.Transform, cast->PcbPathCrc, cast->ColliderLayoutInstance.Type));
+                Colliders.Add((k, cast->ColliderLayoutInstance.Transform, cast->PcbPathCrc, ((ulong)cast->MaterialIdHigh << 32) | cast->MaterialIdLow, ((ulong)cast->MaterialMaskHigh << 32) | cast->MaterialMaskLow, cast->ColliderLayoutInstance.Type));
             }
         }
     }

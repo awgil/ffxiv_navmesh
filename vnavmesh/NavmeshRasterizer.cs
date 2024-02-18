@@ -25,8 +25,8 @@ public class NavmeshRasterizer
     {
         foreach (var (name, mesh) in geom.Meshes)
         {
-            var terrain = mesh.Flags.HasFlag(SceneExtractor.Flags.FromTerrain);
-            var analytic = mesh.Flags.HasFlag(SceneExtractor.Flags.FromAnalyticShape);
+            var terrain = mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain);
+            var analytic = mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromAnalyticShape);
             bool include = terrain ? includeTerrain : analytic ? includeAnalytic : includeMeshes;
             if (!include)
                 continue;
@@ -51,14 +51,24 @@ public class NavmeshRasterizer
                     // TODO: move area-id calculations to extraction step + store indices in a form that allows using RasterizeTriangles()
                     foreach (var p in part.Primitives)
                     {
-                        var v1 = CachedVertex(p.v1);
-                        var v2 = CachedVertex(p.v2);
-                        var v3 = CachedVertex(p.v3);
-                        var v12 = v2 - v1;
-                        var v13 = v3 - v1;
-                        var normal = Vector3.Normalize(Vector3.Cross(v12, v13));
-                        var areaId = normal.Y >= _walkableNormalThreshold ? RcConstants.RC_WALKABLE_AREA : 0;
-                        RcRasterizations.RasterizeTriangle(_heightfield, _vertices, p.v1, p.v2, p.v3, areaId, _walkableClimbThreshold, _telemetry);
+                        var flags = (p.Flags & ~inst.ForceClearPrimFlags) | inst.ForceSetPrimFlags;
+                        if (flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
+                            continue; // TODO: rasterize to normal heightfield, can't do it right now, since we're using same heightfield for both mesh and volume
+
+                        bool walkable = !flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable);
+                        if (walkable)
+                        {
+                            var v1 = CachedVertex(p.V1);
+                            var v2 = CachedVertex(p.V2);
+                            var v3 = CachedVertex(p.V3);
+                            var v12 = v2 - v1;
+                            var v13 = v3 - v1;
+                            var normal = Vector3.Normalize(Vector3.Cross(v12, v13));
+                            walkable = normal.Y >= _walkableNormalThreshold;
+                        }
+
+                        var areaId = walkable ? RcConstants.RC_WALKABLE_AREA : 0;
+                        RcRasterizations.RasterizeTriangle(_heightfield, _vertices, p.V1, p.V2, p.V3, areaId, _walkableClimbThreshold, _telemetry);
                     }
                 }
             }

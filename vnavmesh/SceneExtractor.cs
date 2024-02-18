@@ -11,7 +11,7 @@ namespace Navmesh;
 public class SceneExtractor
 {
     [Flags]
-    public enum Flags
+    public enum MeshFlags
     {
         None = 0,
         FromTerrain = 1 << 0,
@@ -20,19 +20,29 @@ public class SceneExtractor
         FromAnalyticShape = 1 << 3,
     }
 
+    [Flags]
+    public enum PrimitiveFlags
+    {
+        None = 0,
+        ForceUnwalkable = 1 << 0, // this primitive can't be walked on, even if normal is fine
+        FlyThrough = 1 << 1, // this primitive should not be present in voxel map
+    }
+
+    public record struct Primitive(int V1, int V2, int V3, PrimitiveFlags Flags);
+
     public class MeshPart
     {
         public List<Vector3> Vertices = new();
-        public List<(int v1, int v2, int v3)> Primitives = new();
+        public List<Primitive> Primitives = new();
     }
 
-    public record struct MeshInstance(ulong Id, Matrix4x3 WorldTransform, AABB WorldBounds);
+    public record struct MeshInstance(ulong Id, Matrix4x3 WorldTransform, AABB WorldBounds, PrimitiveFlags ForceSetPrimFlags, PrimitiveFlags ForceClearPrimFlags);
 
     public class Mesh
     {
         public List<MeshPart> Parts = new();
         public List<MeshInstance> Instances = new();
-        public Flags Flags;
+        public MeshFlags MeshFlags;
     }
 
     public Dictionary<string, Mesh> Meshes { get; private set; } = new();
@@ -60,7 +70,7 @@ public class SceneExtractor
         Meshes[_keyAnalyticBox] = _meshBox;
         Meshes[_keyAnalyticSphere] = _meshSphere;
         Meshes[_keyAnalyticCylinder] = _meshCylinder;
-        Meshes[_keyMeshCylinder] = new() { Parts = _meshCylinder.Parts, Flags = Flags.FromCylinderMesh };
+        Meshes[_keyMeshCylinder] = new() { Parts = _meshCylinder.Parts, MeshFlags = MeshFlags.FromCylinderMesh };
         foreach (var path in scene.MeshPaths.Values)
             AddMesh(path);
 
@@ -76,8 +86,8 @@ public class SceneExtractor
                     foreach (ref var entry in new Span<ColliderStreamed.FileEntry>(header + 1, header->NumMeshes))
                     {
                         var mesh = AddMesh($"{terr}/tr{entry.MeshId:d4}.pcb");
-                        mesh.Flags |= Flags.FromTerrain;
-                        AddInstance(mesh, 0, ref Matrix4x3.Identity, ref entry.Bounds);
+                        mesh.MeshFlags |= MeshFlags.FromTerrain;
+                        AddInstance(mesh, 0, ref Matrix4x3.Identity, ref entry.Bounds, 0, 0);
                     }
                 }
             }
@@ -87,14 +97,14 @@ public class SceneExtractor
         {
             var info = ExtractBgPartInfo(scene, part.key, part.transform, part.crc, part.analytic);
             if (info.path.Length > 0)
-                AddInstance(Meshes[info.path], part.key, ref info.transform, ref info.bounds);
+                AddInstance(Meshes[info.path], part.key, ref info.transform, ref info.bounds, part.matId, part.matMask);
         }
 
         foreach (var coll in scene.Colliders)
         {
             var info = ExtractColliderInfo(scene, coll.key, coll.transform, coll.crc, coll.type);
             if (info.path.Length > 0)
-                AddInstance(Meshes[info.path], coll.key, ref info.transform, ref info.bounds);
+                AddInstance(Meshes[info.path], coll.key, ref info.transform, ref info.bounds, coll.matId, coll.matMask);
         }
     }
 
@@ -160,14 +170,14 @@ public class SceneExtractor
                 }
             }
         }
-        mesh.Flags = Flags.FromFileMesh;
+        mesh.MeshFlags = MeshFlags.FromFileMesh;
         Meshes[path] = mesh;
         return mesh;
     }
 
-    private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds)
+    private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId, ulong matMask)
     {
-        mesh.Instances.Add(new(id, worldTransform, worldBounds));
+        mesh.Instances.Add(new(id, worldTransform, worldBounds, ExtractMaterialFlags(matMask & matId), ExtractMaterialFlags(matMask & ~matId)));
         AddBounds(ref worldBounds);
     }
 
@@ -228,7 +238,7 @@ public class SceneExtractor
         for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
             part.Vertices.Add(node->Vertex(i));
         foreach (ref var p in node->Primitives)
-            part.Primitives.Add((p.V1, p.V2, p.V3));
+            part.Primitives.Add(new(p.V1, p.V2, p.V3, ExtractMaterialFlags(p.Material)));
         return part;
     }
 
@@ -244,24 +254,24 @@ public class SceneExtractor
         mesh.Vertices.Add(new(+1, +1, -1));
         mesh.Vertices.Add(new(+1, +1, +1));
         // bottom (y=-1)
-        mesh.Primitives.Add((0, 2, 1));
-        mesh.Primitives.Add((1, 2, 3));
+        mesh.Primitives.Add(new(0, 2, 1, PrimitiveFlags.None));
+        mesh.Primitives.Add(new(1, 2, 3, PrimitiveFlags.None));
         // top (y=+1)
-        mesh.Primitives.Add((5, 7, 4));
-        mesh.Primitives.Add((4, 7, 6));
+        mesh.Primitives.Add(new(5, 7, 4, PrimitiveFlags.None));
+        mesh.Primitives.Add(new(4, 7, 6, PrimitiveFlags.None));
         // left (x=-1)
-        mesh.Primitives.Add((0, 1, 4));
-        mesh.Primitives.Add((4, 1, 5));
+        mesh.Primitives.Add(new(0, 1, 4, PrimitiveFlags.None));
+        mesh.Primitives.Add(new(4, 1, 5, PrimitiveFlags.None));
         // right (x=1)
-        mesh.Primitives.Add((2, 6, 3));
-        mesh.Primitives.Add((3, 6, 7));
+        mesh.Primitives.Add(new(2, 6, 3, PrimitiveFlags.None));
+        mesh.Primitives.Add(new(3, 6, 7, PrimitiveFlags.None));
         // front (z=-1)
-        mesh.Primitives.Add((0, 4, 2));
-        mesh.Primitives.Add((2, 4, 6));
+        mesh.Primitives.Add(new(0, 4, 2, PrimitiveFlags.None));
+        mesh.Primitives.Add(new(2, 4, 6, PrimitiveFlags.None));
         // back (z=1)
-        mesh.Primitives.Add((1, 3, 5));
-        mesh.Primitives.Add((5, 3, 7));
-        return new() { Parts = { mesh }, Flags = Flags.FromAnalyticShape };
+        mesh.Primitives.Add(new(1, 3, 5, PrimitiveFlags.None));
+        mesh.Primitives.Add(new(5, 3, 7, PrimitiveFlags.None));
+        return new() { Parts = { mesh }, MeshFlags = MeshFlags.FromAnalyticShape };
     }
 
     private static Mesh BuildSphereMesh(int numSegments)
@@ -288,22 +298,22 @@ public class SceneExtractor
             for (int i = 0; i < numSegments - 1; ++i)
             {
                 var iv = ip + i;
-                mesh.Primitives.Add((iv, iv + 1, iv + numSegments));
-                mesh.Primitives.Add((iv + numSegments, iv + 1, iv + numSegments + 1));
+                mesh.Primitives.Add(new(iv, iv + 1, iv + numSegments, PrimitiveFlags.None));
+                mesh.Primitives.Add(new(iv + numSegments, iv + 1, iv + numSegments + 1, PrimitiveFlags.None));
             }
-            mesh.Primitives.Add((ip + numSegments - 1, ip, ip + numSegments * 2 - 1));
-            mesh.Primitives.Add((ip + numSegments * 2 - 1, ip, ip + numSegments));
+            mesh.Primitives.Add(new(ip + numSegments - 1, ip, ip + numSegments * 2 - 1, PrimitiveFlags.None));
+            mesh.Primitives.Add(new(ip + numSegments * 2 - 1, ip, ip + numSegments, PrimitiveFlags.None));
         }
         // bottom
         for (int i = 0; i < numSegments - 1; ++i)
-            mesh.Primitives.Add((i + 1, i, icap));
-        mesh.Primitives.Add((0, numSegments - 1, icap));
+            mesh.Primitives.Add(new(i + 1, i, icap, PrimitiveFlags.None));
+        mesh.Primitives.Add(new(0, numSegments - 1, icap, PrimitiveFlags.None));
         // top
         var itop = icap - numSegments;
         for (int i = 0; i < numSegments - 1; ++i)
-            mesh.Primitives.Add((itop + i, itop + i + 1, icap + 1));
-        mesh.Primitives.Add((itop + numSegments - 1, itop, icap + 1));
-        return new() { Parts = { mesh }, Flags = Flags.FromAnalyticShape };
+            mesh.Primitives.Add(new(itop + i, itop + i + 1, icap + 1, PrimitiveFlags.None));
+        mesh.Primitives.Add(new(itop + numSegments - 1, itop, icap + 1, PrimitiveFlags.None));
+        return new() { Parts = { mesh }, MeshFlags = MeshFlags.FromAnalyticShape };
     }
 
     private static Mesh BuildCylinderMesh(int numSegments)
@@ -323,28 +333,38 @@ public class SceneExtractor
         for (int i = 0; i < numSegments - 1; ++i)
         {
             var iv = i * 2;
-            mesh.Primitives.Add((iv, iv + 2, iv + 1));
-            mesh.Primitives.Add((iv + 1, iv + 2, iv + 3));
+            mesh.Primitives.Add(new(iv, iv + 2, iv + 1, PrimitiveFlags.None));
+            mesh.Primitives.Add(new(iv + 1, iv + 2, iv + 3, PrimitiveFlags.None));
         }
         var ivn = (numSegments - 1) * 2;
-        mesh.Primitives.Add((ivn, 0, ivn + 1));
-        mesh.Primitives.Add((ivn + 1, 0, 1));
+        mesh.Primitives.Add(new(ivn, 0, ivn + 1, PrimitiveFlags.None));
+        mesh.Primitives.Add(new(ivn + 1, 0, 1, PrimitiveFlags.None));
         // bottom
         var bcenter = numSegments * 2;
         for (int i = 0; i < numSegments - 1; ++i)
         {
             var iv = i * 2;
-            mesh.Primitives.Add((iv + 2, iv, bcenter));
+            mesh.Primitives.Add(new(iv + 2, iv, bcenter, PrimitiveFlags.None));
         }
-        mesh.Primitives.Add((0, ivn, bcenter));
+        mesh.Primitives.Add(new(0, ivn, bcenter, PrimitiveFlags.None));
         // top
         var tcenter = bcenter + 1;
         for (int i = 0; i < numSegments - 1; ++i)
         {
             var iv = i * 2 + 1;
-            mesh.Primitives.Add((iv, iv + 2, tcenter));
+            mesh.Primitives.Add(new(iv, iv + 2, tcenter, PrimitiveFlags.None));
         }
-        mesh.Primitives.Add((ivn + 1, 1, tcenter));
-        return new() { Parts = { mesh }, Flags = Flags.FromAnalyticShape };
+        mesh.Primitives.Add(new(ivn + 1, 1, tcenter, PrimitiveFlags.None));
+        return new() { Parts = { mesh }, MeshFlags = MeshFlags.FromAnalyticShape };
+    }
+
+    private PrimitiveFlags ExtractMaterialFlags(ulong mat)
+    {
+        var res = PrimitiveFlags.None;
+        if ((mat & 0x200000) != 0)
+            res |= PrimitiveFlags.ForceUnwalkable; // TODO: is it actually 'unlandable'? it seems that if you're already walking, you can proceed...
+        if ((mat & 0x100000) != 0)
+            res |= PrimitiveFlags.FlyThrough;
+        return res;
     }
 }

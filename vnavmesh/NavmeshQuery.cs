@@ -72,7 +72,18 @@ public class NavmeshQuery
             return new();
         }
 
-        return VolumeQuery.FindPath(from, to);
+        var voxelPath = VolumeQuery.FindPath(startVoxel, endVoxel, from, to, useRaycast);
+        if (voxelPath.Count == 0)
+        {
+            Service.Log.Error($"Failed to find a path from {from} ({startVoxel:X}) to {to} ({endVoxel:X}): failed to find path on volume");
+            return new();
+        }
+        Service.Log.Debug($"Pathfind: {string.Join(", ", voxelPath.Select(r => $"{VolumeQuery.Volume.IndexToVoxel(r)}"))}");
+
+        // TODO: string-pulling
+        var res = voxelPath.Select(r => VolumeQuery.Volume.VoxelToWorld(VolumeQuery.Volume.IndexToVoxel(r))).ToList();
+        res.Add(to);
+        return res;
     }
 
     // returns 0 if not found, otherwise polygon ref
@@ -83,5 +94,5 @@ public class NavmeshQuery
     }
 
     // returns -1 if not found, otherwise voxel index
-    public int FindNearestVolumeVoxel(Vector3 p, float radius = 2) => VolumeQuery.FindNearestEmptyVoxel(p, radius);
+    public int FindNearestVolumeVoxel(Vector3 p, float radius = 5) => VolumeQuery.FindNearestEmptyVoxel(p, radius);
 }

@@ -61,6 +61,12 @@ public class DebugVoxelMap : IDisposable
         }
     }
 
+    public void VisualizeVoxel(int voxel)
+    {
+        var (x, y, z) = _vm.IndexToVoxel(voxel);
+        VisualizeCell(x, y, z);
+    }
+
     private EffectBox.Data GetOrInitVisualizer()
     {
         if (_visu == null)

@@ -91,8 +91,16 @@ class DebugNavmeshManager : IDisposable
         _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
         _tree.LeafNode($"Player poly: {_path.Query?.FindNearestMeshPoly(playerPos):X}");
         _tree.LeafNode($"Target poly: {_path.Query?.FindNearestMeshPoly(_target):X}");
-        _tree.LeafNode($"Player voxel: {_path.Query?.FindNearestVolumeVoxel(playerPos):X}");
-        _tree.LeafNode($"Target voxel: {_path.Query?.FindNearestVolumeVoxel(_target):X}");
+
+        if (_path.Query != null)
+        {
+            var playerVoxel = _path.Query.FindNearestVolumeVoxel(playerPos);
+            if (_tree.LeafNode($"Player voxel: {_path.Query.VolumeQuery.Volume.IndexToVoxel(playerVoxel)} ({playerVoxel:X})###playervoxel").SelectedOrHovered && playerVoxel >= 0)
+                _debugVoxelMap?.VisualizeVoxel(playerVoxel);
+            var targetVoxel = _path.Query.FindNearestVolumeVoxel(_target);
+            if (_tree.LeafNode($"Target voxel: {_path.Query.VolumeQuery.Volume.IndexToVoxel(targetVoxel)} ({targetVoxel:X})###targetvoxel").SelectedOrHovered && targetVoxel >= 0)
+                _debugVoxelMap?.VisualizeVoxel(targetVoxel);
+        }
 
         _drawNavmesh ??= new(_manager.Navmesh.Mesh, _path.Query?.MeshQuery, _tree, _dd);
         _drawNavmesh.Draw();

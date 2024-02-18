@@ -2,7 +2,9 @@
 -- navmesh debug visu for the process
 -- use same string-pulling idea for navvolumes
 -- follow/target update
-- optimize memory used by voxelmap pathfind query
+- explicitly unwalkable materials
+- walk-only blocker materials
+- improve nearest search for blocked voxels to prefer voxels on correct side
 - walk/fly transitions
 - per-zone custom markup (tighter borders? shapes to ignore?)
 - figure out max-climb and ch (max-climb should be 0.5wu, do we need an extra voxel?)

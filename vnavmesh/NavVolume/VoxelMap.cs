@@ -81,7 +81,10 @@ public class VoxelMap
     public Vector3 VoxelToWorld(int x, int y, int z) => BoundsMin + new Vector3(x + 0.5f, y + 0.5f, z + 0.5f) * CellSize;
     public Vector3 VoxelToWorld((int x, int y, int z) v) => VoxelToWorld(v.x, v.y, v.z);
 
-    public (int x, int y, int z) Clamp(int x, int y, int z) => (Math.Clamp(x, 0, NumCellsX), Math.Clamp(y, 0, NumCellsY), Math.Clamp(z, 0, NumCellsZ));
+    public bool InBounds(int x, int y, int z) => x >= 0 && x < NumCellsX && y >= 0 && y < NumCellsY && z >= 0 && z < NumCellsZ;
+    public bool InBounds((int x, int y, int z) v) => InBounds(v.x, v.y, v.z);
+
+    public (int x, int y, int z) Clamp(int x, int y, int z) => (Math.Clamp(x, 0, NumCellsX - 1), Math.Clamp(y, 0, NumCellsY - 1), Math.Clamp(z, 0, NumCellsZ - 1));
     public (int x, int y, int z) Clamp((int x, int y, int z) v) => Clamp(v.x, v.y, v.z);
 
     public (int x, int y, int z) IndexToVoxel(int index)

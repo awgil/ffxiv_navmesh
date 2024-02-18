@@ -148,6 +148,9 @@ public class VoxelPathfind
         if (_volume.Voxels[nodeVoxel])
             return; // this voxel is occupied
 
+        if (nodeVoxel == _goalVoxel)
+            enterPos = _goalPos;
+
         var nodeIndex = _nodeLookup.GetValueOrDefault(nodeVoxel, -1);
         if (nodeIndex < 0)
         {
@@ -166,9 +169,6 @@ public class VoxelPathfind
         ref var parentNode = ref nodeSpan[parentIndex];
 
         var nodeG = CalculateGScore(ref parentNode, nodeCoord, enterPos, ref parentIndex);
-        if (nodeVoxel == _goalVoxel)
-            nodeG += (enterPos - _goalPos).Length();
-
         ref var curNode = ref nodeSpan[nodeIndex];
         if (nodeG + 0.00001f < curNode.GScore)
         {

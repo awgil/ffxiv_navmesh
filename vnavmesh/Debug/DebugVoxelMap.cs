@@ -78,6 +78,10 @@ public class DebugVoxelMap : IDisposable
                     if (_tree.LeafNode($"[{i}] {coord} ({n.Voxel:X}), parent={n.ParentIndex}, g={n.GScore:f4}, h={n.HScore:f4}").SelectedOrHovered)
                     {
                         VisualizeCell(coord.x, coord.y, coord.z);
+                        ref var parent = ref ns[n.ParentIndex];
+                        _dd.DrawWorldLine(parent.Position, n.Position, 0xff00ffff);
+                        _dd.DrawWorldPointFilled(parent.Position, 2, 0xff00ffff);
+                        _dd.DrawWorldPointFilled(n.Position, 2, 0xff0000ff);
                     }
                 }
             }

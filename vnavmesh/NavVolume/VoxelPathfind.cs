@@ -27,6 +27,7 @@ public class VoxelPathfind
     private Vector3 _goalPos;
     private bool _useRaycast;
     private bool _useEnterPos = true;
+    private bool _allowReopen = false;
 
     public VoxelMap Volume => _volume;
     public Span<Node> NodeSpan => CollectionsMarshal.AsSpan(_nodes);
@@ -155,7 +156,7 @@ public class VoxelPathfind
             _nodes.Add(new() { GScore = float.MaxValue, HScore = float.MaxValue, Voxel = nodeVoxel, ParentIndex = parentIndex, OpenHeapIndex = -1, Position = enterPos });
             _nodeLookup[nodeVoxel] = nodeIndex;
         }
-        else if (_nodes[nodeIndex].OpenHeapIndex < 0)
+        else if (!_allowReopen && _nodes[nodeIndex].OpenHeapIndex < 0)
         {
             // in closed list already - TODO: is it possible to visit again with lower cost?..
             return;

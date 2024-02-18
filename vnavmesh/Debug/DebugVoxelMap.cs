@@ -8,13 +8,13 @@ namespace Navmesh.Debug;
 public class DebugVoxelMap : IDisposable
 {
     private VoxelMap _vm;
-    private PathfindQuery? _query;
+    private VoxelPathfind? _query;
     private UITree _tree;
     private DebugDrawer _dd;
     private EffectBox.Data? _visu;
     private int _numFilledVoxels;
 
-    public DebugVoxelMap(VoxelMap vm, PathfindQuery? query, UITree tree, DebugDrawer dd)
+    public DebugVoxelMap(VoxelMap vm, VoxelPathfind? query, UITree tree, DebugDrawer dd)
     {
         _vm = vm;
         _query = query;

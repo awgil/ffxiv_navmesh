@@ -9,7 +9,7 @@ namespace Navmesh;
 public class NavmeshQuery
 {
     public DtNavMeshQuery MeshQuery;
-    public PathfindQuery VolumeQuery;
+    public VoxelPathfind VolumeQuery;
     private IDtQueryFilter _filter = new DtQueryDefaultFilter();
 
     public NavmeshQuery(Navmesh navmesh)
@@ -72,16 +72,16 @@ public class NavmeshQuery
             return new();
         }
 
-        var voxelPath = VolumeQuery.FindPath(startVoxel, endVoxel, from, to, useRaycast);
+        var voxelPath = VolumeQuery.FindPath(startVoxel, endVoxel, from, to, useRaycast, useStringPulling);
         if (voxelPath.Count == 0)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startVoxel:X}) to {to} ({endVoxel:X}): failed to find path on volume");
             return new();
         }
-        Service.Log.Debug($"Pathfind: {string.Join(", ", voxelPath.Select(r => $"{VolumeQuery.Volume.IndexToVoxel(r)}"))}");
+        Service.Log.Debug($"Pathfind: {string.Join(", ", voxelPath.Select(r => $"{r.p} {VolumeQuery.Volume.IndexToVoxel(r.voxel)}"))}");
 
         // TODO: string-pulling
-        var res = voxelPath.Select(r => VolumeQuery.Volume.VoxelToWorld(VolumeQuery.Volume.IndexToVoxel(r))).ToList();
+        var res = voxelPath.Select(r => r.p).ToList();
         res.Add(to);
         return res;
     }

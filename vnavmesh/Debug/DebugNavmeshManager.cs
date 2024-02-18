@@ -81,6 +81,7 @@ class DebugNavmeshManager : IDisposable
             foreach (var to in _path.Waypoints)
             {
                 _dd.DrawWorldLine(from, to, color);
+                _dd.DrawWorldPointFilled(to, 3, 0xff0000ff);
                 from = to;
                 color = 0xff00ffff;
             }

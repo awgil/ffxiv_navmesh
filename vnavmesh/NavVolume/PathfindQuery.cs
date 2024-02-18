@@ -26,6 +26,7 @@ public class PathfindQuery
     private bool _useRaycast;
 
     public VoxelMap Volume => _volume;
+    public Span<Node> NodeSpan => CollectionsMarshal.AsSpan(_nodes);
 
     public PathfindQuery(VoxelMap volume)
     {
@@ -432,8 +433,6 @@ public class PathfindQuery
             while (z1 != z2);
         }
     }
-
-    private Span<Node> NodeSpan => CollectionsMarshal.AsSpan(_nodes);
 
     private void AddToOpen(int nodeIndex)
     {

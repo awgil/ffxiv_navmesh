@@ -1,5 +1,4 @@
 - better pathfind
--- navmesh debug visu for the process
 -- use same string-pulling idea for navvolumes
 -- follow/target update
 - explicitly unwalkable materials

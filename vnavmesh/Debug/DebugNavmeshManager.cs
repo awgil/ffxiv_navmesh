@@ -104,7 +104,7 @@ class DebugNavmeshManager : IDisposable
 
         _drawNavmesh ??= new(_manager.Navmesh.Mesh, _path.Query?.MeshQuery, _tree, _dd);
         _drawNavmesh.Draw();
-        _debugVoxelMap ??= new(_manager.Navmesh.Volume, _tree, _dd);
+        _debugVoxelMap ??= new(_manager.Navmesh.Volume, _path.Query?.VolumeQuery, _tree, _dd);
         _debugVoxelMap.Draw();
     }
 

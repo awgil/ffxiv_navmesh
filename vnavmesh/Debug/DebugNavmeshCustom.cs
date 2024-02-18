@@ -118,7 +118,7 @@ class DebugNavmeshCustom : IDisposable
         }
         _drawNavmesh ??= new(navmesh, null, _tree, _dd);
         _drawNavmesh.Draw();
-        _debugVoxelMap ??= new(_navmesh.Volume!, _tree, _dd);
+        _debugVoxelMap ??= new(_navmesh.Volume!, null, _tree, _dd);
         _debugVoxelMap.Draw();
     }
 

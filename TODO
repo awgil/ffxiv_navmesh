@@ -1,14 +1,12 @@
+- walk/fly transitions
+- figure out fly bounds (0x2021 / 0x202400 material planes?)
 - better pathfind
 -- use same string-pulling idea for navvolumes
 -- follow/target update
-- rasterize planes
 - improve nearest search for blocked voxels to prefer voxels on correct side
-- walk/fly transitions
 - per-zone custom markup (tighter borders? shapes to ignore?)
 - figure out max-climb and ch (max-climb should be 0.5wu, do we need an extra voxel?)
-- optimize voxelization
--- figure out fly bounds (0x2021 material planes)
--- just rewrite this shit and add unittest to compare with recast
+- optimize voxelization - just rewrite this shit and add unittest to compare with recast
 - volume nav:
 -- configurable voxelmap resolution
 -- consider building equivalent of navmesh

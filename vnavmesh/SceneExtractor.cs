@@ -52,25 +52,31 @@ public class SceneExtractor
     private const string _keyAnalyticBox = "<box>";
     private const string _keyAnalyticSphere = "<sphere>";
     private const string _keyAnalyticCylinder = "<cylinder>";
+    private const string _keyAnalyticPlaneSingle = "<plane one-sided>";
+    private const string _keyAnalyticPlaneDouble = "<plane two-sided>";
     private const string _keyMeshCylinder = "<mesh cylinder>";
 
-    private static Mesh _meshBox;
-    private static Mesh _meshSphere;
-    private static Mesh _meshCylinder;
+    private static List<MeshPart> _meshBox;
+    private static List<MeshPart> _meshSphere;
+    private static List<MeshPart> _meshCylinder;
+    private static List<MeshPart> _meshPlane;
 
     static SceneExtractor()
     {
         _meshBox = BuildBoxMesh();
         _meshSphere = BuildSphereMesh(16);
         _meshCylinder = BuildCylinderMesh(16);
+        _meshPlane = BuildPlaneMesh();
     }
 
     public unsafe SceneExtractor(SceneDefinition scene)
     {
-        Meshes[_keyAnalyticBox] = _meshBox;
-        Meshes[_keyAnalyticSphere] = _meshSphere;
-        Meshes[_keyAnalyticCylinder] = _meshCylinder;
-        Meshes[_keyMeshCylinder] = new() { Parts = _meshCylinder.Parts, MeshFlags = MeshFlags.FromCylinderMesh };
+        Meshes[_keyAnalyticBox] = new() { Parts = _meshBox, MeshFlags = MeshFlags.FromAnalyticShape };
+        Meshes[_keyAnalyticSphere] = new() { Parts = _meshSphere, MeshFlags = MeshFlags.FromAnalyticShape };
+        Meshes[_keyAnalyticCylinder] = new() { Parts = _meshCylinder, MeshFlags = MeshFlags.FromAnalyticShape };
+        Meshes[_keyAnalyticPlaneSingle] = new() { Parts = _meshPlane, MeshFlags = MeshFlags.FromAnalyticShape };
+        Meshes[_keyAnalyticPlaneDouble] = new() { Parts = _meshPlane, MeshFlags = MeshFlags.FromAnalyticShape };
+        Meshes[_keyMeshCylinder] = new() { Parts = _meshCylinder, MeshFlags = MeshFlags.FromCylinderMesh };
         foreach (var path in scene.MeshPaths.Values)
             AddMesh(path);
 
@@ -126,6 +132,7 @@ public class SceneExtractor
                     FileLayerGroupAnalyticCollider.Type.Box => (_keyAnalyticBox, CalculateBoxBounds(ref resultingTransform)),
                     FileLayerGroupAnalyticCollider.Type.Sphere => (_keyAnalyticSphere, CalculateSphereBounds(key, ref resultingTransform)),
                     FileLayerGroupAnalyticCollider.Type.Cylinder => (_keyMeshCylinder, CalculateBoxBounds(ref resultingTransform)), // TODO: we can probably do a tighter fit for cylinders...
+                    FileLayerGroupAnalyticCollider.Type.Plane => (_keyAnalyticPlaneSingle, CalculatePlaneBounds(ref resultingTransform)),
                     _ => ("", default)
                 };
                 return (path, resultingTransform, bounds);
@@ -149,7 +156,9 @@ public class SceneExtractor
             FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Box => (_keyAnalyticBox, CalculateBoxBounds(ref transform)),
             FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Sphere => (_keyAnalyticSphere, CalculateSphereBounds(key, ref transform)),
             FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Cylinder => (_keyAnalyticCylinder, CalculateBoxBounds(ref transform)),
+            FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Plane => (_keyAnalyticPlaneSingle, CalculatePlaneBounds(ref transform)),
             FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Mesh => (scene.MeshPaths[crc], CalculateMeshBounds(Meshes[scene.MeshPaths[crc]], ref transform)),
+            FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.PlaneTwoSided => (_keyAnalyticPlaneDouble, CalculatePlaneBounds(ref transform)),
             _ => ("", default)
         };
         return (path, transform, bounds);
@@ -217,6 +226,18 @@ public class SceneExtractor
         return res;
     }
 
+    private static AABB CalculatePlaneBounds(ref Matrix4x3 world)
+    {
+        var res = new AABB() { Min = new(float.MaxValue), Max = new(float.MinValue) };
+        for (int i = 0; i < 4; ++i)
+        {
+            var p = ((i & 1) != 0 ? world.Row0 : -world.Row0) + ((i & 2) != 0 ? world.Row1 : -world.Row1) + world.Row3;
+            res.Min = Vector3.Min(res.Min, p);
+            res.Max = Vector3.Max(res.Max, p);
+        }
+        return res;
+    }
+
     private void AddBounds(ref AABB worldBB)
     {
         BoundsMin = Vector3.Min(BoundsMin, worldBB.Min);
@@ -242,7 +263,17 @@ public class SceneExtractor
         return part;
     }
 
-    private static Mesh BuildBoxMesh()
+    private PrimitiveFlags ExtractMaterialFlags(ulong mat)
+    {
+        var res = PrimitiveFlags.None;
+        if ((mat & 0x200000) != 0)
+            res |= PrimitiveFlags.ForceUnwalkable; // TODO: is it actually 'unlandable'? it seems that if you're already walking, you can proceed...
+        if ((mat & 0x100000) != 0)
+            res |= PrimitiveFlags.FlyThrough;
+        return res;
+    }
+
+    private static List<MeshPart> BuildBoxMesh()
     {
         var mesh = new MeshPart();
         mesh.Vertices.Add(new(-1, -1, -1));
@@ -271,10 +302,10 @@ public class SceneExtractor
         // back (z=1)
         mesh.Primitives.Add(new(1, 3, 5, PrimitiveFlags.None));
         mesh.Primitives.Add(new(5, 3, 7, PrimitiveFlags.None));
-        return new() { Parts = { mesh }, MeshFlags = MeshFlags.FromAnalyticShape };
+        return [mesh];
     }
 
-    private static Mesh BuildSphereMesh(int numSegments)
+    private static List<MeshPart> BuildSphereMesh(int numSegments)
     {
         var mesh = new MeshPart();
         var angle = 360.Degrees() / numSegments;
@@ -313,10 +344,10 @@ public class SceneExtractor
         for (int i = 0; i < numSegments - 1; ++i)
             mesh.Primitives.Add(new(itop + i, itop + i + 1, icap + 1, PrimitiveFlags.None));
         mesh.Primitives.Add(new(itop + numSegments - 1, itop, icap + 1, PrimitiveFlags.None));
-        return new() { Parts = { mesh }, MeshFlags = MeshFlags.FromAnalyticShape };
+        return [mesh];
     }
 
-    private static Mesh BuildCylinderMesh(int numSegments)
+    private static List<MeshPart> BuildCylinderMesh(int numSegments)
     {
         var mesh = new MeshPart();
         var angle = 360.Degrees() / numSegments;
@@ -355,16 +386,18 @@ public class SceneExtractor
             mesh.Primitives.Add(new(iv, iv + 2, tcenter, PrimitiveFlags.None));
         }
         mesh.Primitives.Add(new(ivn + 1, 1, tcenter, PrimitiveFlags.None));
-        return new() { Parts = { mesh }, MeshFlags = MeshFlags.FromAnalyticShape };
+        return [mesh];
     }
 
-    private PrimitiveFlags ExtractMaterialFlags(ulong mat)
+    private static List<MeshPart> BuildPlaneMesh()
     {
-        var res = PrimitiveFlags.None;
-        if ((mat & 0x200000) != 0)
-            res |= PrimitiveFlags.ForceUnwalkable; // TODO: is it actually 'unlandable'? it seems that if you're already walking, you can proceed...
-        if ((mat & 0x100000) != 0)
-            res |= PrimitiveFlags.FlyThrough;
-        return res;
+        var mesh = new MeshPart();
+        mesh.Vertices.Add(new(-1, +1, 0));
+        mesh.Vertices.Add(new(-1, -1, 0));
+        mesh.Vertices.Add(new(+1, -1, 0));
+        mesh.Vertices.Add(new(+1, +1, 0));
+        mesh.Primitives.Add(new(0, 1, 2, PrimitiveFlags.None));
+        mesh.Primitives.Add(new(0, 2, 3, PrimitiveFlags.None));
+        return [mesh];
     }
 }

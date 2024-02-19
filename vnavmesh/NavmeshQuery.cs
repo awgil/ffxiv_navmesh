@@ -51,7 +51,9 @@ public class NavmeshQuery
             var success = MeshQuery.FindStraightPath(from.SystemToRecast(), endPos, polysPath, ref straightPath, 1024, 0);
             if (success.Failed())
                 Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find straight path ({success.Value:X})");
-            return straightPath.Select(p => p.pos.RecastToSystem()).ToList();
+            var res = straightPath.Select(p => p.pos.RecastToSystem()).ToList();
+            res.Add(endPos.RecastToSystem());
+            return res;
         }
         else
         {
@@ -87,7 +89,7 @@ public class NavmeshQuery
     }
 
     // returns 0 if not found, otherwise polygon ref
-    public long FindNearestMeshPoly(Vector3 p, float radius = 2)
+    public long FindNearestMeshPoly(Vector3 p, float radius = 5)
     {
         MeshQuery.FindNearestPoly(p.SystemToRecast(), new(radius), _filter, out var nearestRef, out _, out _);
         return nearestRef;

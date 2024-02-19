@@ -193,7 +193,7 @@ public class DebugExtractedCollision : IDisposable
                         int instIndex = 0;
                         foreach (var i in mesh.Instances)
                         {
-                            if (_tree.LeafNode($"{instIndex}: R0 = {i.WorldTransform.Row0:f3}, R1 = {i.WorldTransform.Row1:f3}, R2 = {i.WorldTransform.Row2:f3}, R3 = {i.WorldTransform.Row3:f3}, {i.WorldBounds.Min:f3} - {i.WorldBounds.Max:f3} (force-set={i.ForceSetPrimFlags}, force-clear={i.ForceClearPrimFlags})").SelectedOrHovered)
+                            if (_tree.LeafNode($"{instIndex}: {i.WorldBounds.Min:f3}-{i.WorldBounds.Max:f3}, R0 = {i.WorldTransform.Row0:f3}, R1 = {i.WorldTransform.Row1:f3}, R2 = {i.WorldTransform.Row2:f3}, R3 = {i.WorldTransform.Row3:f3}, {i.WorldBounds.Min:f3} - {i.WorldBounds.Max:f3} (+: {i.ForceSetPrimFlags}, -: {i.ForceClearPrimFlags})").SelectedOrHovered)
                                 VisualizeMeshInstance(meshIndex, instIndex);
                             ++instIndex;
                         }

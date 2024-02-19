@@ -1,8 +1,6 @@
 ﻿using Dalamud.Interface.Utility.Raii;
 using ImGuiNET;
 using System;
-using System.Collections.Generic;
-using System.Numerics;
 
 namespace Navmesh.Debug;
 
@@ -63,12 +61,13 @@ class DebugNavmeshCustom : IDisposable
             if (ImGui.Button("Rebuild navmesh"))
             {
                 Clear();
-                _navmesh.Rebuild();
+                _navmesh.Rebuild(true);
             }
             ImGui.SameLine();
-            if (ImGui.Button("Clear navmesh"))
+            if (ImGui.Button("Rebuild scene extract only"))
             {
                 Clear();
+                _navmesh.Rebuild(false);
             }
             ImGui.SameLine();
             ImGui.TextUnformatted($"State: {_navmesh.CurrentState}");

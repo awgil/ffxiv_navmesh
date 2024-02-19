@@ -50,8 +50,14 @@ public class SceneExtractor
     public Vector3 BoundsMax { get; private set; } = new(float.MinValue);
     public Vector3 PlaneBoundsMin = new(float.MaxValue);
     public Vector3 PlaneBoundsMax = new(float.MinValue);
-    public Vector3 EffectiveBoundsMin => new(PlaneBoundsMin.X < float.MaxValue ? PlaneBoundsMin.X : BoundsMin.X, PlaneBoundsMin.Y < float.MaxValue ? PlaneBoundsMin.Y : BoundsMin.Y, PlaneBoundsMin.Z < float.MaxValue ? PlaneBoundsMin.Z : BoundsMin.Z);
-    public Vector3 EffectiveBoundsMax => new(PlaneBoundsMax.X > float.MinValue ? PlaneBoundsMax.X : BoundsMax.X, PlaneBoundsMax.Y > float.MinValue ? PlaneBoundsMax.Y : BoundsMax.Y, PlaneBoundsMax.Z > float.MinValue ? PlaneBoundsMax.Z : BoundsMax.Z);
+    public Vector3 EffectiveBoundsMin => new(
+        Math.Max(PlaneBoundsMin.X < float.MaxValue ? PlaneBoundsMin.X : BoundsMin.X, -1024),
+        Math.Max(PlaneBoundsMin.Y < float.MaxValue ? PlaneBoundsMin.Y : BoundsMin.Y, -1024),
+        Math.Max(PlaneBoundsMin.Z < float.MaxValue ? PlaneBoundsMin.Z : BoundsMin.Z, -1024));
+    public Vector3 EffectiveBoundsMax => new(
+        Math.Min(PlaneBoundsMax.X > float.MinValue ? PlaneBoundsMax.X : BoundsMax.X, 1024),
+        Math.Min(PlaneBoundsMax.Y > float.MinValue ? PlaneBoundsMax.Y : BoundsMax.Y, 1024),
+        Math.Min(PlaneBoundsMax.Z > float.MinValue ? PlaneBoundsMax.Z : BoundsMax.Z, 1024));
 
     private const string _keyAnalyticBox = "<box>";
     private const string _keyAnalyticSphere = "<sphere>";

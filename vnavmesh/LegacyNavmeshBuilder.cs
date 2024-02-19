@@ -58,14 +58,14 @@ public class LegacyNavmeshBuilder : IDisposable
         Clear();
     }
 
-    public void Rebuild()
+    public void Rebuild(bool includeTiles)
     {
         Clear();
         Service.Log.Debug("[navmesh] extract from scene");
         _scene = new();
         _scene.FillFromActiveLayout();
         Service.Log.Debug("[navmesh] schedule async build");
-        _task = Task.Run(() => BuildNavmesh(_scene));
+        _task = Task.Run(() => BuildNavmesh(_scene, includeTiles));
     }
 
     public void Clear()
@@ -84,7 +84,7 @@ public class LegacyNavmeshBuilder : IDisposable
         //GC.Collect();
     }
 
-    private void BuildNavmesh(SceneDefinition scene)
+    private void BuildNavmesh(SceneDefinition scene, bool includeTiles)
     {
         try
         {
@@ -93,11 +93,14 @@ public class LegacyNavmeshBuilder : IDisposable
 
             // create tile data and add to navmesh
             _intermediates = new(_builder.NumTilesX, _builder.NumTilesZ);
-            for (int z = 0; z < _builder.NumTilesZ; ++z)
+            if (includeTiles)
             {
-                for (int x = 0; x < _builder.NumTilesX; ++x)
+                for (int z = 0; z < _builder.NumTilesZ; ++z)
                 {
-                    (_intermediates.SolidHeightfields[x, z], _intermediates.CompactHeightfields[x, z], _intermediates.ContourSets[x, z], _intermediates.PolyMeshes[x, z], _intermediates.DetailMeshes[x, z]) = _builder.BuildTile(x, z);
+                    for (int x = 0; x < _builder.NumTilesX; ++x)
+                    {
+                        (_intermediates.SolidHeightfields[x, z], _intermediates.CompactHeightfields[x, z], _intermediates.ContourSets[x, z], _intermediates.PolyMeshes[x, z], _intermediates.DetailMeshes[x, z]) = _builder.BuildTile(x, z);
+                    }
                 }
             }
 

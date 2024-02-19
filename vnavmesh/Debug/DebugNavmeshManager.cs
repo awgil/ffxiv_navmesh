@@ -56,6 +56,8 @@ class DebugNavmeshManager : IDisposable
             return;
 
         var player = Service.ClientState.LocalPlayer;
+        var playerPos = player?.Position ?? default;
+        ImGui.TextUnformatted($"Player pos: {playerPos}");
         if (ImGui.Button("Set target to current pos"))
             _target = player?.Position ?? default;
         ImGui.SameLine();
@@ -76,7 +78,7 @@ class DebugNavmeshManager : IDisposable
         // draw current path
         if (player != null)
         {
-            var from = player.Position;
+            var from = playerPos;
             var color = 0xff00ff00;
             foreach (var to in _path.Waypoints)
             {
@@ -87,7 +89,6 @@ class DebugNavmeshManager : IDisposable
             }
         }
 
-        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
         _manager.Navmesh.Mesh.CalcTileLoc(playerPos.SystemToRecast(), out var playerTileX, out var playerTileZ);
         _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
         _tree.LeafNode($"Player poly: {_path.Query?.FindNearestMeshPoly(playerPos):X}");

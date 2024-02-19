@@ -73,7 +73,7 @@ public class NavmeshQuery
             Service.Log.Error($"Failed to find a path from {from} ({startVoxel:X}) to {to} ({endVoxel:X}): failed to find empty voxel");
             return new();
         }
-        
+
         var voxelPath = VolumeQuery.FindPath(startVoxel, endVoxel, from, to, useRaycast, false); // TODO: do we need intermediate points for string-pulling algo?
         if (voxelPath.Count == 0)
         {

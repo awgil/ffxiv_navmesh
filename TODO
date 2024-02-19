@@ -1,5 +1,4 @@
 - walk/fly transitions
-- figure out fly bounds (0x2021 / 0x202400 material planes?)
 - better pathfind
 -- use same string-pulling idea for navvolumes
 -- follow/target update

@@ -48,6 +48,10 @@ public class SceneExtractor
     public Dictionary<string, Mesh> Meshes { get; private set; } = new();
     public Vector3 BoundsMin { get; private set; } = new(float.MaxValue);
     public Vector3 BoundsMax { get; private set; } = new(float.MinValue);
+    public Vector3 PlaneBoundsMin = new(float.MaxValue);
+    public Vector3 PlaneBoundsMax = new(float.MinValue);
+    public Vector3 EffectiveBoundsMin => new(PlaneBoundsMin.X < float.MaxValue ? PlaneBoundsMin.X : BoundsMin.X, PlaneBoundsMin.Y < float.MaxValue ? PlaneBoundsMin.Y : BoundsMin.Y, PlaneBoundsMin.Z < float.MaxValue ? PlaneBoundsMin.Z : BoundsMin.Z);
+    public Vector3 EffectiveBoundsMax => new(PlaneBoundsMax.X > float.MinValue ? PlaneBoundsMax.X : BoundsMax.X, PlaneBoundsMax.Y > float.MinValue ? PlaneBoundsMax.Y : BoundsMax.Y, PlaneBoundsMax.Z > float.MinValue ? PlaneBoundsMax.Z : BoundsMax.Z);
 
     private const string _keyAnalyticBox = "<box>";
     private const string _keyAnalyticSphere = "<sphere>";
@@ -108,6 +112,27 @@ public class SceneExtractor
 
         foreach (var coll in scene.Colliders)
         {
+            if ((coll.matId & 0x202000) == 0x202000 && coll.type == FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Plane)
+            {
+                // bounding plane?
+                var normal = Vector3.Transform(new(0, 0, 1), coll.transform.Rotation);
+                Service.Log.Info($"Potential collider: {coll.key:X}, n={normal}");
+                if (normal.X < -0.99)
+                    PlaneBoundsMax.X = Math.Max(PlaneBoundsMax.X, coll.transform.Translation.X);
+                else if (normal.X > 0.99)
+                    PlaneBoundsMin.X = Math.Min(PlaneBoundsMin.X, coll.transform.Translation.X);
+                else if (normal.Y < -0.99)
+                    PlaneBoundsMax.Y = Math.Max(PlaneBoundsMax.Y, coll.transform.Translation.Y);
+                else if (normal.Y > 0.99)
+                    PlaneBoundsMin.Y = Math.Min(PlaneBoundsMin.Y, coll.transform.Translation.Y);
+                else if (normal.Z < -0.99)
+                    PlaneBoundsMax.Z = Math.Max(PlaneBoundsMax.Z, coll.transform.Translation.Z);
+                else if (normal.Z > 0.99)
+                    PlaneBoundsMin.Z = Math.Min(PlaneBoundsMin.Z, coll.transform.Translation.Z);
+            }
+            if ((coll.matId & 0x400) != 0)
+                continue; // TODO: reconsider... (this aims to filter out doors that are opened when you get near them, not sure whether it's the right condition)
+
             var info = ExtractColliderInfo(scene, coll.key, coll.transform, coll.crc, coll.type);
             if (info.path.Length > 0)
                 AddInstance(Meshes[info.path], coll.key, ref info.transform, ref info.bounds, coll.matId, coll.matMask);

@@ -21,7 +21,7 @@ public unsafe class DebugGameCollision : IDisposable
 {
     private UITree _tree = new();
     private DebugDrawer _dd;
-    private BitMask _shownLayers = new(ulong.MaxValue);
+    private BitMask _shownLayers = new(1);
     private BitMask _materialMask;
     private BitMask _materialId;
     private bool _showZeroLayer = true;
@@ -419,6 +419,7 @@ public unsafe class DebugGameCollision : IDisposable
             case ColliderType.PlaneTwoSided:
                 {
                     var cast = (ColliderPlane*)coll;
+                    _tree.LeafNode($"Normal: {cast->World.Row2 / cast->Scale.Z:f3}");
                     _tree.LeafNode($"Translation: {Vec3Str(cast->Translation)}");
                     _tree.LeafNode($"Rotation: {Vec3Str(cast->Rotation)}");
                     _tree.LeafNode($"Scale: {Vec3Str(cast->Scale)}");

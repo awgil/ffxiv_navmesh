@@ -66,8 +66,6 @@ public class SceneDefinition
             foreach (var (k, v) in *colliders)
             {
                 var cast = (ColliderGenericLayoutInstance*)v.Value;
-                if ((cast->MaterialIdLow & 0x400) != 0)
-                    continue; // TODO: reconsider... (this aims to filter out doors that are opened when you get near them, not sure whether it's the right condition)
                 if (cast->PcbPathCrc != 0 && !MeshPaths.ContainsKey(cast->PcbPathCrc))
                     MeshPaths[cast->PcbPathCrc] = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref layout->CrcToPath, cast->PcbPathCrc));
                 Colliders.Add((k, cast->ColliderLayoutInstance.Transform, cast->PcbPathCrc, ((ulong)cast->MaterialIdHigh << 32) | cast->MaterialIdLow, ((ulong)cast->MaterialMaskHigh << 32) | cast->MaterialMaskLow, cast->ColliderLayoutInstance.Type));

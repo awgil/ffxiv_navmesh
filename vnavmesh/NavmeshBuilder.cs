@@ -3,6 +3,7 @@ using DotRecast.Detour;
 using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
+using System.Numerics;
 
 namespace Navmesh;
 
@@ -13,6 +14,8 @@ public class NavmeshBuilder
     public RcTelemetry Telemetry = new();
     public NavmeshSettings Settings;
     public SceneExtractor Scene;
+    public Vector3 BoundsMin;
+    public Vector3 BoundsMax;
     public int NumTilesX;
     public int NumTilesZ;
     public Navmesh Navmesh; // should not be accessed while building tiles
@@ -23,29 +26,31 @@ public class NavmeshBuilder
 
         // load all meshes
         Scene = new(scene);
+        BoundsMin = Scene.EffectiveBoundsMin;
+        BoundsMax = Scene.EffectiveBoundsMax;
 
         NumTilesX = NumTilesZ = 1;
         if (settings.TileSize > 0)
-            RcCommons.CalcTileCount(Scene.BoundsMin.SystemToRecast(), Scene.BoundsMax.SystemToRecast(), settings.CellSize, settings.TileSize, settings.TileSize, out NumTilesX, out NumTilesZ);
+            RcCommons.CalcTileCount(BoundsMin.SystemToRecast(), BoundsMax.SystemToRecast(), settings.CellSize, settings.TileSize, settings.TileSize, out NumTilesX, out NumTilesZ);
         Service.Log.Debug($"starting building {NumTilesX}x{NumTilesZ} navmesh");
 
         // create empty navmesh
         var navmeshParams = new DtNavMeshParams();
-        navmeshParams.orig = Scene.BoundsMin.SystemToRecast();
+        navmeshParams.orig = BoundsMin.SystemToRecast();
         if (settings.TileSize > 0)
         {
             navmeshParams.tileWidth = navmeshParams.tileHeight = settings.TileSize * settings.CellSize;
         }
         else
         {
-            navmeshParams.tileWidth = Scene.BoundsMax.X - Scene.BoundsMin.X;
-            navmeshParams.tileHeight = Scene.BoundsMax.Z - Scene.BoundsMin.Z;
+            navmeshParams.tileWidth = BoundsMax.X - BoundsMin.X;
+            navmeshParams.tileHeight = BoundsMax.Z - BoundsMin.Z;
         }
         navmeshParams.maxTiles = NumTilesX * NumTilesZ;
         navmeshParams.maxPolys = 1 << DtNavMesh.DT_POLY_BITS;
 
         var navmesh = new DtNavMesh(navmeshParams, settings.PolyMaxVerts);
-        var volume = new VoxelMap(Scene.BoundsMin, Scene.BoundsMax, 512, 128, 512); // TODO: improve...
+        var volume = new VoxelMap(BoundsMin, BoundsMax, 512, 128, 512); // TODO: improve...
         Navmesh = new(navmesh, volume);
     }
 
@@ -58,8 +63,8 @@ public class NavmeshBuilder
         var walkableHeightVoxels = (int)MathF.Ceiling(Settings.AgentHeight / Settings.CellHeight);
         var walkableRadiusVoxels = (int)MathF.Ceiling(Settings.AgentRadius / Settings.CellSize);
         int borderSizeVoxels = 0;
-        var boundsMin = Scene.BoundsMin;
-        var boundsMax = Scene.BoundsMax;
+        var boundsMin = BoundsMin;
+        var boundsMax = BoundsMax;
         int widthVoxels, heightVoxels;
         if (Settings.TileSize > 0)
         {

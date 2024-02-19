@@ -97,7 +97,7 @@ public class VoxelPathfind
         return true;
     }
 
-    public void Execute(int maxSteps = int.MaxValue)
+    public void Execute(int maxSteps = 20000)
     {
         while (maxSteps-- > 0 && ExecuteStep())
             ;

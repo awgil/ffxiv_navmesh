@@ -122,18 +122,18 @@ public class SceneExtractor
             {
                 // bounding plane?
                 var normal = Vector3.Transform(new(0, 0, 1), coll.transform.Rotation);
-                Service.Log.Info($"Potential collider: {coll.key:X}, n={normal}");
-                if (normal.X < -0.99)
+                Service.Log.Info($"Potential collider: {coll.key:X}, n={normal}, t={coll.transform.Translation}");
+                if (normal.X < -0.9999)
                     PlaneBoundsMax.X = Math.Max(PlaneBoundsMax.X, coll.transform.Translation.X);
-                else if (normal.X > 0.99)
+                else if (normal.X > 0.9999)
                     PlaneBoundsMin.X = Math.Min(PlaneBoundsMin.X, coll.transform.Translation.X);
-                else if (normal.Y < -0.99)
+                else if (normal.Y < -0.9999)
                     PlaneBoundsMax.Y = Math.Max(PlaneBoundsMax.Y, coll.transform.Translation.Y);
-                else if (normal.Y > 0.99)
+                else if (normal.Y > 0.9999)
                     PlaneBoundsMin.Y = Math.Min(PlaneBoundsMin.Y, coll.transform.Translation.Y);
-                else if (normal.Z < -0.99)
+                else if (normal.Z < -0.9999)
                     PlaneBoundsMax.Z = Math.Max(PlaneBoundsMax.Z, coll.transform.Translation.Z);
-                else if (normal.Z > 0.99)
+                else if (normal.Z > 0.9999)
                     PlaneBoundsMin.Z = Math.Min(PlaneBoundsMin.Z, coll.transform.Translation.Z);
             }
             if ((coll.matId & 0x400) != 0)

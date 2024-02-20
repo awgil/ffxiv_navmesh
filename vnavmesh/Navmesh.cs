@@ -11,7 +11,7 @@ namespace Navmesh;
 public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
-    public static readonly uint Version = 1;
+    public static readonly uint Version = 2;
 
     // throws an exception on failure
     public static Navmesh Deserialize(BinaryReader reader)
@@ -30,9 +30,6 @@ public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
         var maxX = reader.ReadSingle();
         var maxY = reader.ReadSingle();
         var maxZ = reader.ReadSingle();
-        if (minX < -1024 || minY < -1024 || minZ < -1024 || maxX > 1024 || maxY > 1024 || maxZ > 1024)
-            throw new Exception("Fucked bounds"); // remove after upgrade to v2+
-
         var nx = reader.ReadInt32();
         var ny = reader.ReadInt32();
         var nz = reader.ReadInt32();

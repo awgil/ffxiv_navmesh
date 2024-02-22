@@ -38,7 +38,20 @@ public sealed class Plugin : IDalamudPlugin
 
         dalamud.UiBuilder.Draw += WindowSystem.Draw;
         dalamud.UiBuilder.OpenConfigUi += () => _wndMain.IsOpen = true;
-        Service.CommandManager.AddHandler("/vnavmesh", new(OnCommand));
+        Service.CommandManager.AddHandler("/vnavmesh", new(OnCommand)
+        {
+            HelpMessage = "Opens the main menu\n" +
+                "/vnavmesh moveto <X> <Y> <Z> → move to raw coordinates\n" +
+                "/vnavmesh movedir <X> <Y> <Z> → move this many units over (relative to player facing)\n" +
+                "/vnavmesh movetarget → move to target's position\n" +
+                "/vnavmesh flyto <X> <Y> <Z> → fly to raw coordinates\n" +
+                "/vnavmesh flydir <X> <Y> <Z> → fly this many units over (relative to player facing)\n" +
+                "/vnavmesh flytarget → fly to target's position\n" +
+                "/vnavmesh stop → stop all movement\n" +
+                "/vnavmesh reload → reload current territory's navmesh from cache.\n" +
+                "/vnavmesh rebuild → rebuild current territory's navmesh from scratch.",
+            ShowInHelp = true,
+        });
 
         _wndMain.IsOpen = true;
 

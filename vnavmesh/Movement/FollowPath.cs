@@ -16,6 +16,7 @@ public class FollowPath : IDisposable
 
     private NavmeshManager _manager;
     private NavmeshQuery? _query;
+    private bool _flying;
     private List<Vector3> _waypoints = new();
     private OverrideCamera _camera = new();
     private OverrideMovement _movement = new();
@@ -43,7 +44,9 @@ public class FollowPath : IDisposable
         while (_waypoints.Count > 0)
         {
             var toNext = _waypoints[0] - player.Position;
-            if (new Vector2(toNext.X, toNext.Z).LengthSquared() > Tolerance * Tolerance)
+            if (!_flying)
+                toNext.Y = 0;
+            if (toNext.LengthSquared() > Tolerance * Tolerance)
                 break;
             _waypoints.RemoveAt(0);
         }
@@ -70,6 +73,7 @@ public class FollowPath : IDisposable
         if (player == null || _query == null)
             return;
         _waypoints = _query.PathfindMesh(player.Position, destination, UseRaycasts, UseStringPulling);
+        _flying = false;
     }
 
     public void FlyTo(Vector3 destination)
@@ -78,6 +82,7 @@ public class FollowPath : IDisposable
         if (player == null || _query == null)
             return;
         _waypoints = _query.PathfindVolume(player.Position, destination, UseRaycasts, UseStringPulling);
+        _flying = true;
     }
 
     public void Stop() => _waypoints.Clear();

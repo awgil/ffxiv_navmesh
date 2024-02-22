@@ -97,7 +97,7 @@ public class VoxelPathfind
         return true;
     }
 
-    public void Execute(int maxSteps = 20000)
+    public void Execute(int maxSteps = 1000000)
     {
         while (maxSteps-- > 0 && ExecuteStep())
             ;

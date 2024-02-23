@@ -954,8 +954,20 @@
           "System.Xml.ReaderWriter": "4.3.0"
         }
       },
-      "dotrecast.recast": {
+      "dotrecast.core": {
         "type": "Project"
+      },
+      "dotrecast.detour": {
+        "type": "Project",
+        "dependencies": {
+          "DotRecast.Core": "[1.0.0, )"
+        }
+      },
+      "dotrecast.recast": {
+        "type": "Project",
+        "dependencies": {
+          "DotRecast.Core": "[1.0.0, )"
+        }
       },
       "ffxivclientstructs": {
         "type": "Project"

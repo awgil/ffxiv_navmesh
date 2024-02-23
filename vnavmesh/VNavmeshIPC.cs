@@ -14,18 +14,21 @@ namespace Navmesh
             Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.NavmeshIsNull").RegisterFunc(NavmeshIsNull);
             Service.PluginInterface.GetIpcProvider<float>("vnavmesh.TaskProgress").RegisterFunc(TaskProgress);
             Service.PluginInterface.GetIpcProvider<int>("vnavmesh.WaypointsCount").RegisterFunc(WaypointsCount);
-            Service.PluginInterface.GetIpcProvider<Vector3, bool>("vnavmesh.MoveTo").RegisterFunc(MoveTo);
-            Service.PluginInterface.GetIpcProvider<Vector3, bool>("vnavmesh.MoveDir").RegisterFunc(MoveDir);
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.MoveTarget").RegisterFunc(MoveTarget);
-            Service.PluginInterface.GetIpcProvider<Vector3, bool>("vnavmesh.FlyTo").RegisterFunc(FlyTo);
-            Service.PluginInterface.GetIpcProvider<Vector3, bool>("vnavmesh.FlyDir").RegisterFunc(FlyDir);
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.FlyTarget").RegisterFunc(FlyTarget);
-            Service.PluginInterface.GetIpcProvider<bool, bool>("vnavmesh.MovementAllowed").RegisterFunc(MovementAllowed);
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.Stop").RegisterFunc(Stop);
-            Service.PluginInterface.GetIpcProvider<bool, bool>("vnavmesh.AutoMesh").RegisterFunc(AutoMesh);
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.Reload").RegisterFunc(Reload);
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.Rebuild").RegisterFunc(Rebuild);
-            Service.PluginInterface.GetIpcProvider<bool, bool>("vnavmesh.MainWindowIsOpen").RegisterFunc(MainWindowIsOpen);
+            Service.PluginInterface.GetIpcProvider<Vector3, object>("vnavmesh.MoveTo").RegisterAction(MoveTo);
+            Service.PluginInterface.GetIpcProvider<Vector3, object>("vnavmesh.MoveDir").RegisterAction(MoveDir);
+            Service.PluginInterface.GetIpcProvider<object>("vnavmesh.MoveTarget").RegisterAction(MoveTarget);
+            Service.PluginInterface.GetIpcProvider<Vector3, object>("vnavmesh.FlyTo").RegisterAction(FlyTo);
+            Service.PluginInterface.GetIpcProvider<Vector3, object>("vnavmesh.FlyDir").RegisterAction(FlyDir);
+            Service.PluginInterface.GetIpcProvider<object>("vnavmesh.FlyTarget").RegisterAction(FlyTarget);
+            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.MovementAllowed").RegisterFunc(MovementAllowed);
+            Service.PluginInterface.GetIpcProvider<bool, object>("vnavmesh.SetMovementAllowed").RegisterAction(SetMovementAllowed);
+            Service.PluginInterface.GetIpcProvider<float>("vnavmesh.Tolerance").RegisterFunc(Tolerance);
+            Service.PluginInterface.GetIpcProvider<float, object>("vnavmesh.SetTolerance").RegisterAction(SetTolerance);
+            Service.PluginInterface.GetIpcProvider<object>("vnavmesh.Stop").RegisterAction(Stop);
+            Service.PluginInterface.GetIpcProvider<bool, object>("vnavmesh.AutoMesh").RegisterAction(AutoMesh);
+            Service.PluginInterface.GetIpcProvider<object>("vnavmesh.Reload").RegisterAction(Reload);
+            Service.PluginInterface.GetIpcProvider<object>("vnavmesh.Rebuild").RegisterAction(Rebuild);
+            Service.PluginInterface.GetIpcProvider<bool, object>("vnavmesh.MainWindowIsOpen").RegisterAction(MainWindowIsOpen);
 
             _navmeshManager = navmeshManager;
             _followPath = followPath;
@@ -37,18 +40,19 @@ namespace Navmesh
             Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.NavmeshIsNull").UnregisterFunc();
             Service.PluginInterface.GetIpcProvider<float>("vnavmesh.TaskProgress").UnregisterFunc();
             Service.PluginInterface.GetIpcProvider<int>("vnavmesh.WaypointsCount").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<Vector3, bool>("vnavmesh.MoveTo").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<Vector3, bool>("vnavmesh.MoveDir").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.MoveTarget").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<Vector3, bool>("vnavmesh.FlyTo").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<Vector3, bool>("vnavmesh.FlyDir").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.FlyTarget").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<bool, bool>("vnavmesh.MovementAllowed").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.Stop").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<bool, bool>("vnavmesh.AutoMesh").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.Reload").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.Rebuild").UnregisterFunc();
-            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.MainWindowIsOpen").UnregisterFunc();
+            Service.PluginInterface.GetIpcProvider<Vector3, object>("vnavmesh.MoveTo").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<Vector3, object>("vnavmesh.MoveDir").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<object>("vnavmesh.MoveTarget").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<Vector3, object>("vnavmesh.FlyTo").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<Vector3, object>("vnavmesh.FlyDir").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<object>("vnavmesh.FlyTarget").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.IsMovementAllowed").UnregisterFunc();
+            Service.PluginInterface.GetIpcProvider<bool, object>("vnavmesh.SetMovementAllowed").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<object>("vnavmesh.Stop").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<bool, object>("vnavmesh.AutoMesh").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<object>("vnavmesh.Reload").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<object>("vnavmesh.Rebuild").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<bool, object>("vnavmesh.MainWindowIsOpen").UnregisterAction();
         }
 
         private static bool NavmeshIsNull() => _navmeshManager.Navmesh is null;
@@ -57,116 +61,69 @@ namespace Navmesh
 
         private static int WaypointsCount() => _followPath.Waypoints.Count;
 
-        private static bool MoveTo(Vector3 position)
+        private static void MoveTo(Vector3 position)
         {
             if (_followPath.Waypoints.Count == 0)
-            {
                 MoveToCommand(position, false, false);
-                return true;
-            }
-            else
-                return false;
+
         }
 
-        private static bool MoveDir(Vector3 position)
+        private static void MoveDir(Vector3 position)
         {
             if (_followPath.Waypoints.Count == 0)
-            {
                 MoveToCommand(position, true, false);
-                return true;
-            }
-            else
-                return false;
         }
 
-        private static bool MoveTarget()
+        private static void MoveTarget()
         {
             if (_followPath.Waypoints.Count == 0)
             {
                 var moveTarget = Service.TargetManager.Target;
                 if (moveTarget != null)
                     _followPath.MoveTo(moveTarget.Position);
-                return true;
             }
-            else
-                return false;
         }
         
-        private static bool FlyTo(Vector3 position)
+        private static void FlyTo(Vector3 position)
         {
             if (_followPath.Waypoints.Count == 0)
-            {
                 MoveToCommand(position, false, true);
-                return true;
-            }
-            else
-                return false;
         }
 
-        private static bool FlyDir(Vector3 position)
+        private static void FlyDir(Vector3 position)
         {
             if (_followPath.Waypoints.Count == 0)
-            {
                 MoveToCommand(position, true, true);
-                return true;
-            }
-            else
-                return false;
         }
 
-        private static bool FlyTarget()
+        private static void FlyTarget()
         {
             if (_followPath.Waypoints.Count == 0)
             {
                 var moveTarget = Service.TargetManager.Target;
                 if (moveTarget != null)
                     _followPath.FlyTo(moveTarget.Position);
-                return true;
             }
-            else
-                return false;
         }
 
-        private static bool MovementAllowed(bool allowed)
-        {
-            _followPath.MovementAllowed = allowed;
-            return true;
-        }
+        private static void SetMovementAllowed(bool allowed) => _followPath.MovementAllowed = allowed;
 
-        private static bool Stop()
+        private static bool MovementAllowed() => _followPath.MovementAllowed;
+
+        private static void SetTolerance(float tolerance) => _followPath.Tolerance = tolerance;
+
+        private static float Tolerance() => _followPath.Tolerance;
+
+        private static void Stop()
         {
             if (_followPath.Waypoints.Count > 0)
-            {
                 _followPath.Stop();
-                return true;
-            }
-            else
-                return false;
         }
 
-        private static bool AutoMesh(bool autoMesh)
-        {
-            _navmeshManager.AutoMesh = autoMesh;
-            return true;
-        }
-
-        private static bool Reload()
-        {
-            _navmeshManager.Reload(true);
-            return true;
-        }
-
-        private static bool Rebuild()
-        {
-            _navmeshManager.Reload(false);
-            return true;
-        }
-
-        private static bool MainWindowIsOpen(bool isOpen)
-        {
-            _mainWindow.IsOpen = isOpen;
-            return true;
-        }
+        private static void AutoMesh(bool autoMesh) => _navmeshManager.AutoMesh = autoMesh;
+        private static void Reload() => _navmeshManager.Reload(true);
+        private static void Rebuild() => _navmeshManager.Reload(false);
+        private static void MainWindowIsOpen(bool isOpen) => _mainWindow.IsOpen = isOpen;
 
         private static void MoveToCommand(Vector3 offset, bool relativeToPlayer, bool fly)
         {

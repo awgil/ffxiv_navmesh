@@ -59,7 +59,7 @@ public unsafe static class LayoutUtils
             foreach (var (k, v) in layout->Filters)
                 if (v.Value->TerritoryTypeId == layout->TerritoryTypeId)
                     return v.Value;
-        return layout->TerritoryTypeId == 0 ? FindPtr(ref layout->Filters, layout->FilterKey) : null;
+        return layout->TerritoryTypeId == 0 ? FindPtr(ref layout->Filters, layout->LayerFilterKey) : null;
     }
 
     public static bool LayerActiveFestival(FileLayerGroupLayer* layer, Span<uint> festivals)

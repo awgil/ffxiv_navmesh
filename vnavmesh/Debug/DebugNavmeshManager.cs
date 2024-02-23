@@ -67,6 +67,7 @@ class DebugNavmeshManager : IDisposable
         ImGui.TextUnformatted($"Current target: {_target}");
 
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
+        ImGui.Checkbox("Auto mesh on TerritoryChanged", ref _manager.AutoMesh);
         ImGui.Checkbox("Use raycasts", ref _path.UseRaycasts);
         ImGui.Checkbox("Use string pulling", ref _path.UseStringPulling);
         if (ImGui.Button("Pathfind to target using navmesh"))

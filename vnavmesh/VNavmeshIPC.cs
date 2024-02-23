@@ -48,6 +48,8 @@ namespace Navmesh
             Service.PluginInterface.GetIpcProvider<object>("vnavmesh.FlyTarget").UnregisterAction();
             Service.PluginInterface.GetIpcProvider<bool>("vnavmesh.IsMovementAllowed").UnregisterFunc();
             Service.PluginInterface.GetIpcProvider<bool, object>("vnavmesh.SetMovementAllowed").UnregisterAction();
+            Service.PluginInterface.GetIpcProvider<float>("vnavmesh.Tolerance").UnregisterFunc();
+            Service.PluginInterface.GetIpcProvider<float, object>("vnavmesh.SetTolerance").UnregisterAction();
             Service.PluginInterface.GetIpcProvider<object>("vnavmesh.Stop").UnregisterAction();
             Service.PluginInterface.GetIpcProvider<bool, object>("vnavmesh.AutoMesh").UnregisterAction();
             Service.PluginInterface.GetIpcProvider<object>("vnavmesh.Reload").UnregisterAction();

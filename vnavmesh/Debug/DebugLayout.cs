@@ -55,7 +55,7 @@ public unsafe class DebugLayout : IDisposable
 
     public static bool DrawInstance(UITree tree, string tag, LayoutManager* layout, ILayoutInstance* inst)
     {
-        using var ni = tree.Node($"{tag} {inst->Id.Type} L{inst->Id.LayerKey:X4} I{inst->Id.InstanceKey:X8}.{inst->SubId:X8} ({inst->Id.u0:X2}) = {(nint)inst:X}, pool-idx={inst->IndexInPool}, prefab-index={inst->IndexInPrefab}, nesting={inst->NestingLevel}, u29low={inst->u29_flags & 0xF}, u29hi={(inst->u29_flags >> 7) != 0}, flags={inst->u2A_flags:X2} {inst->u2B_flags:X2}###{tag}");
+        using var ni = tree.Node($"{tag} {inst->Id.Type} L{inst->Id.LayerKey:X4} I{inst->Id.InstanceKey:X8}.{inst->SubId:X8} ({inst->Id.u0:X2}) = {(nint)inst:X}, pool-idx={inst->IndexInPool}, prefab-index={inst->IndexInPrefab}, nesting={inst->NestingLevel}, u29low={inst->Flags1 & 0xF}, u29hi={(inst->Flags1 >> 7) != 0}, flags={inst->Flags2:X2} {inst->Flags3:X2}###{tag}");
         var collider = inst->GetCollider();
         if (ni.Opened)
         {
@@ -96,13 +96,13 @@ public unsafe class DebugLayout : IDisposable
                         }
                     }
                     tree.LeafNode($"Collision material: {instBgPart->CollisionMaterialIdHigh:X8}{instBgPart->CollisionMaterialIdLow:X8} / {instBgPart->CollisionMaterialMaskHigh:X8}{instBgPart->CollisionMaterialMaskLow:X8}");
-                    tree.LeafNode($"unks: {instBgPart->u58} {instBgPart->u5C:X}");
+                    //tree.LeafNode($"unks: {instBgPart->u58} {instBgPart->u5C:X}");
                     break;
                 case InstanceType.Prefab:
                 case InstanceType.Prefab2:
                     var instPrefab = (PrefabLayoutInstance*)inst;
                     tree.LeafNode($"Resource: {(instPrefab->ResourceHandle != null ? instPrefab->ResourceHandle->FileName : "<null>")}");
-                    tree.LeafNode($"Flags: {instPrefab->Flags120:X8} {instPrefab->Flags12C:X8}");
+                    tree.LeafNode($"Flags: {instPrefab->Flags1:X8} {instPrefab->Flags2:X8}");
                     using (var nc = tree.Node($"Instances ({instPrefab->Instances.Instances.Size()})###instances", instPrefab->Instances.Instances.Size() == 0))
                     {
                         if (nc.Opened)
@@ -114,17 +114,17 @@ public unsafe class DebugLayout : IDisposable
                             }
                         }
                     }
-                    using (var nc = tree.Node($"uA8 ({instPrefab->uA8.Instances.Size()})###a8", instPrefab->uA8.Instances.Size() == 0))
-                    {
-                        if (nc.Opened)
-                        {
-                            int index = 0;
-                            foreach (var part in instPrefab->uA8.Instances.Span)
-                            {
-                                DrawInstance(tree, $"[{index++}]", layout, part.Value->Instance);
-                            }
-                        }
-                    }
+                    //using (var nc = tree.Node($"uA8 ({instPrefab->uA8.Instances.Size()})###a8", instPrefab->uA8.Instances.Size() == 0))
+                    //{
+                    //    if (nc.Opened)
+                    //    {
+                    //        int index = 0;
+                    //        foreach (var part in instPrefab->uA8.Instances.Span)
+                    //        {
+                    //            DrawInstance(tree, $"[{index++}]", layout, part.Value->Instance);
+                    //        }
+                    //    }
+                    //}
                     break;
                 case InstanceType.ColliderGeneric:
                     var instCollGeneric = (ColliderGenericLayoutInstance*)inst;
@@ -132,7 +132,8 @@ public unsafe class DebugLayout : IDisposable
                     tree.LeafNode($"Type: {instCollGeneric->ColliderLayoutInstance.Type} (pcb={instCollGeneric->PcbPathCrc:X} '{LayoutUtils.ReadString(pcbPath != null ? pcbPath->Data : null)}')");
                     tree.LeafNode($"Layer: {instCollGeneric->ColliderLayoutInstance.GetLayerMask():X} (is-43h={instCollGeneric->LayerMaskIs43h})");
                     tree.LeafNode($"Material: {instCollGeneric->MaterialIdHigh:X8}{instCollGeneric->MaterialIdLow:X8}/{instCollGeneric->MaterialMaskHigh:X8}{instCollGeneric->MaterialMaskLow:X8}");
-                    tree.LeafNode($"Misc: active-by-default={instCollGeneric->ColliderLayoutInstance.ActiveByDefault}, unk70={instCollGeneric->ColliderLayoutInstance.u70}");
+                    tree.LeafNode($"Misc: active-by-default={instCollGeneric->ColliderLayoutInstance.ActiveByDefault}");
+                    //tree.LeafNode($"Unk: {instCollGeneric->ColliderLayoutInstance.u70}");
                     break;
             }
         }
@@ -143,14 +144,14 @@ public unsafe class DebugLayout : IDisposable
 
     private void DrawWorld(LayoutWorld* w)
     {
-        using var nw = DrawManagerBase("World", &w->IManagerBase, $"t={w->u68_timeElapsedMS}ms");
+        using var nw = DrawManagerBase("World", &w->IManagerBase, $"t={w->MillisecondsSinceLastUpdate}ms");
         if (!nw.Opened)
             return;
 
         DrawLayout("Global", w->GlobalLayout);
         DrawLayout("Active", w->ActiveLayout);
-        DrawLayout("u28", w->UnkLayout28);
-        DrawLayout("u30", w->UnkLayout30);
+        //DrawLayout("u28", w->UnkLayout28);
+        //DrawLayout("u30", w->UnkLayout30);
 
         using (var n = _tree.Node($"Loaded layouts: {w->LoadedLayouts.Count}###loaded", w->LoadedLayouts.Count == 0))
         {
@@ -163,16 +164,16 @@ public unsafe class DebugLayout : IDisposable
             }
         }
 
-        using (var n = _tree.Node($"u90 layouts: {w->UnkLayouts90.Count}###u90", w->UnkLayouts90.Count == 0))
-        {
-            if (n.Opened)
-            {
-                foreach (var (k, v) in w->UnkLayouts90)
-                {
-                    DrawLayout($"Terr {(int)k} (lvb crc={k >> 32:X})", v);
-                }
-            }
-        }
+        //using (var n = _tree.Node($"u90 layouts: {w->UnkLayouts90.Count}###u90", w->UnkLayouts90.Count == 0))
+        //{
+        //    if (n.Opened)
+        //    {
+        //        foreach (var (k, v) in w->UnkLayouts90)
+        //        {
+        //            DrawLayout($"Terr {(int)k} (lvb crc={k >> 32:X})", v);
+        //        }
+        //    }
+        //}
     }
 
     private void DrawLayout(string tag, LayoutManager* manager)
@@ -182,15 +183,15 @@ public unsafe class DebugLayout : IDisposable
             return;
 
         _tree.LeafNode($"Init state: {manager->InitState}");
-        _tree.LeafNode($"Init args: terrType={manager->TerritoryTypeId}, cfc={manager->CfcId}, u1C={manager->u1C}, filter-key={manager->FilterKey:X}");
+        _tree.LeafNode($"Init args: type={manager->Type}, terrType={manager->TerritoryTypeId}, cfc={manager->CfcId}, filter-key={manager->LayerFilterKey:X}");
         _tree.LeafNode($"Festivals: status={manager->FestivalStatus} [{manager->ActiveFestivals[0]}, {manager->ActiveFestivals[1]}, {manager->ActiveFestivals[2]}, {manager->ActiveFestivals[3]}]");
         _tree.LeafNode($"Streaming mgr: {(nint)manager->StreamingManager:X}");
         _tree.LeafNode($"Env mgr: {(nint)manager->Environment:X}");
         _tree.LeafNode($"OBSet mgr: {(nint)manager->OBSetManager:X}");
-        _tree.LeafNode($"Streaming params: force-update={manager->ForceUpdateAllStreaming}, skip-streamed-coll={manager->SkipAddingStreamedCollider}, isanc={manager->u_loadPartsForIslandSanctuary}");
-        _tree.LeafNode($"Streaming origin: forced={manager->ForcedStreamingOrigin}, t5={manager->u110_originType5}, last={manager->LastUpdatedStreamingOrigin}, type={manager->StreamingOriginType}");
-        _tree.LeafNode($"Last-update: time={manager->LastUpdateDT:f3}, flip={manager->LastUpdateFlip}");
-        DrawStringTable(ref manager->Strings);
+        _tree.LeafNode($"Streaming params: force-update={manager->ForceUpdateAllStreaming}, skip-terrain-coll={manager->SkipAddingTerrainCollider}");
+        _tree.LeafNode($"Streaming origin: forced={manager->ForcedStreamingOrigin}, last={manager->LastUpdatedStreamingOrigin}, type={manager->StreamingOriginType}");
+        _tree.LeafNode($"Last-update: time={manager->LastUpdateDT:f3}, flip={manager->LastUpdateOdd}");
+        DrawStringTable(ref manager->ResourcePaths);
 
         using (var n = _tree.Node("Resources"))
         {
@@ -282,7 +283,8 @@ public unsafe class DebugLayout : IDisposable
 
     private void DrawLayer(string tag, LayoutManager* layout, LayoutLayer* layer)
     {
-        using var nl = _tree.Node($"[{tag}] LG{layer->LayerGroupId}, festival={layer->FestivalId}/{layer->FestivalSubId}, flags={layer->Flags:X}, u1F={layer->u1F}, u20={layer->u20:X4}, {layer->Instances.Count} instances == {(nint)layer:X}", layer->Instances.Count == 0);
+        var unks = ""; // $", u1F={layer->u1F}, u20={layer->u20:X4}";
+        using var nl = _tree.Node($"[{tag}] LG{layer->LayerGroupId}, festival={layer->FestivalId}/{layer->FestivalSubId}, flags={layer->Flags:X}{unks}, {layer->Instances.Count} instances == {(nint)layer:X}", layer->Instances.Count == 0);
         if (!nl.Opened)
             return;
         foreach (var (ik, iv) in layer->Instances)
@@ -362,7 +364,7 @@ public unsafe class DebugLayout : IDisposable
         _tree.LeafNode($"Terrain: {LayoutUtils.ReadString(general->PathTerrain)}");
         _tree.LeafNode($"Env spaces: {general->NumEnvSpaces} at +{general->OffsetEnvSpaces}");
         _tree.LeafNode($"Sky visibility: {LayoutUtils.ReadString(general->PathSkyVisibility)}");
-        _tree.LeafNode($"LCB: {LayoutUtils.ReadString(general->PathLCB)} (uw={general->u_haveLCBUW})");
+        _tree.LeafNode($"LCB: {LayoutUtils.ReadString(general->PathLCB)} (uw={general->HaveLCBUW})");
         using (var ng = _tree.Node($"Embedded layer groups ({header->NumEmbeddedLayerGroups} at +{header->OffsetEmbeddedLayerGroups})", header->NumEmbeddedLayerGroups == 0))
         {
             if (ng.Opened)
@@ -393,7 +395,8 @@ public unsafe class DebugLayout : IDisposable
                 {
                     foreach (ref var f in filterList->Entries)
                     {
-                        _tree.LeafNode($"[{f.Key:X}] = terr={f.TerritoryTypeId} cfc={f.CfcId}; unks: {f.u0} {f.u8} {f.uC} {f.u14} {f.u18}");
+                        var unks = "";// $"; unks: {f.u0} {f.u8} {f.uC} {f.u14} {f.u18}";
+                        _tree.LeafNode($"[{f.Key:X}] = terr={f.TerritoryTypeId} cfc={f.CfcId}{unks}");
                     }
                 }
             }
@@ -413,13 +416,15 @@ public unsafe class DebugLayout : IDisposable
             var filter = layer->Filter;
             var filterString = filter != null ? $"{filter->Operation} [{string.Join(',', Enumerable.Range(0, filter->NumListEntries).Select(j => $"{filter->Entries[j]:X}"))}]" : "<none>";
 
-            using var nl = _tree.Node($"[{layer->Key:X4}]: festival={layer->FestivalId}/{layer->FestivalSubId}, filter={filterString}, {layer->NumInstances} instances at +{layer->OffsetInstances}, u20={layer->u20}, u1C={layer->u1C}, u10={layer->u10}, u11={layer->u11}, offset=+{header->OffsetLayers}+{layerOffset}", layer->NumInstances == 0, layer->u20 != 0 || layer->u1C != 0 ? 0xff0000ff : 0xffffffff);
+            var layerUnks = "";// $", u20={layer->u20}, u1C={layer->u1C}, u10={layer->u10}, u11={layer->u11}";
+            using var nl = _tree.Node($"[{layer->Key:X4}]: festival={layer->FestivalId}/{layer->FestivalSubId}, filter={filterString}, {layer->NumInstances} instances at +{layer->OffsetInstances}{layerUnks}, offset=+{header->OffsetLayers}+{layerOffset}", layer->NumInstances == 0/*, layer->u20 != 0 || layer->u1C != 0 ? 0xff0000ff : 0xffffffff*/);
             if (nl.Opened)
             {
                 foreach (var instOffset in layer->InstanceOffsets)
                 {
                     var instance = layer->Instance(instOffset);
-                    using var ni = _tree.Node($"[{instance->Key:X}]: type={instance->Type}, u8={instance->u8}, trans={instance->Transform.Translation}, rot={instance->Transform.Rotation}, scale={instance->Transform.Scale}, offset=+{layer->OffsetInstances}+{instOffset}");
+                    var instUnk = "";// $", u8={instance->u8}";
+                    using var ni = _tree.Node($"[{instance->Key:X}]: type={instance->Type}{instUnk}, trans={instance->Transform.Translation}, rot={instance->Transform.Rotation}, scale={instance->Transform.Scale}, offset=+{layer->OffsetInstances}+{instOffset}");
                     if (ni.Opened)
                     {
                         switch (instance->Type)
@@ -430,7 +435,7 @@ public unsafe class DebugLayout : IDisposable
                                 _tree.LeafNode($"Pcb: {LayoutUtils.ReadString(instanceBgPart->PathPcb)}");
                                 _tree.LeafNode($"Collider type: {instanceBgPart->ColliderType}");
                                 _tree.LeafNode($"Material: {instanceBgPart->MaterialIdHigh:X8}{instanceBgPart->MaterialIdLow:X8}/{instanceBgPart->MaterialMaskHigh:X8}{instanceBgPart->MaterialMaskLow:X8}");
-                                _tree.LeafNode($"unks: {instanceBgPart->u50} {instanceBgPart->u51} {instanceBgPart->u52} {instanceBgPart->u53} {instanceBgPart->u54} {instanceBgPart->u58}");
+                                //_tree.LeafNode($"unks: {instanceBgPart->u50} {instanceBgPart->u51} {instanceBgPart->u52} {instanceBgPart->u53} {instanceBgPart->u54} {instanceBgPart->u58}");
                                 using (var ns = _tree.Node($"Shape data: +{instanceBgPart->OffsetColliderAnalyticData}", instanceBgPart->OffsetColliderAnalyticData == 0))
                                 {
                                     if (ns.Opened)
@@ -440,7 +445,7 @@ public unsafe class DebugLayout : IDisposable
                                         _tree.LeafNode($"Material: {data->MaterialId:X} / {data->MaterialMask:X}");
                                         _tree.LeafNode($"Transform: {data->Transform.Translation} {data->Transform.Rotation} {data->Transform.Scale}");
                                         _tree.LeafNode($"Bounds: {data->Bounds}");
-                                        _tree.LeafNode($"unks: {data->u8} {data->uC}");
+                                        //_tree.LeafNode($"unks: {data->u8} {data->uC}");
                                     }
                                 }
                                 break;
@@ -448,13 +453,14 @@ public unsafe class DebugLayout : IDisposable
                             case InstanceType.Prefab2:
                                 var instancePrefab = (FileLayerGroupInstancePrefab*)instance;
                                 DrawFile("Path", LayoutUtils.ReadString(instancePrefab->Path));
-                                _tree.LeafNode($"Unks: types={instancePrefab->u34} {instancePrefab->u40}, other={instancePrefab->u38} {instancePrefab->u3C}");
+                                //_tree.LeafNode($"Unks: types={instancePrefab->u34} {instancePrefab->u40}, other={instancePrefab->u38} {instancePrefab->u3C}");
                                 break;
                             case InstanceType.ColliderGeneric:
                                 var instanceCollGen = (FileLayerGroupInstanceColliderGeneric*)instance;
                                 _tree.LeafNode($"Type: {instanceCollGen->FileLayerGroupInstanceCollider.Type}");
                                 _tree.LeafNode($"Material: {instanceCollGen->MaterialIdHigh:X8}{instanceCollGen->MaterialIdLow:X8}/{instanceCollGen->MaterialMaskHigh:X8}{instanceCollGen->MaterialMaskLow:X8}");
-                                _tree.LeafNode($"Misc: u34={instanceCollGen->FileLayerGroupInstanceCollider.u34}, active={instanceCollGen->FileLayerGroupInstanceCollider.ActiveByDefault}, layer43h={instanceCollGen->Layer43h}");
+                                _tree.LeafNode($"Misc: active={instanceCollGen->FileLayerGroupInstanceCollider.ActiveByDefault}, layer43h={instanceCollGen->Layer43h}");
+                                //_tree.LeafNode($"Unks: u34={instanceCollGen->FileLayerGroupInstanceCollider.u34}");
                                 _tree.LeafNode($"Pcb: {LayoutUtils.ReadString(instanceCollGen->Path)}");
                                 break;
                         }
@@ -661,6 +667,7 @@ public unsafe class DebugLayout : IDisposable
 
     private static void DrawAnalyticShape(UITree tree, string tag, AnalyticShapeData v)
     {
-        tree.LeafNode($"{tag} [{v.NumRefs}] {v.Type} {v.u8:X} {v.uC} {v.u3C} {v.u60} {v.u64} trans=[{v.Transform.Translation} {v.Transform.Rotation} {v.Transform.Scale}] bb=[{v.BoundsMin}-{v.BoundsMax}], mat={v.MaterialId:X}/{v.MaterialMask:X}");
+        var unks = "";//$" {v.u8:X} {v.uC} {v.u3C} {v.u60} {v.u64}";
+        tree.LeafNode($"{tag} [{v.NumRefs}] {v.Type}{unks} trans=[{v.Transform.Translation} {v.Transform.Rotation} {v.Transform.Scale}] bb=[{v.BoundsMin}-{v.BoundsMax}], mat={v.MaterialId:X}/{v.MaterialMask:X}");
     }
 }

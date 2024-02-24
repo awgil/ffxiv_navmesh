@@ -11,7 +11,7 @@ namespace Navmesh;
 public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
-    public static readonly uint Version = 3;
+    public static readonly uint Version = 4;
 
     // throws an exception on failure
     public static Navmesh Deserialize(BinaryReader reader)

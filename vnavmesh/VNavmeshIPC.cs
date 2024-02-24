@@ -58,70 +58,31 @@ namespace Navmesh
         }
 
         private static bool NavmeshIsNull() => _navmeshManager.Navmesh is null;
-
         private static float TaskProgress() => _navmeshManager.TaskProgress;
-
         private static int WaypointsCount() => _followPath.Waypoints.Count;
-
-        private static void MoveTo(Vector3 position)
-        {
-            if (_followPath.Waypoints.Count == 0)
-                MoveToCommand(position, false, false);
-
-        }
-
-        private static void MoveDir(Vector3 position)
-        {
-            if (_followPath.Waypoints.Count == 0)
-                MoveToCommand(position, true, false);
-        }
-
+        private static void MoveTo(Vector3 position) => MoveToCommand(position, false, false);
+        private static void MoveDir(Vector3 position) => MoveToCommand(position, true, false);
         private static void MoveTarget()
         {
-            if (_followPath.Waypoints.Count == 0)
-            {
                 var moveTarget = Service.TargetManager.Target;
                 if (moveTarget != null)
                     _followPath.MoveTo(moveTarget.Position);
-            }
         }
         
-        private static void FlyTo(Vector3 position)
-        {
-            if (_followPath.Waypoints.Count == 0)
-                MoveToCommand(position, false, true);
-        }
-
-        private static void FlyDir(Vector3 position)
-        {
-            if (_followPath.Waypoints.Count == 0)
-                MoveToCommand(position, true, true);
-        }
-
+        private static void FlyTo(Vector3 position) => MoveToCommand(position, false, true);
+        private static void FlyDir(Vector3 position) => MoveToCommand(position, true, true);
         private static void FlyTarget()
         {
-            if (_followPath.Waypoints.Count == 0)
-            {
                 var moveTarget = Service.TargetManager.Target;
                 if (moveTarget != null)
                     _followPath.FlyTo(moveTarget.Position);
-            }
         }
 
         private static void SetMovementAllowed(bool allowed) => _followPath.MovementAllowed = allowed;
-
         private static bool MovementAllowed() => _followPath.MovementAllowed;
-
         private static void SetTolerance(float tolerance) => _followPath.Tolerance = tolerance;
-
         private static float Tolerance() => _followPath.Tolerance;
-
-        private static void Stop()
-        {
-            if (_followPath.Waypoints.Count > 0)
-                _followPath.Stop();
-        }
-
+        private static void Stop() =>_followPath.Stop();
         private static void AutoMesh(bool autoMesh) => _navmeshManager.AutoMesh = autoMesh;
         private static void Reload() => _navmeshManager.Reload(true);
         private static void Rebuild() => _navmeshManager.Reload(false);

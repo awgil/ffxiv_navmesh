@@ -74,7 +74,7 @@ public class DebugContourSet : DebugRecast
                                 VisualizeContour(c.rverts, c.nrverts, hOffset, c.reg, 1, true);
                                 contourDrawn = true;
                             }
-                            if (nr.Opened)
+                            if (nraw.Opened)
                             {
                                 for (int iv = 0; iv < c.nrverts; ++iv)
                                 {

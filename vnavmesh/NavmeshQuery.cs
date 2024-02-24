@@ -41,9 +41,9 @@ public class NavmeshQuery
 
         // In case of partial path, make sure the end point is clamped to the last polygon.
         var endPos = to.SystemToRecast();
-        if (polysPath.Last() != endRef)
-            if (MeshQuery.ClosestPointOnPoly(polysPath.Last(), endPos, out var closest, out _).Succeeded())
-                endPos = closest;
+        //if (polysPath.Last() != endRef)
+        //    if (MeshQuery.ClosestPointOnPoly(polysPath.Last(), endPos, out var closest, out _).Succeeded())
+        //        endPos = closest;
 
         if (useStringPulling)
         {

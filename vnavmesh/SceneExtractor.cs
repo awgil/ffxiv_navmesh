@@ -121,19 +121,21 @@ public class SceneExtractor
             if ((coll.matId & 0x202000) == 0x202000 && coll.type == FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Plane)
             {
                 // bounding plane?
+                // for horizontal limits, we accept only planes that are properly aligned and cover (0,0) - TODO reconsider
                 var normal = Vector3.Transform(new(0, 0, 1), coll.transform.Rotation);
-                Service.Log.Info($"Potential collider: {coll.key:X}, n={normal}, t={coll.transform.Translation}");
-                if (normal.X < -0.9999)
+                var localX = Vector3.Transform(new(1, 0, 0), coll.transform.Rotation);
+                Service.Log.Info($"Potential collider: {coll.key:X}, n={normal}, lx={localX}, t={coll.transform.Translation}, s={coll.transform.Scale}");
+                if (normal.X < -0.9999 && Math.Abs(localX.Z) > 0.9999 && Math.Abs(coll.transform.Translation.Z) < coll.transform.Scale.X)
                     PlaneBoundsMax.X = Math.Max(PlaneBoundsMax.X, coll.transform.Translation.X);
-                else if (normal.X > 0.9999)
+                else if (normal.X > 0.9999 && Math.Abs(localX.Z) > 0.9999 && Math.Abs(coll.transform.Translation.Z) < coll.transform.Scale.X)
                     PlaneBoundsMin.X = Math.Min(PlaneBoundsMin.X, coll.transform.Translation.X);
                 else if (normal.Y < -0.9999)
                     PlaneBoundsMax.Y = Math.Max(PlaneBoundsMax.Y, coll.transform.Translation.Y);
                 else if (normal.Y > 0.9999)
                     PlaneBoundsMin.Y = Math.Min(PlaneBoundsMin.Y, coll.transform.Translation.Y);
-                else if (normal.Z < -0.9999)
+                else if (normal.Z < -0.9999 && Math.Abs(localX.X) > 0.9999 && Math.Abs(coll.transform.Translation.X) < coll.transform.Scale.X)
                     PlaneBoundsMax.Z = Math.Max(PlaneBoundsMax.Z, coll.transform.Translation.Z);
-                else if (normal.Z > 0.9999)
+                else if (normal.Z > 0.9999 && Math.Abs(localX.X) > 0.9999 && Math.Abs(coll.transform.Translation.X) < coll.transform.Scale.X)
                     PlaneBoundsMin.Z = Math.Min(PlaneBoundsMin.Z, coll.transform.Translation.Z);
             }
             if ((coll.matId & 0x400) != 0)

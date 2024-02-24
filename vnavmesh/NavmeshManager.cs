@@ -9,7 +9,7 @@ namespace Navmesh;
 // manager that loads navmesh matching current zone
 public class NavmeshManager : IDisposable
 {
-    public bool AutoMesh = true;
+    public bool AutoLoad = true; // whether we load/build mesh automatically when changing zone
     public event Action<Navmesh?>? OnNavmeshChanged;
     public Navmesh? Navmesh => _navmesh;
     public float TaskProgress => _task != null ? _taskProgress : -1; // returns negative value if task is not running
@@ -42,8 +42,6 @@ public class NavmeshManager : IDisposable
 
     public void Update()
     {
-        if (!AutoMesh)
-            return;
         if (_task != null)
         {
             if (!_task.IsCompleted)
@@ -67,6 +65,13 @@ public class NavmeshManager : IDisposable
         if (curKey == _lastKey)
             return; // everything up-to-date
 
+        if (!AutoLoad)
+        {
+            if (_lastKey.Length == 0)
+                return; // nothing is loaded, and auto-load is forbidden
+            curKey = ""; // just unload existing mesh
+        }
+
         Service.Log.Info($"Starting transition from '{_lastKey}' to '{curKey}'");
         _lastKey = curKey;
         Reload(true);
@@ -79,7 +84,7 @@ public class NavmeshManager : IDisposable
             Service.Log.Error($"Can't initiate reload - another task is already in progress");
             return false; // some task is already in progress...
         }
-        AutoMesh = true;
+
         ClearState();
         if (_lastKey.Length > 0)
         {

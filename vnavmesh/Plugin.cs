@@ -16,7 +16,8 @@ public sealed class Plugin : IDalamudPlugin
     private NavmeshManager _navmeshManager;
     private FollowPath _followPath;
     private MainWindow _wndMain;
-     
+    private IPCProvider _ipcProvider;
+
     public Plugin(DalamudPluginInterface dalamud)
     {
         if (!dalamud.ConfigDirectory.Exists)
@@ -32,9 +33,11 @@ public sealed class Plugin : IDalamudPlugin
 
         _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
         _followPath = new(_navmeshManager);
-
         _wndMain = new(_navmeshManager, _followPath);
+        _ipcProvider = new(_navmeshManager, _followPath, _wndMain);
+
         WindowSystem.AddWindow(_wndMain);
+        //_wndMain.IsOpen = true;
 
         dalamud.UiBuilder.Draw += WindowSystem.Draw;
         dalamud.UiBuilder.OpenConfigUi += () => _wndMain.IsOpen = true;
@@ -53,11 +56,7 @@ public sealed class Plugin : IDalamudPlugin
             ShowInHelp = true,
         });
 
-        _wndMain.IsOpen = true;
-
         Service.Framework.Update += OnUpdate;
-
-        VNavmeshIPC.Initialize(_navmeshManager, _followPath, _wndMain);
     }
 
     public void Dispose()
@@ -66,11 +65,11 @@ public sealed class Plugin : IDalamudPlugin
 
         Service.CommandManager.RemoveHandler("/vnavmesh");
         WindowSystem.RemoveAllWindows();
-        _wndMain.Dispose();
 
+        _ipcProvider.Dispose();
+        _wndMain.Dispose();
         _followPath.Dispose();
         _navmeshManager.Dispose();
-        VNavmeshIPC.Dispose();
     }
 
     private void OnUpdate(IFramework fwk)

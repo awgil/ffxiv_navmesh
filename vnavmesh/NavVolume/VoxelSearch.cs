@@ -7,6 +7,7 @@ public static class VoxelSearch
     public static int FindNearestEmptyVoxel(VoxelMap volume, Vector3 center, int halfSize)
     {
         var cv = volume.WorldToVoxel(center);
+        //Service.Log.Debug($"Searching {cv}");
         if (volume.InBounds(cv) && !volume[cv.x, cv.y, cv.z])
             return volume.VoxelToIndex(cv); // fast path: the cell is empty already
 
@@ -22,9 +23,10 @@ public static class VoxelSearch
                 {
                     if (!volume[x, y, z])
                     {
-                        var dist = (center - volume.VoxelToWorld(x, y, z)).LengthSquared();
+                        var dist = (center - volume.VoxelToWorld(x, y, z)).Length();
                         if (y < cv.y)
                             dist += 2 * volume.CellSize.Y; // penalty for lower voxels to reduce chance of it being underground - todo reconsider..
+                        //Service.Log.Debug($"Considering {x}x{y}x{z}: {dist}, min so far {minDist}");
                         if (dist < minDist)
                         {
                             minDist = dist;

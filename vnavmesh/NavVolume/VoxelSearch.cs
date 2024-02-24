@@ -24,8 +24,10 @@ public static class VoxelSearch
                     if (!volume[x, y, z])
                     {
                         var dist = (center - volume.VoxelToWorld(x, y, z)).Length();
+                        if (x != cv.x || z != cv.z)
+                            dist += volume.CellSize.Y; // penalty for moving sideways vs up - TODO reconsider...
                         if (y < cv.y)
-                            dist += 2 * volume.CellSize.Y; // penalty for lower voxels to reduce chance of it being underground - todo reconsider..
+                            dist += 2 * volume.CellSize.Y; // penalty for lower voxels to reduce chance of it being underground - TODO reconsider...
                         //Service.Log.Debug($"Considering {x}x{y}x{z}: {dist}, min so far {minDist}");
                         if (dist < minDist)
                         {

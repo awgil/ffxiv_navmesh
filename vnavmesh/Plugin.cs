@@ -13,12 +13,15 @@ namespace Navmesh;
 public sealed class Plugin : IDalamudPlugin
 {
     private WindowSystem WindowSystem = new("vnavmesh");
-    private NavmeshManager _navmeshManager;
-    private FollowPath _followPath;
+    public NavmeshManager _navmeshManager;
+    public FollowPath _followPath;
     private MainWindow _wndMain;
+
+    internal static Plugin P = null!;
 
     public Plugin(DalamudPluginInterface dalamud)
     {
+        P = this;
         if (!dalamud.ConfigDirectory.Exists)
             dalamud.ConfigDirectory.Create();
         var dalamudRoot = dalamud.GetType().Assembly.
@@ -27,8 +30,8 @@ public sealed class Plugin : IDalamudPlugin
         var dalamudStartInfo = (DalamudStartInfo)dalamudRoot?.GetType().GetProperty("StartInfo", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(dalamudRoot)!;
         FFXIVClientStructs.Interop.Resolver.GetInstance.SetupSearchSpace(0, new(Path.Combine(dalamud.ConfigDirectory.FullName, $"{dalamudStartInfo.GameVersion}_cs.json")));
         FFXIVClientStructs.Interop.Resolver.GetInstance.Resolve();
-
         dalamud.Create<Service>();
+        IPC.Init();
 
         _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
         _followPath = new(_navmeshManager);
@@ -48,7 +51,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         Service.Framework.Update -= OnUpdate;
-
+        IPC.Dispose();
         Service.CommandManager.RemoveHandler("/vnavmesh");
         WindowSystem.RemoveAllWindows();
         _wndMain.Dispose();

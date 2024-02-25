@@ -17,6 +17,7 @@ public sealed class Plugin : IDalamudPlugin
     private FollowPath _followPath;
     private MainWindow _wndMain;
     private IPCProvider _ipcProvider;
+    private CompatModule _compatModule;
 
     public Plugin(DalamudPluginInterface dalamud)
     {
@@ -35,6 +36,7 @@ public sealed class Plugin : IDalamudPlugin
         _followPath = new(_navmeshManager);
         _wndMain = new(_navmeshManager, _followPath);
         _ipcProvider = new(_navmeshManager, _followPath, _wndMain);
+        _compatModule = new(_followPath);
 
         WindowSystem.AddWindow(_wndMain);
         //_wndMain.IsOpen = true;
@@ -70,6 +72,7 @@ public sealed class Plugin : IDalamudPlugin
         _wndMain.Dispose();
         _followPath.Dispose();
         _navmeshManager.Dispose();
+        _compatModule.Dispose();
     }
 
     private void OnUpdate(IFramework fwk)

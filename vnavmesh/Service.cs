@@ -23,6 +23,7 @@ public class Service
     [PluginService] public static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
     [PluginService] public static IFramework Framework { get; private set; } = null!;
     [PluginService] public static DalamudPluginInterface PluginInterface { get; private set; } = null!;
+    [PluginService] public static IGameConfig GameConfig { get; private set; } = null!;
 
     public static Lumina.GameData LuminaGameData => DataManager.GameData;
     public static T? LuminaRow<T>(uint row) where T : Lumina.Excel.ExcelRow => LuminaGameData.GetExcelSheet<T>(Lumina.Data.Language.English)?.GetRow(row);

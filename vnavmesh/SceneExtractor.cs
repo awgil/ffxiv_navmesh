@@ -121,22 +121,47 @@ public class SceneExtractor
             if ((coll.matId & 0x202000) == 0x202000 && coll.type == FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Plane)
             {
                 // bounding plane?
-                // for horizontal limits, we accept only planes that are properly aligned and cover (0,0) - TODO reconsider
+                // we accept only planes that are properly aligned and cover (0,0) - TODO reconsider
                 var normal = Vector3.Transform(new(0, 0, 1), coll.transform.Rotation);
                 var localX = Vector3.Transform(new(1, 0, 0), coll.transform.Rotation);
-                Service.Log.Info($"Potential collider: {coll.key:X}, n={normal}, lx={localX}, t={coll.transform.Translation}, s={coll.transform.Scale}");
-                if (normal.X < -0.9999 && Math.Abs(localX.Z) > 0.9999 && Math.Abs(coll.transform.Translation.Z) < coll.transform.Scale.X)
-                    PlaneBoundsMax.X = Math.Max(PlaneBoundsMax.X, coll.transform.Translation.X);
-                else if (normal.X > 0.9999 && Math.Abs(localX.Z) > 0.9999 && Math.Abs(coll.transform.Translation.Z) < coll.transform.Scale.X)
-                    PlaneBoundsMin.X = Math.Min(PlaneBoundsMin.X, coll.transform.Translation.X);
-                else if (normal.Y < -0.9999)
-                    PlaneBoundsMax.Y = Math.Max(PlaneBoundsMax.Y, coll.transform.Translation.Y);
-                else if (normal.Y > 0.9999)
-                    PlaneBoundsMin.Y = Math.Min(PlaneBoundsMin.Y, coll.transform.Translation.Y);
-                else if (normal.Z < -0.9999 && Math.Abs(localX.X) > 0.9999 && Math.Abs(coll.transform.Translation.X) < coll.transform.Scale.X)
-                    PlaneBoundsMax.Z = Math.Max(PlaneBoundsMax.Z, coll.transform.Translation.Z);
-                else if (normal.Z > 0.9999 && Math.Abs(localX.X) > 0.9999 && Math.Abs(coll.transform.Translation.X) < coll.transform.Scale.X)
-                    PlaneBoundsMin.Z = Math.Min(PlaneBoundsMin.Z, coll.transform.Translation.Z);
+                var localY = Vector3.Transform(new(0, 1, 0), coll.transform.Rotation);
+                Service.Log.Info($"Potential collider: {coll.key:X}, n={normal}, lx={localX}, ly={localY}, t={coll.transform.Translation}, s={coll.transform.Scale}");
+                if (Math.Abs(normal.X) > 0.9999)
+                {
+                    bool coverOY = Math.Abs(localY.Y) > 0.9999 && Math.Abs(coll.transform.Translation.Y) < coll.transform.Scale.Y;
+                    bool coverOZ = Math.Abs(localX.Z) > 0.9999 && Math.Abs(coll.transform.Translation.Z) < coll.transform.Scale.X;
+                    if (coverOY && coverOZ)
+                    {
+                        if (normal.X < 0)
+                            PlaneBoundsMax.X = Math.Max(PlaneBoundsMax.X, coll.transform.Translation.X);
+                        else
+                            PlaneBoundsMin.X = Math.Min(PlaneBoundsMin.X, coll.transform.Translation.X);
+                    }
+                }
+                else if (Math.Abs(normal.Y) > 0.9999)
+                {
+                    bool coverOX = Math.Abs(localX.X) > 0.9999 ? Math.Abs(coll.transform.Translation.X) < coll.transform.Scale.X : Math.Abs(localY.X) > 0.9999 ? Math.Abs(coll.transform.Translation.X) < coll.transform.Scale.Y : false;
+                    bool coverOZ = Math.Abs(localX.Z) > 0.9999 ? Math.Abs(coll.transform.Translation.Z) < coll.transform.Scale.X : Math.Abs(localY.Z) > 0.9999 ? Math.Abs(coll.transform.Translation.Z) < coll.transform.Scale.Y : false;
+                    if (coverOX && coverOZ)
+                    {
+                        if (normal.Y < 0)
+                            PlaneBoundsMax.Y = Math.Max(PlaneBoundsMax.Y, coll.transform.Translation.Y);
+                        else
+                            PlaneBoundsMin.Y = Math.Min(PlaneBoundsMin.Y, coll.transform.Translation.Y);
+                    }
+                }
+                else if (Math.Abs(normal.Z) > 0.9999)
+                {
+                    bool coverOY = Math.Abs(localY.Y) > 0.9999 && Math.Abs(coll.transform.Translation.Y) < coll.transform.Scale.Y;
+                    bool coverOX = Math.Abs(localX.X) > 0.9999 && Math.Abs(coll.transform.Translation.X) < coll.transform.Scale.X;
+                    if (coverOY && coverOX)
+                    {
+                        if (normal.Z < 0)
+                            PlaneBoundsMax.Z = Math.Max(PlaneBoundsMax.Z, coll.transform.Translation.Z);
+                        else
+                            PlaneBoundsMin.Z = Math.Min(PlaneBoundsMin.Z, coll.transform.Translation.Z);
+                    }
+                }
             }
             if ((coll.matId & 0x400) != 0)
                 continue; // TODO: reconsider... (this aims to filter out doors that are opened when you get near them, not sure whether it's the right condition)

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using XIVRunner;
 
 namespace Navmesh.Movement;
 
@@ -21,6 +22,7 @@ public class FollowPath : IDisposable
     private List<Vector3> _waypoints = new();
     private OverrideCamera _camera = new();
     private OverrideMovement _movement = new();
+    private OverrideAFK _overrideAFK = new();
 
     public FollowPath(NavmeshManager manager)
     {
@@ -65,6 +67,7 @@ public class FollowPath : IDisposable
             _movement.DesiredPosition = _waypoints[0];
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
+            _overrideAFK.ResetTimers();
         }
     }
 

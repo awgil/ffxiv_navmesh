@@ -50,8 +50,7 @@ public class NavmeshManager : IDisposable
 
     public void Update()
     {
-        _dtrBarEntry.Shown = ShowDtrBar;
-        if (_dtrBarEntry.Shown)
+        if (_dtrBarEntry.Shown = ShowDtrBar)
         {
             if (TaskProgress >= 0)
                 _dtrBarEntry.Text = new SeString(new TextPayload($"Mesh: {(int)(TaskProgress*100)}%"));

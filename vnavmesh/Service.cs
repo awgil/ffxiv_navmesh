@@ -22,6 +22,7 @@ public class Service
     [PluginService] public static ITextureProvider TextureProvider { get; private set; } = null!;
     [PluginService] public static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
     [PluginService] public static IFramework Framework { get; private set; } = null!;
+    [PluginService] public static IDtrBar DtrBar { get; private set; } = null!;
     [PluginService] public static DalamudPluginInterface PluginInterface { get; private set; } = null!;
 
     public static Lumina.GameData LuminaGameData => DataManager.GameData;

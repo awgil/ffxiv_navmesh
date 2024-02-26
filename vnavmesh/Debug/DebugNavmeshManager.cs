@@ -68,6 +68,7 @@ class DebugNavmeshManager : IDisposable
 
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
         ImGui.Checkbox("Auto load mesh when changing zone", ref _manager.AutoLoad);
+        ImGui.Checkbox("Show mesh status in DTR Bar", ref _manager.ShowDtrBar);
         ImGui.Checkbox("Use raycasts", ref _path.UseRaycasts);
         ImGui.Checkbox("Use string pulling", ref _path.UseStringPulling);
         if (ImGui.Button("Pathfind to target using navmesh"))

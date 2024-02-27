@@ -23,7 +23,6 @@ namespace Navmesh
             Register("Path.Stop", followPath.Stop);
             Register("Path.IsRunning", () => followPath.Waypoints.Count > 0);
             Register("Path.NumWaypoints", () => followPath.Waypoints.Count);
-            Register<Vector3, Vector3, Vector3>("Path.FindClosestPolyPoint", followPath.FindClosestPolyPoint);
             Register("Path.GetMovementAllowed", () => followPath.MovementAllowed);
             Register<bool>("Path.SetMovementAllowed", v => followPath.MovementAllowed = v);
             Register("Path.GetTolerance", () => followPath.Tolerance);
@@ -42,20 +41,6 @@ namespace Navmesh
         private void Register<TRet>(string name, Func<TRet> func)
         {
             var p = Service.PluginInterface.GetIpcProvider<TRet>("vnavmesh." + name);
-            p.RegisterFunc(func);
-            _disposeActions.Add(p.UnregisterFunc);
-        }
-
-        private void Register<T1, TRet>(string name, Func<T1, TRet> func)
-        {
-            var p = Service.PluginInterface.GetIpcProvider<T1, TRet>("vnavmesh." + name);
-            p.RegisterFunc(func);
-            _disposeActions.Add(p.UnregisterFunc);
-        }
-
-        private void Register<T1, T2, TRet>(string name, Func<T1, T2, TRet> func)
-        {
-            var p = Service.PluginInterface.GetIpcProvider<T1, T2, TRet>("vnavmesh." + name);
             p.RegisterFunc(func);
             _disposeActions.Add(p.UnregisterFunc);
         }

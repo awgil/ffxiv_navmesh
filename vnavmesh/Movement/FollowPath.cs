@@ -1,5 +1,4 @@
-﻿using DotRecast.Detour;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using XIVRunner;
@@ -69,22 +68,6 @@ public class FollowPath : IDisposable
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
             _overrideAFK.ResetTimers();
         }
-    }
-
-    public Vector3 FindClosestPolyPoint(Vector3 input, Vector3 halfExtents)
-    {
-        if (_query == null)
-            return Vector3.Zero;
-
-        var m_filter = new DtQueryDefaultFilter(
-                0xffff,
-                0x10,
-                [1f, 1f, 1f, 1f, 2f, 1.5f]
-            );
-
-        _ = _query.MeshQuery.FindNearestPoly(input.SystemToRecast(), halfExtents.SystemToRecast(), m_filter, out _, out var polyPoint, out _);
-
-        return polyPoint.RecastToSystem();
     }
 
     public void MoveTo(Vector3 destination)

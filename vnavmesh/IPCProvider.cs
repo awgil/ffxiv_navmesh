@@ -18,6 +18,8 @@ namespace Navmesh
             Register("Nav.IsAutoLoad", () => navmeshManager.AutoLoad);
             Register<bool>("Nav.SetAutoLoad", v => navmeshManager.AutoLoad = v);
 
+            Register<Vector3?, Vector3, float>("Query.Mesh.NearestPoint", (p, r) => followPath.Query?.FindNearestPointOnMesh(p, r));
+
             Register<Vector3>("Path.MoveTo", followPath.MoveTo);
             Register<Vector3>("Path.FlyTo", followPath.FlyTo);
             Register("Path.Stop", followPath.Stop);
@@ -41,6 +43,20 @@ namespace Navmesh
         private void Register<TRet>(string name, Func<TRet> func)
         {
             var p = Service.PluginInterface.GetIpcProvider<TRet>("vnavmesh." + name);
+            p.RegisterFunc(func);
+            _disposeActions.Add(p.UnregisterFunc);
+        }
+
+        private void Register<TRet, T1>(string name, Func<T1, TRet> func)
+        {
+            var p = Service.PluginInterface.GetIpcProvider<T1, TRet>("vnavmesh." + name);
+            p.RegisterFunc(func);
+            _disposeActions.Add(p.UnregisterFunc);
+        }
+
+        private void Register<TRet, T1, T2>(string name, Func<T1, T2, TRet> func)
+        {
+            var p = Service.PluginInterface.GetIpcProvider<T1, T2, TRet>("vnavmesh." + name);
             p.RegisterFunc(func);
             _disposeActions.Add(p.UnregisterFunc);
         }

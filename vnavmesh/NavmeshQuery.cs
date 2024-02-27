@@ -97,4 +97,14 @@ public class NavmeshQuery
 
     // returns -1 if not found, otherwise voxel index
     public int FindNearestVolumeVoxel(Vector3 p, int halfSize = 2) => VoxelSearch.FindNearestEmptyVoxel(VolumeQuery.Volume, p, halfSize);
+
+    public Vector3? FindNearestPointOnMesh(Vector3 p, float radius = 5)
+    {
+        var pref = FindNearestMeshPoly(p, radius);
+        if (pref == 0)
+            return null;
+        if (MeshQuery.ClosestPointOnPoly(pref, p.SystemToRecast(), out var closest, out _).Failed())
+            return null;
+        return closest.RecastToSystem();
+    }
 }

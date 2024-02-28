@@ -16,7 +16,7 @@ namespace Navmesh
             Register("Nav.Reload", () => navmeshManager.Reload(true));
             Register("Nav.Rebuild", () => navmeshManager.Reload(false));
             Register("Nav.IsAutoLoad", () => navmeshManager.AutoLoad);
-            Register<bool>("Nav.SetAutoLoad", v => navmeshManager.AutoLoad = v);
+            Register("Nav.SetAutoLoad", (bool v) => navmeshManager.AutoLoad = v);
 
             Register<Vector3?, Vector3, float>("Query.Mesh.NearestPoint", (p, r) => followPath.Query?.FindNearestPointOnMesh(p, r));
 
@@ -26,12 +26,14 @@ namespace Navmesh
             Register("Path.IsRunning", () => followPath.Waypoints.Count > 0);
             Register("Path.NumWaypoints", () => followPath.Waypoints.Count);
             Register("Path.GetMovementAllowed", () => followPath.MovementAllowed);
-            Register<bool>("Path.SetMovementAllowed", v => followPath.MovementAllowed = v);
+            Register("Path.SetMovementAllowed", (bool v) => followPath.MovementAllowed = v);
+            Register("Path.GetAlignCamera", () => followPath.AlignCamera);
+            Register("Path.SetAlignCamera", (bool v) => followPath.AlignCamera = v);
             Register("Path.GetTolerance", () => followPath.Tolerance);
-            Register<float>("Path.SetTolerance", v => followPath.Tolerance = v);
+            Register("Path.SetTolerance", (float v) => followPath.Tolerance = v);
 
             Register("Window.IsOpen", () => mainWindow.IsOpen);
-            Register<bool>("Window.SetOpen", v => mainWindow.IsOpen = v);
+            Register("Window.SetOpen", (bool v) => mainWindow.IsOpen = v);
         }
 
         public void Dispose()

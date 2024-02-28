@@ -8,6 +8,7 @@ namespace Navmesh.Movement;
 public class FollowPath : IDisposable
 {
     public bool MovementAllowed = true;
+    public bool AlignCamera = false;
     public bool UseRaycasts = true;
     public bool UseStringPulling = true;
     public float Tolerance = 0.5f;
@@ -61,12 +62,13 @@ public class FollowPath : IDisposable
         }
         else
         {
+            _overrideAFK.ResetTimers();
             _movement.Enabled = MovementAllowed;
-            //_camera.Enabled = true;
             _movement.DesiredPosition = _waypoints[0];
+            _camera.Enabled = AlignCamera;
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
-            _overrideAFK.ResetTimers();
+            _camera.DesiredAltitude = -30.Degrees();
         }
     }
 

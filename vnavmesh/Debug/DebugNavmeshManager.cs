@@ -67,6 +67,7 @@ class DebugNavmeshManager : IDisposable
         ImGui.TextUnformatted($"Current target: {_target}");
 
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
+        ImGui.Checkbox("Align camera to movement direction", ref _path.AlignCamera);
         ImGui.Checkbox("Auto load mesh when changing zone", ref _manager.AutoLoad);
         ImGui.Checkbox("Use raycasts", ref _path.UseRaycasts);
         ImGui.Checkbox("Use string pulling", ref _path.UseStringPulling);

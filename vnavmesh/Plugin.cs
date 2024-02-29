@@ -43,16 +43,19 @@ public sealed class Plugin : IDalamudPlugin
         dalamud.UiBuilder.OpenConfigUi += () => _wndMain.IsOpen = true;
         Service.CommandManager.AddHandler("/vnavmesh", new(OnCommand)
         {
-            HelpMessage = "Opens the main menu\n" +
-                "/vnavmesh moveto <X> <Y> <Z> → move to raw coordinates\n" +
-                "/vnavmesh movedir <X> <Y> <Z> → move this many units over (relative to player facing)\n" +
-                "/vnavmesh movetarget → move to target's position\n" +
-                "/vnavmesh flyto <X> <Y> <Z> → fly to raw coordinates\n" +
-                "/vnavmesh flydir <X> <Y> <Z> → fly this many units over (relative to player facing)\n" +
-                "/vnavmesh flytarget → fly to target's position\n" +
-                "/vnavmesh stop → stop all movement\n" +
-                "/vnavmesh reload → reload current territory's navmesh from cache.\n" +
-                "/vnavmesh rebuild → rebuild current territory's navmesh from scratch.",
+            HelpMessage = """
+            Opens the debug menu.
+            /vnavmesh moveto <X> <Y> <Z> → move to raw coordinates
+            /vnavmesh movedir <X> <Y> <Z> → move this many units over (relative to player facing)
+            /vnavmesh movetarget → move to target's position
+            /vnavmesh flyto <X> <Y> <Z> → fly to raw coordinates
+            /vnavmesh flydir <X> <Y> <Z> → fly this many units over (relative to player facing)
+            /vnavmesh flytarget → fly to target's position
+            /vnavmesh stop → stop all movement
+            /vnavmesh reload → reload current territory's navmesh from cache
+            /vnavmesh rebuild → rebuild current territory's navmesh from scratch
+            /vnavmesh aligncamera → toggle aligning camera to movement direction
+            """,
             ShowInHelp = true,
         });
 
@@ -124,6 +127,9 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "stop":
                 _followPath.Stop();
+                break;
+            case "aligncamera":
+                _followPath.AlignCamera ^= true;
                 break;
         }
     }

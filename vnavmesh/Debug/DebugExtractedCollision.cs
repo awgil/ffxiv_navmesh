@@ -128,9 +128,6 @@ public class DebugExtractedCollision : IDisposable
         if (!nr.Opened)
             return;
 
-        _tree.LeafNode($"Geometry Bounds: {_extractor.BoundsMin:f3} - {_extractor.BoundsMax:f3}");
-        _tree.LeafNode($"Plane Bounds: {_extractor.PlaneBoundsMin:f3} - {_extractor.PlaneBoundsMax:f3}");
-        _tree.LeafNode($"Effective Bounds: {_extractor.EffectiveBoundsMin:f3} - {_extractor.EffectiveBoundsMax:f3}");
         int meshIndex = 0;
         foreach (var (name, mesh) in _extractor.Meshes)
         {

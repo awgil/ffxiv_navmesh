@@ -17,11 +17,11 @@ public class NavmeshSettings
         WalkableLowHeightSpans = 1 << 2,
     }
 
-    public float CellSize = 0.3f;
+    public float CellSize = 0.25f;
     public float CellHeight = 0.25f;
     public float AgentHeight = 2.0f;
     public float AgentRadius = 0.5f;
-    public float AgentMaxClimb = 0.8f; // consider web bridges in lost city of amdapor (h)
+    public float AgentMaxClimb = 0.75f; // consider web bridges in lost city of amdapor (h)
     public float AgentMaxSlopeDeg = 55f;
     public Filter Filtering = Filter.LowHangingObstacles | Filter.LedgeSpans | Filter.WalkableLowHeightSpans;
     public float RegionMinSize = 8;
@@ -32,7 +32,13 @@ public class NavmeshSettings
     public int PolyMaxVerts = 6;
     public float DetailSampleDist = 6f;
     public float DetailMaxSampleError = 1f;
-    public int TileSize = 512;
+
+    // we assume that bounds are constant -1024 to 1024 along each axis (since that's the quantization range of position in some packets)
+    // the tiling is currently hardcoded; there is some code that relies on it being power-of-2
+    // world is split into NumTilesL1 tiles along each axis; for voxel map, the second level is split again into NumTilesL2 subtiles
+    // current values mean 128x128x128 L1 tiles -> 8x8x8 L2 tiles -> 0.5x0.5x0.5 voxels
+    public const int NumTilesL1 = 16;
+    public const int NumTilesL2 = 16;
 
 
     public void Draw()
@@ -212,9 +218,6 @@ public class NavmeshSettings
         DrawConfigFloat(ref DetailMaxSampleError, 0.0f, 16.0f, 1.0f, "Detail Mesh: Max Sample Error", """
             The maximum distance the detail mesh surface should deviate from heightfield data. (For height detail only.) [Limit: >= 0] [Units: world]
             """); // TODO: verify that it's actually in voxels
-        DrawConfigInt(ref TileSize, 16, 1024, 16, "Tile size", """
-            The width/height size of tile on the xz-plane. [Limit: >= 0] [Units: voxels]
-            """);
     }
 
     private void DrawConfigFloat(ref float value, float min, float max, float increment, string label, string help)

@@ -64,6 +64,9 @@ class DebugNavmeshManager : IDisposable
         if (ImGui.Button("Set target to target pos"))
             _target = player?.TargetObject?.Position ?? default;
         ImGui.SameLine();
+        if (ImGui.Button("Set target to flag position") && _path.Query != null)
+            _target = MapUtils.FlagToPoint(_path.Query) ?? default;
+        ImGui.SameLine();
         ImGui.TextUnformatted($"Current target: {_target}");
 
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
@@ -98,6 +101,8 @@ class DebugNavmeshManager : IDisposable
 
         if (_path.Query != null)
         {
+            var flagPoint = MapUtils.FlagToPoint(_path.Query);
+            _tree.LeafNode($"Flag location: {flagPoint}");
             var playerVoxel = _path.Query.FindNearestVolumeVoxel(playerPos);
             if (_tree.LeafNode($"Player voxel: {_path.Query.VolumeQuery.Volume.IndexToVoxel(playerVoxel)} ({playerVoxel:X})###playervoxel").SelectedOrHovered && playerVoxel >= 0)
                 _debugVoxelMap?.VisualizeVoxel(playerVoxel);

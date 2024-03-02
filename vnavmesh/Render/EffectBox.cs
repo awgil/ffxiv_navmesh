@@ -33,6 +33,8 @@ public class EffectBox : IDisposable
         {
             private RenderBuffer<Instance>.Builder _boxes;
 
+            public int NumBoxes => _boxes.CurElements;
+
             internal Builder(RenderContext ctx, Data data)
             {
                 _boxes = data._buffer.Map(ctx);

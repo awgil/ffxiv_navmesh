@@ -74,19 +74,20 @@ public class NavmeshQuery
         var startVoxel = FindNearestVolumeVoxel(from);
         var endVoxel = FindNearestVolumeVoxel(to);
         Service.Log.Debug($"[pathfind] voxel {startVoxel:X} -> {endVoxel:X}");
-        if (startVoxel < 0 || endVoxel < 0)
+        if (startVoxel == VoxelMap.InvalidVoxel || endVoxel == VoxelMap.InvalidVoxel)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startVoxel:X}) to {to} ({endVoxel:X}): failed to find empty voxel");
             return new();
         }
 
+        var timer = Timer.Create();
         var voxelPath = VolumeQuery.FindPath(startVoxel, endVoxel, from, to, useRaycast, false); // TODO: do we need intermediate points for string-pulling algo?
         if (voxelPath.Count == 0)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startVoxel:X}) to {to} ({endVoxel:X}): failed to find path on volume");
             return new();
         }
-        Service.Log.Debug($"Pathfind: {string.Join(", ", voxelPath.Select(r => $"{r.p} {VolumeQuery.Volume.IndexToVoxel(r.voxel)}"))}");
+        Service.Log.Debug($"Pathfind took {timer.Value().Seconds:f3}s: {string.Join(", ", voxelPath.Select(r => $"{r.p} {r.voxel:X}"))}");
 
         // TODO: string-pulling support
         var res = voxelPath.Select(r => r.p).ToList();
@@ -119,6 +120,6 @@ public class NavmeshQuery
         return polys.Select(poly => FindNearestPointOnMeshPoly(p, poly)).Where(pt => pt != null && pt.Value.Y <= p.Y).MaxBy(pt => pt!.Value.Y);
     }
 
-    // returns -1 if not found, otherwise voxel index
-    public int FindNearestVolumeVoxel(Vector3 p, int halfSize = 2) => VoxelSearch.FindNearestEmptyVoxel(VolumeQuery.Volume, p, halfSize);
+    // returns VoxelMap.InvalidVoxel if not found, otherwise voxel index
+    public ulong FindNearestVolumeVoxel(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5) => VoxelSearch.FindNearestEmptyVoxel(VolumeQuery.Volume, p, new(halfExtentXZ, halfExtentY, halfExtentXZ));
 }

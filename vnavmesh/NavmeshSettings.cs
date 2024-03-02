@@ -37,8 +37,7 @@ public class NavmeshSettings
     // the tiling is currently hardcoded; there is some code that relies on it being power-of-2
     // world is split into NumTilesL1 tiles along each axis; for voxel map, the second level is split again into NumTilesL2 subtiles
     // current values mean 128x128x128 L1 tiles -> 8x8x8 L2 tiles -> 0.5x0.5x0.5 voxels
-    public const int NumTilesL1 = 16;
-    public const int NumTilesL2 = 16;
+    public static readonly int[] NumTiles = [16, 16, 16];
 
 
     public void Draw()

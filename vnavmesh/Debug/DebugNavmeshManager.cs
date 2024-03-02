@@ -1,5 +1,6 @@
 ﻿using ImGuiNET;
 using Navmesh.Movement;
+using Navmesh.NavVolume;
 using System;
 using System.Numerics;
 
@@ -99,10 +100,10 @@ class DebugNavmeshManager : IDisposable
         if (_path.Query != null)
         {
             var playerVoxel = _path.Query.FindNearestVolumeVoxel(playerPos);
-            if (_tree.LeafNode($"Player voxel: {_path.Query.VolumeQuery.Volume.IndexToVoxel(playerVoxel)} ({playerVoxel:X})###playervoxel").SelectedOrHovered && playerVoxel >= 0)
+            if (_tree.LeafNode($"Player voxel: {playerVoxel:X}###playervoxel").SelectedOrHovered && playerVoxel != VoxelMap.InvalidVoxel)
                 _debugVoxelMap?.VisualizeVoxel(playerVoxel);
             var targetVoxel = _path.Query.FindNearestVolumeVoxel(_target);
-            if (_tree.LeafNode($"Target voxel: {_path.Query.VolumeQuery.Volume.IndexToVoxel(targetVoxel)} ({targetVoxel:X})###targetvoxel").SelectedOrHovered && targetVoxel >= 0)
+            if (_tree.LeafNode($"Target voxel: {targetVoxel:X}###targetvoxel").SelectedOrHovered && targetVoxel != VoxelMap.InvalidVoxel)
                 _debugVoxelMap?.VisualizeVoxel(targetVoxel);
         }
 

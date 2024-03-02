@@ -36,7 +36,7 @@ public class NavmeshBuilder
         Scene = new(scene);
         BoundsMin = new(-1024);
         BoundsMax = new(1024);
-        NumTilesX = NumTilesZ = NavmeshSettings.NumTilesL1;
+        NumTilesX = NumTilesZ = NavmeshSettings.NumTiles[0];
         Service.Log.Debug($"starting building {NumTilesX}x{NumTilesZ} navmesh");
 
         // create empty navmesh
@@ -48,7 +48,7 @@ public class NavmeshBuilder
         navmeshParams.maxPolys = 1 << DtNavMesh.DT_POLY_BITS;
 
         var navmesh = new DtNavMesh(navmeshParams, settings.PolyMaxVerts);
-        var volume = new VoxelMap(BoundsMin, BoundsMax, 512, 128, 512); // TODO: improve...
+        var volume = new VoxelMap(BoundsMin, BoundsMax); // TODO: improve...
         Navmesh = new(navmesh, volume);
 
         // calculate derived parameters
@@ -198,6 +198,7 @@ public class NavmeshBuilder
         }
 
         // 11. build nav volume data
+        // TODO: keep local 1x1x16 voxel map, and just merge under lock
         lock (Navmesh.Volume)
         {
             Navmesh.Volume.AddFromHeightfield(shf);

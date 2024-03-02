@@ -211,7 +211,7 @@ public class VoxelMap
         }
     }
 
-    public (ulong index, bool empty) FindLeafVoxel(Vector3 p) => RootTile.FindLeafVoxel(p);
+    public (ulong voxel, bool empty) FindLeafVoxel(Vector3 p) => RootTile.FindLeafVoxel(p);
 
     public (Vector3 min, Vector3 max) VoxelBounds(ulong voxel, float eps)
     {

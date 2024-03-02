@@ -27,6 +27,7 @@ public class VoxelPathfind
     private Vector3 _goalPos;
     private bool _useRaycast;
     private bool _allowReopen = false;
+    private float _raycastLimitSq = float.MaxValue;
 
     public VoxelMap Volume => _volume;
     public Span<Node> NodeSpan => CollectionsMarshal.AsSpan(_nodes);
@@ -141,7 +142,7 @@ public class VoxelPathfind
         var l0Index = VoxelMap.DecodeIndex(ref voxel); // should always be valid
         var l1Index = VoxelMap.DecodeIndex(ref voxel);
         var l2Index = VoxelMap.DecodeIndex(ref voxel);
-        var l0Coords = l1Desc.IndexToVoxel(l0Index);
+        var l0Coords = l0Desc.IndexToVoxel(l0Index);
         var l1Coords = l1Desc.IndexToVoxel(l1Index); // not valid if l1 is invalid
         var l2Coords = l2Desc.IndexToVoxel(l2Index); // not valid if l2 is invalid
 
@@ -352,13 +353,13 @@ public class VoxelPathfind
         {
             // check LoS from grandparent
             int grandParentIndex = parent.ParentIndex;
-            // if difference between parent's G and grandparent's G is large enough, skip raycast check?
             ref var grandParentNode = ref NodeSpan[grandParentIndex];
             // TODO: invert LoS check to match path reconstruction step?
-            if (VoxelSearch.LineOfSight(_volume, grandParentNode.Voxel, destVoxel, grandParentNode.Position, destPos))
+            var dist = (grandParentNode.Position - destPos).LengthSquared();
+            if (dist <= _raycastLimitSq && VoxelSearch.LineOfSight(_volume, grandParentNode.Voxel, destVoxel, grandParentNode.Position, destPos))
             {
                 parentIndex = grandParentIndex;
-                return grandParentNode.GScore + (grandParentNode.Position - destPos).Length();
+                return grandParentNode.GScore + MathF.Sqrt(dist);
             }
         }
         return parent.GScore + (parent.Position - destPos).Length();

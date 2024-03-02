@@ -20,7 +20,7 @@ public static class VoxelSearch
         var cv = volume.FindLeafVoxel(center);
         //Service.Log.Debug($"Searching {cv}");
         if (cv.empty)
-            return cv.index; // fast path: the cell is empty already
+            return cv.voxel; // fast path: the cell is empty already
 
         float minDist = float.MaxValue;
         ulong res = VoxelMap.InvalidVoxel;

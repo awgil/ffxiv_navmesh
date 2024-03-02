@@ -44,7 +44,7 @@ public class NavmeshQuery
             Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find path on mesh");
             return new();
         }
-        Service.Log.Debug($"Pathfind took {timer.Value().Seconds:f3}s: {string.Join(", ", polysPath.Select(r => r.ToString("X")))}");
+        Service.Log.Debug($"Pathfind took {timer.Value().TotalSeconds:f3}s: {string.Join(", ", polysPath.Select(r => r.ToString("X")))}");
 
         // In case of partial path, make sure the end point is clamped to the last polygon.
         var endPos = to.SystemToRecast();
@@ -88,7 +88,7 @@ public class NavmeshQuery
             Service.Log.Error($"Failed to find a path from {from} ({startVoxel:X}) to {to} ({endVoxel:X}): failed to find path on volume");
             return new();
         }
-        Service.Log.Debug($"Pathfind took {timer.Value().Seconds:f3}s: {string.Join(", ", voxelPath.Select(r => $"{r.p} {r.voxel:X}"))}");
+        Service.Log.Debug($"Pathfind took {timer.Value().TotalSeconds:f3}s: {string.Join(", ", voxelPath.Select(r => $"{r.p} {r.voxel:X}"))}");
 
         // TODO: string-pulling support
         var res = voxelPath.Select(r => r.p).ToList();

@@ -36,8 +36,8 @@ public class NavmeshSettings
     // we assume that bounds are constant -1024 to 1024 along each axis (since that's the quantization range of position in some packets)
     // the tiling is currently hardcoded; there is some code that relies on it being power-of-2
     // world is split into NumTilesL1 tiles along each axis; for voxel map, the second level is split again into NumTilesL2 subtiles
-    // current values mean 128x128x128 L1 tiles -> 8x8x8 L2 tiles -> 1x1x1 voxels
-    public static readonly int[] NumTiles = [16, 16, 8];
+    // current values mean 128x128x128 L1 tiles -> 16x16x16 L2 tiles -> 2x2x2 voxels
+    public static readonly int[] NumTiles = [16, 8, 8];
 
 
     public void Draw()

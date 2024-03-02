@@ -80,7 +80,7 @@ public class VoxelPathfind
 
         var curNodeIndex = PopMinOpen();
         ref var curNode = ref nodeSpan[curNodeIndex];
-        Service.Log.Debug($"volume pathfind: considering {curNode.Voxel:X} (#{curNodeIndex}), g={curNode.GScore:f3}, h={curNode.HScore:f3}");
+        //Service.Log.Debug($"volume pathfind: considering {curNode.Voxel:X} (#{curNodeIndex}), g={curNode.GScore:f3}, h={curNode.HScore:f3}");
 
         var curVoxel = curNode.Voxel;
         foreach (var dest in EnumerateNeighbours(curVoxel, 0, -1, 0))
@@ -183,10 +183,10 @@ public class VoxelPathfind
                 else if (l2Index != VoxelMap.IndexLevelMask)
                 {
                     // L2->L2 across L1 border (but in same L0)
-                    int l2X = dx == 0 ? l2Coords.x : dx > 0 ? 0 : l1Desc.NumCellsX - 1;
-                    int l2Y = dy == 0 ? l2Coords.y : dy > 0 ? 0 : l1Desc.NumCellsY - 1;
-                    int l2Z = dz == 0 ? l2Coords.z : dz > 0 ? 0 : l1Desc.NumCellsZ - 1;
-                    var l2NeighbourVoxel = VoxelMap.EncodeSubIndex(neighbourVoxel, l1Desc.VoxelToIndex(l2X, l2Y, l2Z), 2);
+                    int l2X = dx == 0 ? l2Coords.x : dx > 0 ? 0 : l2Desc.NumCellsX - 1;
+                    int l2Y = dy == 0 ? l2Coords.y : dy > 0 ? 0 : l2Desc.NumCellsY - 1;
+                    int l2Z = dz == 0 ? l2Coords.z : dz > 0 ? 0 : l2Desc.NumCellsZ - 1;
+                    var l2NeighbourVoxel = VoxelMap.EncodeSubIndex(neighbourVoxel, l2Desc.VoxelToIndex(l2X, l2Y, l2Z), 2);
                     //Service.Log.Debug($"- L2->L1 within L0: {voxel:X4}{l2Index:X4}{l1Index:X4}{l0Index:X4}->{l2NeighbourVoxel:X}");
                     if (_volume.IsEmpty(l2NeighbourVoxel))
                     {
@@ -225,10 +225,10 @@ public class VoxelPathfind
                 else if (l1Index != VoxelMap.IndexLevelMask)
                 {
                     // L1/L2 across L0 border
-                    int l1X = dx == 0 ? l1Coords.x : dx > 0 ? 0 : l0Desc.NumCellsX - 1;
-                    int l1Y = dy == 0 ? l1Coords.y : dy > 0 ? 0 : l0Desc.NumCellsY - 1;
-                    int l1Z = dz == 0 ? l1Coords.z : dz > 0 ? 0 : l0Desc.NumCellsZ - 1;
-                    var l1NeighbourVoxel = VoxelMap.EncodeSubIndex(neighbourVoxel, l0Desc.VoxelToIndex(l1X, l1Y, l1Z), 1);
+                    int l1X = dx == 0 ? l1Coords.x : dx > 0 ? 0 : l1Desc.NumCellsX - 1;
+                    int l1Y = dy == 0 ? l1Coords.y : dy > 0 ? 0 : l1Desc.NumCellsY - 1;
+                    int l1Z = dz == 0 ? l1Coords.z : dz > 0 ? 0 : l1Desc.NumCellsZ - 1;
+                    var l1NeighbourVoxel = VoxelMap.EncodeSubIndex(neighbourVoxel, l1Desc.VoxelToIndex(l1X, l1Y, l1Z), 1);
                     //Service.Log.Debug($"- L1/L2->L1: {voxel:X4}{l2Index:X4}{l1Index:X4}{l0Index:X4}->{l1NeighbourVoxel:X}");
                     if (_volume.IsEmpty(l1NeighbourVoxel))
                     {
@@ -238,10 +238,10 @@ public class VoxelPathfind
                     else if (l2Index != VoxelMap.IndexLevelMask)
                     {
                         // L2->L2 across L0 border
-                        int l2X = dx == 0 ? l2Coords.x : dx > 0 ? 0 : l1Desc.NumCellsX - 1;
-                        int l2Y = dy == 0 ? l2Coords.y : dy > 0 ? 0 : l1Desc.NumCellsY - 1;
-                        int l2Z = dz == 0 ? l2Coords.z : dz > 0 ? 0 : l1Desc.NumCellsZ - 1;
-                        var l2NeighbourVoxel = VoxelMap.EncodeSubIndex(l1NeighbourVoxel, l1Desc.VoxelToIndex(l2X, l2Y, l2Z), 2);
+                        int l2X = dx == 0 ? l2Coords.x : dx > 0 ? 0 : l2Desc.NumCellsX - 1;
+                        int l2Y = dy == 0 ? l2Coords.y : dy > 0 ? 0 : l2Desc.NumCellsY - 1;
+                        int l2Z = dz == 0 ? l2Coords.z : dz > 0 ? 0 : l2Desc.NumCellsZ - 1;
+                        var l2NeighbourVoxel = VoxelMap.EncodeSubIndex(l1NeighbourVoxel, l2Desc.VoxelToIndex(l2X, l2Y, l2Z), 2);
                         //Service.Log.Debug($"- L2->L2: {voxel:X4}{l2Index:X4}{l1Index:X4}{l0Index:X4}->{l2NeighbourVoxel:X}");
                         if (_volume.IsEmpty(l2NeighbourVoxel))
                         {
@@ -339,7 +339,7 @@ public class VoxelPathfind
             curNode.ParentIndex = parentIndex;
             curNode.Position = enterPos;
             AddToOpen(nodeIndex);
-            Service.Log.Debug($"volume pathfind: adding {nodeVoxel:X} (#{nodeIndex}), parent={parentIndex}, g={nodeG:f3}, h={_nodes[nodeIndex].HScore:f3}");
+            //Service.Log.Debug($"volume pathfind: adding {nodeVoxel:X} (#{nodeIndex}), parent={parentIndex}, g={nodeG:f3}, h={_nodes[nodeIndex].HScore:f3}");
 
             if (curNode.HScore < _nodes[_bestNodeIndex].HScore)
                 _bestNodeIndex = nodeIndex;

@@ -35,6 +35,7 @@ public class NavmeshQuery
             return new();
         }
 
+        var timer = Timer.Create();
         var polysPath = new List<long>();
         var opt = new DtFindPathOption(useRaycast ? DtFindPathOptions.DT_FINDPATH_ANY_ANGLE : 0, float.MaxValue);
         MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _filter, ref polysPath, opt);
@@ -43,7 +44,7 @@ public class NavmeshQuery
             Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find path on mesh");
             return new();
         }
-        Service.Log.Debug($"Pathfind: {string.Join(", ", polysPath.Select(r => r.ToString("X")))}");
+        Service.Log.Debug($"Pathfind took {timer.Value().Seconds:f3}s: {string.Join(", ", polysPath.Select(r => r.ToString("X")))}");
 
         // In case of partial path, make sure the end point is clamped to the last polygon.
         var endPos = to.SystemToRecast();

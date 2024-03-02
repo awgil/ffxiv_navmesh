@@ -200,11 +200,13 @@ public class VoxelMap
             if (tileIndex == IndexLevelMask)
                 return false; // asking for non-leaf => consider non-empty
 
+            //Service.Log.Debug($"testing {tileIndex} (s={tile.Contents.Length})");
             var data = tile.Contents[tileIndex];
             if ((data & VoxelOccupiedBit) == 0)
                 return true; // found empty voxel
             if (tile.Level + 1 == Levels.Length)
                 return false; // found non-empty leaf
+            //Service.Log.Debug($"-> {data:X} (s={tile.Subdivision.Count})");
             tile = tile.Subdivision[data & VoxelIdMask];
         }
     }

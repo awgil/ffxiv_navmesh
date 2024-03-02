@@ -8,6 +8,12 @@ namespace Navmesh;
 
 public class NavmeshQuery
 {
+    private class IntersectQuery : IDtPolyQuery
+    {
+        public List<long> Result = new();
+        public void Process(DtMeshTile tile, DtPoly poly, long refs) => Result.Add(refs);
+    }
+
     public DtNavMeshQuery MeshQuery;
     public VoxelPathfind VolumeQuery;
     private IDtQueryFilter _filter = new DtQueryDefaultFilter();
@@ -89,22 +95,30 @@ public class NavmeshQuery
     }
 
     // returns 0 if not found, otherwise polygon ref
-    public long FindNearestMeshPoly(Vector3 p, float radius = 5)
+    public long FindNearestMeshPoly(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5)
     {
-        MeshQuery.FindNearestPoly(p.SystemToRecast(), new(radius), _filter, out var nearestRef, out _, out _);
+        MeshQuery.FindNearestPoly(p.SystemToRecast(), new(halfExtentXZ, halfExtentY, halfExtentXZ), _filter, out var nearestRef, out _, out _);
         return nearestRef;
+    }
+
+    public List<long> FindIntersectingMeshPolys(Vector3 p, Vector3 halfExtent)
+    {
+        IntersectQuery query = new();
+        MeshQuery.QueryPolygons(p.SystemToRecast(), halfExtent.SystemToRecast(), _filter, query);
+        return query.Result;
+    }
+
+    public Vector3? FindNearestPointOnMeshPoly(Vector3 p, long poly) => MeshQuery.ClosestPointOnPoly(poly, p.SystemToRecast(), out var closest, out _).Succeeded() ? closest.RecastToSystem() : null;
+
+    public Vector3? FindNearestPointOnMesh(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5) => FindNearestPointOnMeshPoly(p, FindNearestMeshPoly(p, halfExtentXZ, halfExtentY));
+
+    // finds the point on the mesh within specified x/z tolerance and with largest Y that is still smaller than p.Y
+    public Vector3? FindPointOnFloor(Vector3 p, float halfExtentXZ = 5)
+    {
+        var polys = FindIntersectingMeshPolys(p, new(halfExtentXZ, 2048, halfExtentXZ));
+        return polys.Select(poly => FindNearestPointOnMeshPoly(p, poly)).Where(pt => pt != null && pt.Value.Y <= p.Y).MaxBy(pt => pt!.Value.Y);
     }
 
     // returns -1 if not found, otherwise voxel index
     public int FindNearestVolumeVoxel(Vector3 p, int halfSize = 2) => VoxelSearch.FindNearestEmptyVoxel(VolumeQuery.Volume, p, halfSize);
-
-    public Vector3? FindNearestPointOnMesh(Vector3 p, float radius = 5)
-    {
-        var pref = FindNearestMeshPoly(p, radius);
-        if (pref == 0)
-            return null;
-        if (MeshQuery.ClosestPointOnPoly(pref, p.SystemToRecast(), out var closest, out _).Failed())
-            return null;
-        return closest.RecastToSystem();
-    }
 }

@@ -34,10 +34,9 @@ public class NavmeshSettings
     public float DetailMaxSampleError = 1f;
 
     // we assume that bounds are constant -1024 to 1024 along each axis (since that's the quantization range of position in some packets)
-    // the tiling is currently hardcoded; there is some code that relies on it being power-of-2
-    // world is split into NumTilesL1 tiles along each axis; for voxel map, the second level is split again into NumTilesL2 subtiles
+    // there is some code that relies on tiling being power-of-2
     // current values mean 128x128x128 L1 tiles -> 16x16x16 L2 tiles -> 2x2x2 voxels
-    public static readonly int[] NumTiles = [16, 8, 8];
+    public int[] NumTiles = [16, 8, 8];
 
 
     public void Draw()
@@ -217,6 +216,18 @@ public class NavmeshSettings
         DrawConfigFloat(ref DetailMaxSampleError, 0.0f, 16.0f, 1.0f, "Detail Mesh: Max Sample Error", """
             The maximum distance the detail mesh surface should deviate from heightfield data. (For height detail only.) [Limit: >= 0] [Units: world]
             """); // TODO: verify that it's actually in voxels
+        DrawConfigInt(ref NumTiles[0], 1, 32, 1, "L1 Tile count", """
+            Number of tiles per axis for first-level subdivision. Has to be power-of-2. [Limit: 1 <= value <= 32]
+            Affects both navmesh and nav volume.
+            """);
+        DrawConfigInt(ref NumTiles[1], 1, 32, 1, "L2 Tile count", """
+            Number of tiles per axis for second-level subdivision. Has to be power-of-2. [Limit: 1 <= value <= 32]
+            Affects only nav volume.
+            """);
+        DrawConfigInt(ref NumTiles[2], 1, 32, 1, "L3 Voxel count", """
+            Number of leaf voxels per axis per tile. Has to be power-of-2. [Limit: 1 <= value <= 32]
+            Affects only nav volume.
+            """);
     }
 
     private void DrawConfigFloat(ref float value, float min, float max, float increment, string label, string help)

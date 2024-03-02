@@ -140,7 +140,7 @@ public class NavmeshManager : IDisposable
                 Service.Log.Debug($"Loading cache: {cache.FullName}");
                 using var stream = cache.OpenRead();
                 using var reader = new BinaryReader(stream);
-                return Navmesh.Deserialize(reader);
+                return Navmesh.Deserialize(reader, _settings);
             }
             catch (Exception ex)
             {

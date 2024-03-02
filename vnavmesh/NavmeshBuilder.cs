@@ -36,7 +36,7 @@ public class NavmeshBuilder
         Scene = new(scene);
         BoundsMin = new(-1024);
         BoundsMax = new(1024);
-        NumTilesX = NumTilesZ = NavmeshSettings.NumTiles[0];
+        NumTilesX = NumTilesZ = settings.NumTiles[0];
         Service.Log.Debug($"starting building {NumTilesX}x{NumTilesZ} navmesh");
 
         // create empty navmesh
@@ -48,7 +48,7 @@ public class NavmeshBuilder
         navmeshParams.maxPolys = 1 << DtNavMesh.DT_POLY_BITS;
 
         var navmesh = new DtNavMesh(navmeshParams, settings.PolyMaxVerts);
-        var volume = new VoxelMap(BoundsMin, BoundsMax); // TODO: improve...
+        var volume = new VoxelMap(BoundsMin, BoundsMax, settings); // TODO: improve...
         Navmesh = new(navmesh, volume);
 
         // calculate derived parameters

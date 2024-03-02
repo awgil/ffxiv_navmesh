@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Reflection.Metadata.Ecma335;
 using System.Runtime.InteropServices;
 
 namespace Navmesh.NavVolume;
@@ -26,7 +25,7 @@ public class VoxelPathfind
     private ulong _goalVoxel;
     private Vector3 _goalPos;
     private bool _useRaycast;
-    private bool _allowReopen = false;
+    private bool _allowReopen = false; // this is extremely expensive and doesn't seem to actually improve the result
     private float _raycastLimitSq = float.MaxValue;
 
     public VoxelMap Volume => _volume;

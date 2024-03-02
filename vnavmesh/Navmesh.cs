@@ -15,7 +15,7 @@ public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
     public static readonly uint Version = 6;
 
     // throws an exception on failure
-    public static Navmesh Deserialize(BinaryReader reader)
+    public static Navmesh Deserialize(BinaryReader reader, NavmeshSettings settings)
     {
         var magic = reader.ReadUInt32();
         var version = reader.ReadUInt32();
@@ -26,7 +26,7 @@ public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
         var mesh = new DtMeshSetReader().Read(new RcByteBuffer(reader.ReadBytes(meshLen)));
 
         var (min, max) = DeserializeBounds(reader);
-        var volume = new VoxelMap(min, max);
+        var volume = new VoxelMap(min, max, settings);
         DeserializeTile(reader, volume.RootTile);
         return new(mesh, volume);
     }

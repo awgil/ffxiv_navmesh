@@ -178,13 +178,13 @@ public class VoxelMap
         return tileIndex;
     }
 
-    public VoxelMap(Vector3 boundsMin, Vector3 boundsMax)
+    public VoxelMap(Vector3 boundsMin, Vector3 boundsMax, NavmeshSettings settings)
     {
-        Levels = new Level[NavmeshSettings.NumTiles.Length];
+        Levels = new Level[settings.NumTiles.Length];
         var levelExtent = boundsMax - boundsMin;
         for (int i = 0; i < Levels.Length; ++i)
         {
-            Levels[i] = new(levelExtent, NavmeshSettings.NumTiles[i]);
+            Levels[i] = new(levelExtent, settings.NumTiles[i]);
             levelExtent = Levels[i].CellSize;
         }
 

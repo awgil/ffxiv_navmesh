@@ -19,6 +19,7 @@ namespace Navmesh
             Register("Nav.SetAutoLoad", (bool v) => navmeshManager.AutoLoad = v);
 
             Register("Query.Mesh.NearestPoint", (Vector3 p, float halfExtentXZ, float halfExtentY) => followPath.Query?.FindNearestPointOnMesh(p, halfExtentXZ, halfExtentY));
+            Register("Query.Mesh.PointOnFloor", (Vector3 p, float halfExtentXZ) => followPath.Query?.FindPointOnFloor(p, halfExtentXZ));
 
             Register<Vector3>("Path.MoveTo", followPath.MoveTo);
             Register<Vector3>("Path.FlyTo", followPath.FlyTo);

@@ -112,6 +112,13 @@ public class NavmeshQuery
 
     public Vector3? FindNearestPointOnMesh(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5) => FindNearestPointOnMeshPoly(p, FindNearestMeshPoly(p, halfExtentXZ, halfExtentY));
 
+    // finds the point on the mesh within specified x/z tolerance and with largest Y that is still smaller than p.Y
+    public Vector3? FindPointOnFloor(Vector3 p, float halfExtentXZ = 5)
+    {
+        var polys = FindIntersectingMeshPolys(p, new(halfExtentXZ, 2048, halfExtentXZ));
+        return polys.Select(poly => FindNearestPointOnMeshPoly(p, poly)).Where(pt => pt != null && pt.Value.Y <= p.Y).MaxBy(pt => pt!.Value.Y);
+    }
+
     // returns -1 if not found, otherwise voxel index
     public int FindNearestVolumeVoxel(Vector3 p, int halfSize = 2) => VoxelSearch.FindNearestEmptyVoxel(VolumeQuery.Volume, p, halfSize);
 }

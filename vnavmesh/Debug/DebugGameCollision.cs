@@ -461,7 +461,7 @@ public unsafe class DebugGameCollision : IDisposable
 
         using var n = _tree.Node(tag);
         if (n.SelectedOrHovered)
-            VisualizeColliderMeshPCBNode(node, ref world, new(1, 1, 0, 1), objMatId, objMatId, _materialId, _materialMask);
+            VisualizeColliderMeshPCBNode(node, ref world, new(1, 1, 0, 0.7f), objMatId, objMatId, _materialId, _materialMask);
         if (!n.Opened)
             return;
 
@@ -519,20 +519,20 @@ public unsafe class DebugGameCollision : IDisposable
                         for (int i = 0; i < cast->Header->NumMeshes; ++i)
                         {
                             var elem = cast->Elements + i;
-                            VisualizeColliderMesh(elem->Mesh, new(0, 1, 0, 1), _materialId, _materialMask);
+                            VisualizeColliderMesh(elem->Mesh, new(0, 1, 0, 0.7f), _materialId, _materialMask);
                         }
                     }
                 }
                 break;
             case ColliderType.Mesh:
-                VisualizeColliderMesh((ColliderMesh*)coll, new(_streamedMeshes.Contains((nint)coll) ? 0 : 1, 1, 0, 1), _materialId, _materialMask);
+                VisualizeColliderMesh((ColliderMesh*)coll, new(_streamedMeshes.Contains((nint)coll) ? 0 : 1, 1, 0, 0.7f), _materialId, _materialMask);
                 break;
             case ColliderType.Box:
                 {
                     var cast = (ColliderBox*)coll;
                     //var boxOBB = new AABB() { Min = new(-1), Max = new(+1) };
                     //VisualizeOBB(ref boxOBB, ref cast->World, 0xff0000ff);
-                    GetDynamicBoxes().Add(ref cast->World, new(1, 0, 0, 1), new(1, 0, 0, 1));
+                    GetDynamicBoxes().Add(ref cast->World, new(1, 0, 0, 0.7f), new(1, 0, 0, 0.7f));
                 }
                 break;
             case ColliderType.Cylinder:

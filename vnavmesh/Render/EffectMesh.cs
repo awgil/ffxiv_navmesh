@@ -142,6 +142,7 @@ public class EffectMesh : IDisposable
     private SharpDX.Direct3D11.Buffer _constantBuffer;
     private InputLayout _il;
     private VertexShader _vs;
+    private PixelShader _psUnlit;
     private PixelShader _ps;
     private RasterizerState _rsWireframe;
 
@@ -189,6 +190,11 @@ public class EffectMesh : IDisposable
                 return res;
             }
 
+            float4 psUnlit(VSOutput input) : SV_Target
+            {
+                return input.color;
+            }
+
             float4 ps(VSOutput input) : SV_Target
             {
                 // calculate world-space triangle normal
@@ -204,7 +210,6 @@ public class EffectMesh : IDisposable
 
                 float4 color = input.color;
                 color.rgb *= lighting;
-                color.a *= 0.7;
 
                 // to give some idea of depth, attenuate color by z-based 'fog'
                 //float fogStart = 0.1;
@@ -219,6 +224,10 @@ public class EffectMesh : IDisposable
         var vs = ShaderBytecode.Compile(shader, "vs", "vs_5_0");
         Service.Log.Debug($"VS compile: {vs.Message}");
         _vs = new(ctx.Device, vs.Bytecode);
+
+        var psUnlit = ShaderBytecode.Compile(shader, "psUnlit", "ps_5_0");
+        Service.Log.Debug($"PS Unlit compile: {psUnlit.Message}");
+        _psUnlit = new(ctx.Device, psUnlit.Bytecode);
 
         var ps = ShaderBytecode.Compile(shader, "ps", "ps_5_0");
         Service.Log.Debug($"PS compile: {ps.Message}");
@@ -255,7 +264,7 @@ public class EffectMesh : IDisposable
         ctx.Context.UpdateSubresource(ref consts, _constantBuffer);
     }
 
-    public void Bind(RenderContext ctx, bool wireframe)
+    public void Bind(RenderContext ctx, bool unlit, bool wireframe)
     {
         ctx.Context.InputAssembler.PrimitiveTopology = PrimitiveTopology.TriangleList;
         ctx.Context.InputAssembler.InputLayout = _il;
@@ -264,20 +273,26 @@ public class EffectMesh : IDisposable
         ctx.Context.GeometryShader.Set(null);
         if (wireframe)
             ctx.Context.Rasterizer.State = _rsWireframe;
-        ctx.Context.PixelShader.Set(_ps);
+        ctx.Context.PixelShader.Set(unlit ? _psUnlit : _ps);
         ctx.Context.PixelShader.SetConstantBuffer(0, _constantBuffer);
     }
 
     // shortcut to bind + draw
     public void Draw(RenderContext ctx, Data data)
     {
-        Bind(ctx, false);
+        Bind(ctx, false, false);
         data.DrawAll(ctx);
+    }
+
+    public void DrawSubset(RenderContext ctx, Data data, int firstMesh, int numMeshes)
+    {
+        Bind(ctx, false, false);
+        data.DrawSubset(ctx, firstMesh, numMeshes);
     }
 
     public void DrawSingle(RenderContext ctx, Data data, int index)
     {
-        Bind(ctx, false);
+        Bind(ctx, false, false);
         data.DrawSubset(ctx, index, 1);
     }
 }

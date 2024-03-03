@@ -265,7 +265,7 @@ public class DebugExtractedCollision : IDisposable
         var visuMesh = visu.Meshes[meshIndex];
         visuMesh.FirstPrimitive += mesh.Parts.Take(partIndex).Sum(part => part.Primitives.Count);
         visuMesh.NumPrimitives = mesh.Parts[partIndex].Primitives.Count;
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         visu.DrawManual(_dd.RenderContext, visuMesh);
     }
@@ -276,7 +276,7 @@ public class DebugExtractedCollision : IDisposable
         var visuMesh = visu.Meshes[meshIndex];
         visuMesh.FirstInstance += instIndex;
         visuMesh.NumInstances = 1;
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         visu.DrawManual(_dd.RenderContext, visuMesh);
     }
@@ -303,7 +303,7 @@ public class DebugExtractedCollision : IDisposable
     }
 
     private Vector4 MeshColor(SceneExtractor.Mesh mesh) =>
-        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain) ? new(0, 1, 0, 0.75f) :
-        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromFileMesh) ? new(1, 1, 0, 0.75f) :
-        new(1, 0, 0, 0.75f);
+        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain) ? new(0, 1, 0, 0.55f) :
+        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromFileMesh) ? new(1, 1, 0, 0.55f) :
+        new(1, 0, 0, 0.55f);
 }

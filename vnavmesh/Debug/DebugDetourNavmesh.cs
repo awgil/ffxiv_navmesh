@@ -264,7 +264,7 @@ public class DebugDetourNavmesh : DebugRecast
     private void VisualizeRoughPolygons(DtMeshTile tile, bool colorByArea)
     {
         var visu = GetOrInitVisualizerRough(tile.index);
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         for (int i = 0; i < tile.data.header.polyCount; ++i)
             VisualizeRoughPolygon(tile, visu, tile.data.polys[i], colorByArea, false);
@@ -273,7 +273,7 @@ public class DebugDetourNavmesh : DebugRecast
     private void VisualizeRoughPolygon(DtMeshTile tile, DtPoly poly, bool colorByArea)
     {
         var visu = GetOrInitVisualizerRough(tile.index);
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         VisualizeRoughPolygon(tile, visu, poly, colorByArea, true);
     }
@@ -333,7 +333,7 @@ public class DebugDetourNavmesh : DebugRecast
     private void VisualizeDetailPolygons(DtMeshTile tile, bool colorByArea)
     {
         var visu = GetOrInitVisualizerDetail(tile.index);
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         for (int i = 0; i < tile.data.header.detailMeshCount; ++i)
             VisualizeDetailSubmeshWithEdges(tile, visu, tile.data.polys[i], colorByArea, false);
@@ -351,7 +351,7 @@ public class DebugDetourNavmesh : DebugRecast
         ref var sub = ref tile.data.detailMeshes[poly.index];
 
         var visu = GetOrInitVisualizerDetail(tile.index);
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         VisualizeDetailSubmeshWithEdges(tile, visu, poly, colorByArea, true);
 

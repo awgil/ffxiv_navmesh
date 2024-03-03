@@ -11,16 +11,16 @@ public class DebugCompactHeightfield : DebugRecast
     private RcCompactHeightfield _chf;
     private UITree _tree;
     private DebugDrawer _dd;
-    private EffectQuad.Data? _visuSolid;
-    private EffectQuad.Data? _visuDistance;
-    private EffectQuad.Data? _visuRegion;
+    private EffectMesh.Data? _visuSolid;
+    private EffectMesh.Data? _visuDistance;
+    private EffectMesh.Data? _visuRegion;
     private int[] _regionsNumSpans;
     private int[] _regionsStartOffset;
 
     private static int _heightOffset = 0;
 
-    private static Vector4 _colAreaNull = new(0, 0, 0, 0.25f);
-    private static Vector4 _colAreaWalkable = new(0, 0.75f, 1.0f, 0.25f);
+    private static Vector4 _colAreaNull = new(0, 0, 0, 0.5f);
+    private static Vector4 _colAreaWalkable = new(0, 0.75f, 1.0f, 0.5f);
     private static Vector4 AreaColor(int area) => area == 0 ? _colAreaNull : _colAreaWalkable; // TODO: other colors for other areas
     private static Vector4 RegionColor(int region) => region != 0 ? IntColor(region, 0.75f) : _colAreaNull;
 
@@ -117,7 +117,7 @@ public class DebugCompactHeightfield : DebugRecast
                             for (int idx = 0; idx < cell.count; ++idx)
                             {
                                 ref var span = ref _chf.spans[cell.index + idx];
-                                if ((span.reg & ~ RcConstants.RC_BORDER_REG) != i)
+                                if ((span.reg & ~RcConstants.RC_BORDER_REG) != i)
                                     continue;
 
                                 if (_tree.LeafNode($"{ispan}: [{x}x{z}]: y={span.y}+{span.h}").SelectedOrHovered)
@@ -162,29 +162,31 @@ public class DebugCompactHeightfield : DebugRecast
         }
     }
 
-    private EffectQuad.Data GetOrInitVisualizerSolid()
+    private EffectMesh.Data GetOrInitVisualizerSolid()
     {
         if (_visuSolid == null)
         {
-            _visuSolid = new EffectQuad.Data(_dd.RenderContext, _chf.spanCount, false);
+            _visuSolid = new EffectMesh.Data(_dd.RenderContext, 4, 2, _chf.spanCount, false);
             using var builder = _visuSolid.Map(_dd.RenderContext);
+            var quad = new AnalyticMeshQuad(builder);
 
             var timer = Timer.Create();
             var wx = new Vector3(_chf.cs * 0.5f, 0, 0);
             var wz = new Vector3(0, 0, -_chf.cs * 0.5f);
             foreach (var (center, index) in EnumerateSpanPositions())
-                builder.Add(center, wx, wz, AreaColor(_chf.areas[index]));
+                quad.Add(center, wx, wz, AreaColor(_chf.areas[index]));
             Service.Log.Debug($"chf solid visualization build time: {timer.Value().TotalMilliseconds:f3}ms");
         }
         return _visuSolid;
     }
 
-    private EffectQuad.Data GetOrInitVisualizerDistance()
+    private EffectMesh.Data GetOrInitVisualizerDistance()
     {
         if (_visuDistance == null)
         {
-            _visuDistance = new EffectQuad.Data(_dd.RenderContext, _chf.spanCount, false);
+            _visuDistance = new EffectMesh.Data(_dd.RenderContext, 4, 2, _chf.spanCount, false);
             using var builder = _visuDistance.Map(_dd.RenderContext);
+            var quad = new AnalyticMeshQuad(builder);
 
             var timer = Timer.Create();
             var wx = new Vector3(_chf.cs * 0.5f, 0, 0);
@@ -193,33 +195,38 @@ public class DebugCompactHeightfield : DebugRecast
             foreach (var (center, index) in EnumerateSpanPositions())
             {
                 var c = _chf.dist[index] * dscale;
-                builder.Add(center, wx, wz, new(c, c, c, 1));
+                quad.Add(center, wx, wz, new(c, c, c, 0.7f));
             }
             Service.Log.Debug($"chf distance visualization build time: {timer.Value().TotalMilliseconds:f3}ms");
         }
         return _visuDistance;
     }
 
-    private EffectQuad.Data GetOrInitVisualizerRegions()
+    private EffectMesh.Data GetOrInitVisualizerRegions()
     {
         if (_visuRegion == null)
         {
-            _visuRegion = new EffectQuad.Data(_dd.RenderContext, _chf.spanCount, false);
+            _visuRegion = new EffectMesh.Data(_dd.RenderContext, 4, 2, _chf.spanCount, false);
             using var builder = _visuRegion.Map(_dd.RenderContext);
+            var quad = new AnalyticMeshQuad(builder);
 
             var timer = Timer.Create();
             var wx = new Vector3(_chf.cs * 0.5f, 0, 0);
             var wz = new Vector3(0, 0, -_chf.cs * 0.5f);
-            var storage = new EffectQuad.Instance[_chf.spanCount];
+            var storage = new EffectMesh.Instance[_chf.spanCount];
             var offsets = new int[_regionsNumSpans.Length];
             foreach (var (center, index) in EnumerateSpanPositions())
             {
                 var reg = _chf.spans[index].reg & ~RcConstants.RC_BORDER_REG;
                 var off = offsets[reg]++;
-                storage[_regionsStartOffset[reg] + off] = new() { Center = center, WorldX = wx, WorldY = wz, Color = RegionColor(reg) };
+                storage[_regionsStartOffset[reg] + off] = quad.BuildInstance(center, wx, wz, RegionColor(reg));
             }
-            foreach (ref var i in storage.AsSpan())
-                builder.Add(ref i);
+            int i = 0;
+            foreach (ref var inst in storage.AsSpan())
+            {
+                builder.AddInstance(inst);
+                builder.AddMesh(quad.FirstVertex, quad.FirstPrimitive, quad.NumPrimitives, i++, 1);
+            }
 
             Service.Log.Debug($"chf region visualization build time: {timer.Value().TotalMilliseconds:f3}ms");
         }
@@ -228,13 +235,15 @@ public class DebugCompactHeightfield : DebugRecast
 
     private void VisualizeSolid()
     {
-        _dd.EffectQuad.Draw(_dd.RenderContext, GetOrInitVisualizerSolid());
+        _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
+        GetOrInitVisualizerSolid().DrawAll(_dd.RenderContext);
     }
 
     private void VisualizeSolidCell(int x, int z, bool showConnections)
     {
         ref var cell = ref _chf.cells[z * _chf.width + x];
-        _dd.EffectQuad.DrawSubset(_dd.RenderContext, GetOrInitVisualizerSolid(), cell.index, cell.count);
+        _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
+        GetOrInitVisualizerSolid().DrawSubset(_dd.RenderContext, cell.index, cell.count);
         if (showConnections)
             for (int i = 0; i < cell.count; ++i)
                 VisualizeConnections(x, z, cell.index + i);
@@ -242,26 +251,34 @@ public class DebugCompactHeightfield : DebugRecast
 
     private void VisualizeSolidSpan(int x, int z, int spanIndex, bool showConnections)
     {
-        _dd.EffectQuad.DrawSubset(_dd.RenderContext, GetOrInitVisualizerSolid(), spanIndex, 1);
+        _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
+        GetOrInitVisualizerSolid().DrawSubset(_dd.RenderContext, spanIndex, 1);
         if (showConnections)
             VisualizeConnections(x, z, spanIndex);
     }
 
-    private void VisualizeDistance() => _dd.EffectQuad.Draw(_dd.RenderContext, GetOrInitVisualizerDistance());
+    private void VisualizeDistance()
+    {
+        _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
+        GetOrInitVisualizerDistance().DrawAll(_dd.RenderContext);
+    }
 
     private void VisualizeRegions()
     {
-        _dd.EffectQuad.Draw(_dd.RenderContext, GetOrInitVisualizerRegions());
+        _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
+        GetOrInitVisualizerRegions().DrawAll(_dd.RenderContext);
     }
 
     private void VisualizeRegion(int reg)
     {
-        _dd.EffectQuad.DrawSubset(_dd.RenderContext, GetOrInitVisualizerRegions(), _regionsStartOffset[reg], _regionsNumSpans[reg]);
+        _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
+        GetOrInitVisualizerRegions().DrawSubset(_dd.RenderContext, _regionsStartOffset[reg], _regionsNumSpans[reg]);
     }
 
     private void VisualizeRegionSpan(int index)
     {
-        _dd.EffectQuad.DrawSubset(_dd.RenderContext, GetOrInitVisualizerRegions(), index, 1);
+        _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
+        GetOrInitVisualizerRegions().DrawSubset(_dd.RenderContext, index, 1);
     }
 
     private void VisualizeConnections(int x, int z, int spanIndex)

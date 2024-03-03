@@ -16,7 +16,6 @@ public unsafe class DebugDrawer : IDisposable
     public RenderTarget? RenderTarget { get; private set; }
     public EffectMesh EffectMesh { get; init; }
     public EffectBox EffectBox { get; init; }
-    public EffectQuad EffectQuad { get; init; }
 
     public SharpDX.Matrix ViewProj { get; private set; }
     public SharpDX.Matrix Proj { get; private set; }
@@ -38,13 +37,11 @@ public unsafe class DebugDrawer : IDisposable
     {
         EffectMesh = new(RenderContext);
         EffectBox = new(RenderContext);
-        EffectQuad = new(RenderContext);
         _engineCoreSingleton = Marshal.GetDelegateForFunctionPointer<GetEngineCoreSingletonDelegate>(Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 48 8D 4C 24 ?? 48 89 4C 24 ?? 4C 8D 4D ?? 4C 8D 44 24 ??"))();
     }
 
     public void Dispose()
     {
-        EffectQuad.Dispose();
         EffectBox.Dispose();
         EffectMesh.Dispose();
         RenderTarget?.Dispose();
@@ -63,7 +60,6 @@ public unsafe class DebugDrawer : IDisposable
 
         EffectMesh.UpdateConstants(RenderContext, new() { ViewProj = ViewProj, CameraPos = new(CameraWorld.M41, CameraWorld.M42, CameraWorld.M43), LightingWorldYThreshold = 55.Degrees().Cos() });
         EffectBox.UpdateConstants(RenderContext, new() { ViewProj = ViewProj });
-        EffectQuad.UpdateConstants(RenderContext, new() { ViewProj = ViewProj });
 
         if (RenderTarget == null || RenderTarget.Size != ViewportSize)
         {

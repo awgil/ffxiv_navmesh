@@ -10,6 +10,7 @@ class DebugNavmeshManager : IDisposable
 {
     private NavmeshManager _manager;
     private FollowPath _path;
+    private AsyncMoveRequest _asyncMove;
     private UITree _tree = new();
     private DebugDrawer _dd;
     private DebugGameCollision _coll;
@@ -18,10 +19,11 @@ class DebugNavmeshManager : IDisposable
     private DebugDetourNavmesh? _drawNavmesh;
     private DebugVoxelMap? _debugVoxelMap;
 
-    public DebugNavmeshManager(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, FollowPath path)
+    public DebugNavmeshManager(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, FollowPath path, AsyncMoveRequest move)
     {
         _manager = manager;
         _path = path;
+        _asyncMove = move;
         _dd = dd;
         _coll = coll;
         _manager.OnNavmeshChanged += OnNavmeshChanged;
@@ -36,7 +38,7 @@ class DebugNavmeshManager : IDisposable
 
     public void Draw()
     {
-        var progress = _manager.TaskProgress;
+        var progress = _manager.LoadTaskProgress;
         if (progress >= 0)
         {
             ImGui.ProgressBar(progress, new(200, 0));
@@ -70,13 +72,13 @@ class DebugNavmeshManager : IDisposable
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
         ImGui.Checkbox("Align camera to movement direction", ref _path.AlignCamera);
         ImGui.Checkbox("Auto load mesh when changing zone", ref _manager.AutoLoad);
-        ImGui.Checkbox("Use raycasts", ref _path.UseRaycasts);
-        ImGui.Checkbox("Use string pulling", ref _path.UseStringPulling);
+        ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
+        ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);
         if (ImGui.Button("Pathfind to target using navmesh"))
-            _path.MoveTo(_target);
+            _asyncMove.MoveTo(_target, false);
         ImGui.SameLine();
         if (ImGui.Button("Pathfind to target using volume"))
-            _path.FlyTo(_target);
+            _asyncMove.MoveTo(_target, true);
 
         // draw current path
         if (player != null)
@@ -94,26 +96,26 @@ class DebugNavmeshManager : IDisposable
 
         _manager.Navmesh.Mesh.CalcTileLoc(playerPos.SystemToRecast(), out var playerTileX, out var playerTileZ);
         _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
-        _tree.LeafNode($"Player poly: {_path.Query?.FindNearestMeshPoly(playerPos):X}");
-        _tree.LeafNode($"Target poly: {_path.Query?.FindNearestMeshPoly(_target):X}");
+        _tree.LeafNode($"Player poly: {_manager.Query?.FindNearestMeshPoly(playerPos):X}");
+        _tree.LeafNode($"Target poly: {_manager.Query?.FindNearestMeshPoly(_target):X}");
 
-        if (_path.Query != null)
+        if (_manager.Query != null)
         {
-            var playerVoxel = _path.Query.FindNearestVolumeVoxel(playerPos);
+            var playerVoxel = _manager.Query.FindNearestVolumeVoxel(playerPos);
             if (_tree.LeafNode($"Player voxel: {playerVoxel:X}###playervoxel").SelectedOrHovered && playerVoxel != VoxelMap.InvalidVoxel)
                 _debugVoxelMap?.VisualizeVoxel(playerVoxel);
-            var targetVoxel = _path.Query.FindNearestVolumeVoxel(_target);
+            var targetVoxel = _manager.Query.FindNearestVolumeVoxel(_target);
             if (_tree.LeafNode($"Target voxel: {targetVoxel:X}###targetvoxel").SelectedOrHovered && targetVoxel != VoxelMap.InvalidVoxel)
                 _debugVoxelMap?.VisualizeVoxel(targetVoxel);
         }
 
-        _drawNavmesh ??= new(_manager.Navmesh.Mesh, _path.Query?.MeshQuery, _tree, _dd);
+        _drawNavmesh ??= new(_manager.Navmesh.Mesh, _manager.Query?.MeshQuery, _tree, _dd);
         _drawNavmesh.Draw();
-        _debugVoxelMap ??= new(_manager.Navmesh.Volume, _path.Query?.VolumeQuery, _tree, _dd);
+        _debugVoxelMap ??= new(_manager.Navmesh.Volume, _manager.Query?.VolumeQuery, _tree, _dd);
         _debugVoxelMap.Draw();
     }
 
-    private void OnNavmeshChanged(Navmesh? navmesh)
+    private void OnNavmeshChanged(Navmesh? navmesh, NavmeshQuery? query)
     {
         _drawNavmesh?.Dispose();
         _drawNavmesh = null;

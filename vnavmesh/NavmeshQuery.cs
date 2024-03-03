@@ -3,6 +3,7 @@ using Navmesh.NavVolume;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 
 namespace Navmesh;
 
@@ -24,7 +25,7 @@ public class NavmeshQuery
         VolumeQuery = new(navmesh.Volume);
     }
 
-    public List<Vector3> PathfindMesh(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling)
+    public List<Vector3> PathfindMesh(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling, CancellationToken cancel)
     {
         var startRef = FindNearestMeshPoly(from);
         var endRef = FindNearestMeshPoly(to);
@@ -70,7 +71,7 @@ public class NavmeshQuery
         }
     }
 
-    public List<Vector3> PathfindVolume(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling)
+    public List<Vector3> PathfindVolume(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling, CancellationToken cancel)
     {
         var startVoxel = FindNearestVolumeVoxel(from);
         var endVoxel = FindNearestVolumeVoxel(to);
@@ -82,7 +83,7 @@ public class NavmeshQuery
         }
 
         var timer = Timer.Create();
-        var voxelPath = VolumeQuery.FindPath(startVoxel, endVoxel, from, to, useRaycast, false); // TODO: do we need intermediate points for string-pulling algo?
+        var voxelPath = VolumeQuery.FindPath(startVoxel, endVoxel, from, to, useRaycast, false, cancel); // TODO: do we need intermediate points for string-pulling algo?
         if (voxelPath.Count == 0)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startVoxel:X}) to {to} ({endVoxel:X}): failed to find path on volume");

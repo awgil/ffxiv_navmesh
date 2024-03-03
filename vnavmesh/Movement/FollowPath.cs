@@ -8,17 +8,11 @@ public class FollowPath : IDisposable
 {
     public bool MovementAllowed = true;
     public bool AlignCamera = false;
-    public bool UseRaycasts = true;
-    public bool UseStringPulling = true;
+    public bool IgnoreDeltaY = false;
     public float Tolerance = 0.5f;
-
-    public NavmeshQuery? Query => _query;
-    public IReadOnlyList<Vector3> Waypoints => _waypoints;
+    public List<Vector3> Waypoints = new();
 
     private NavmeshManager _manager;
-    private NavmeshQuery? _query;
-    private bool _flying;
-    private List<Vector3> _waypoints = new();
     private OverrideCamera _camera = new();
     private OverrideMovement _movement = new();
 
@@ -26,7 +20,7 @@ public class FollowPath : IDisposable
     {
         _manager = manager;
         _manager.OnNavmeshChanged += OnNavmeshChanged;
-        OnNavmeshChanged(_manager.Navmesh);
+        OnNavmeshChanged(_manager.Navmesh, _manager.Query);
     }
 
     public void Dispose()
@@ -42,17 +36,17 @@ public class FollowPath : IDisposable
         if (player == null)
             return;
 
-        while (_waypoints.Count > 0)
+        while (Waypoints.Count > 0)
         {
-            var toNext = _waypoints[0] - player.Position;
-            if (!_flying)
+            var toNext = Waypoints[0] - player.Position;
+            if (IgnoreDeltaY)
                 toNext.Y = 0;
             if (toNext.LengthSquared() > Tolerance * Tolerance)
                 break;
-            _waypoints.RemoveAt(0);
+            Waypoints.RemoveAt(0);
         }
 
-        if (_waypoints.Count == 0)
+        if (Waypoints.Count == 0)
         {
             _movement.Enabled = _camera.Enabled = false;
             _camera.SpeedH = _camera.SpeedV = default;
@@ -61,7 +55,7 @@ public class FollowPath : IDisposable
         else
         {
             _movement.Enabled = MovementAllowed;
-            _movement.DesiredPosition = _waypoints[0];
+            _movement.DesiredPosition = Waypoints[0];
             _camera.Enabled = AlignCamera;
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
@@ -69,31 +63,16 @@ public class FollowPath : IDisposable
         }
     }
 
-    public void MoveTo(Vector3 destination)
+    public void Stop() => Waypoints.Clear();
+
+    public void Move(List<Vector3> waypoints, bool ignoreDeltaY)
     {
-        var player = Service.ClientState.LocalPlayer;
-        if (player == null || _query == null)
-            return;
-        _waypoints = _query.PathfindMesh(player.Position, destination, UseRaycasts, UseStringPulling);
-        _flying = false;
+        Waypoints = waypoints;
+        IgnoreDeltaY = ignoreDeltaY;
     }
 
-    public void FlyTo(Vector3 destination)
+    private void OnNavmeshChanged(Navmesh? navmesh, NavmeshQuery? query)
     {
-        var player = Service.ClientState.LocalPlayer;
-        if (player == null || _query == null)
-            return;
-        _waypoints = _query.PathfindVolume(player.Position, destination, UseRaycasts, UseStringPulling);
-        _flying = true;
-    }
-
-    public void Stop() => _waypoints.Clear();
-
-    private void OnNavmeshChanged(Navmesh? navmesh)
-    {
-        _query = null;
-        _waypoints.Clear();
-        if (navmesh != null)
-            _query = new(navmesh);
+        Waypoints.Clear();
     }
 }

@@ -12,17 +12,18 @@ namespace Navmesh
         public IPCProvider(NavmeshManager navmeshManager, FollowPath followPath, MainWindow mainWindow)
         {
             Register("Nav.IsReady", () => navmeshManager.Navmesh != null);
-            Register("Nav.BuildProgress", () => navmeshManager.TaskProgress);
+            Register("Nav.BuildProgress", () => navmeshManager.LoadTaskProgress);
             Register("Nav.Reload", () => navmeshManager.Reload(true));
             Register("Nav.Rebuild", () => navmeshManager.Reload(false));
+            Register("Nav.Pathfind", (Vector3 from, Vector3 to, bool fly) => navmeshManager.QueryPath(from, to, fly));
             Register("Nav.IsAutoLoad", () => navmeshManager.AutoLoad);
             Register("Nav.SetAutoLoad", (bool v) => navmeshManager.AutoLoad = v);
 
-            Register("Query.Mesh.NearestPoint", (Vector3 p, float halfExtentXZ, float halfExtentY) => followPath.Query?.FindNearestPointOnMesh(p, halfExtentXZ, halfExtentY));
-            Register("Query.Mesh.PointOnFloor", (Vector3 p, float halfExtentXZ) => followPath.Query?.FindPointOnFloor(p, halfExtentXZ));
+            Register("Query.Mesh.NearestPoint", (Vector3 p, float halfExtentXZ, float halfExtentY) => navmeshManager.Query?.FindNearestPointOnMesh(p, halfExtentXZ, halfExtentY));
+            Register("Query.Mesh.PointOnFloor", (Vector3 p, float halfExtentXZ) => navmeshManager.Query?.FindPointOnFloor(p, halfExtentXZ));
 
-            Register<Vector3>("Path.MoveTo", followPath.MoveTo);
-            Register<Vector3>("Path.FlyTo", followPath.FlyTo);
+            Register("Path.MoveTo", (List<Vector3> waypoints) => followPath.Move(waypoints, true));
+            Register("Path.FlyTo", (List<Vector3> waypoints) => followPath.Move(waypoints, false));
             Register("Path.Stop", followPath.Stop);
             Register("Path.IsRunning", () => followPath.Waypoints.Count > 0);
             Register("Path.NumWaypoints", () => followPath.Waypoints.Count);

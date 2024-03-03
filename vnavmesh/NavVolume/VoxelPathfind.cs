@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace Navmesh.NavVolume;
 
@@ -36,11 +37,11 @@ public class VoxelPathfind
         _volume = volume;
     }
 
-    public List<(ulong voxel, Vector3 p)> FindPath(ulong fromVoxel, ulong toVoxel, Vector3 fromPos, Vector3 toPos, bool useRaycast, bool returnIntermediatePoints)
+    public List<(ulong voxel, Vector3 p)> FindPath(ulong fromVoxel, ulong toVoxel, Vector3 fromPos, Vector3 toPos, bool useRaycast, bool returnIntermediatePoints, CancellationToken cancel)
     {
         _useRaycast = useRaycast;
         Start(fromVoxel, toVoxel, fromPos, toPos);
-        Execute();
+        Execute(cancel);
         return BuildPathToVisitedNode(_bestNodeIndex, returnIntermediatePoints);
     }
 
@@ -65,10 +66,15 @@ public class VoxelPathfind
         //Service.Log.Debug($"volume pathfind: {fromPos} ({fromVoxel:X}) to {toPos} ({toVoxel:X})");
     }
 
-    public void Execute(int maxSteps = 1000000)
+    public void Execute(CancellationToken cancel, int maxSteps = 1000000)
     {
-        while (maxSteps-- > 0 && ExecuteStep())
-            ;
+        for (int i = 0; i < maxSteps; ++i)
+        {
+            if (!ExecuteStep())
+                return;
+            if ((i & 0x3ff) == 0)
+                cancel.ThrowIfCancellationRequested();
+        }
     }
 
     // returns whether search is to be terminated; on success, first node of the open list would contain found goal

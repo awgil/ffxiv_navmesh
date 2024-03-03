@@ -1,26 +1,34 @@
 ﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Navmesh;
 
-// manager that loads navmesh matching current zone
+// manager that loads navmesh matching current zone and performs async pathfinding queries
 public class NavmeshManager : IDisposable
 {
     public bool AutoLoad = true; // whether we load/build mesh automatically when changing zone
-    public event Action<Navmesh?>? OnNavmeshChanged;
+    public bool UseRaycasts = true;
+    public bool UseStringPulling = true;
+    public event Action<Navmesh?, NavmeshQuery?>? OnNavmeshChanged;
     public Navmesh? Navmesh => _navmesh;
-    public float TaskProgress => _task != null ? _taskProgress : -1; // returns negative value if task is not running
+    public NavmeshQuery? Query => _query;
+    public float LoadTaskProgress => _loadTask != null ? _loadTaskProgress : -1; // returns negative value if task is not running
     public string CurrentKey => _lastKey;
 
     private DirectoryInfo _cacheDir;
     private NavmeshSettings _settings = new();
     private string _lastKey = "";
-    private Task<Navmesh>? _task;
-    private volatile float _taskProgress;
+    private Task<Navmesh>? _loadTask;
+    private volatile float _loadTaskProgress;
     private Navmesh? _navmesh;
+    private NavmeshQuery? _query;
+    private CancellationTokenSource? _queryCancelSource;
 
     public NavmeshManager(DirectoryInfo cacheDir)
     {
@@ -30,35 +38,37 @@ public class NavmeshManager : IDisposable
 
     public void Dispose()
     {
-        if (_task != null)
+        if (_loadTask != null)
         {
-            if (!_task.IsCompleted)
-                _task.Wait();
-            _task.Dispose();
-            _task = null;
+            if (!_loadTask.IsCompleted)
+                _loadTask.Wait();
+            _loadTask.Dispose();
+            _loadTask = null;
         }
         ClearState();
     }
 
     public void Update()
     {
-        if (_task != null)
+        if (_loadTask != null)
         {
-            if (!_task.IsCompleted)
+            if (!_loadTask.IsCompleted)
                 return; // async task is still in progress, do nothing; note that we don't want to start multiple concurrent tasks on rapid transitions
 
             Service.Log.Information($"Finishing transition to '{_lastKey}'");
             try
             {
-                _navmesh = _task.Result;
-                OnNavmeshChanged?.Invoke(_navmesh);
+                _navmesh = _loadTask.Result;
+                _query = new(_navmesh);
+                _queryCancelSource = new();
+                OnNavmeshChanged?.Invoke(_navmesh, _query);
             }
             catch (Exception ex)
             {
                 Service.Log.Error($"Failed to build navmesh: {ex}");
             }
-            _task.Dispose();
-            _task = null;
+            _loadTask.Dispose();
+            _loadTask = null;
         }
 
         var curKey = GetCurrentKey();
@@ -79,7 +89,7 @@ public class NavmeshManager : IDisposable
 
     public bool Reload(bool allowLoadFromCache)
     {
-        if (_task != null)
+        if (_loadTask != null)
         {
             Service.Log.Error($"Can't initiate reload - another task is already in progress");
             return false; // some task is already in progress...
@@ -91,10 +101,28 @@ public class NavmeshManager : IDisposable
             var scene = new SceneDefinition();
             scene.FillFromActiveLayout();
             var cacheKey = GetCacheKey(scene);
-            _taskProgress = 0;
-            _task = Task.Run(() => BuildNavmesh(scene, cacheKey, allowLoadFromCache));
+            _loadTaskProgress = 0;
+            _loadTask = Task.Run(() => BuildNavmesh(scene, cacheKey, allowLoadFromCache));
         }
         return true;
+    }
+
+    public Task<List<Vector3>>? QueryPath(Vector3 from, Vector3 to, bool flying)
+    {
+        var query = _query;
+        if (_queryCancelSource == null || query == null)
+        {
+            Service.Log.Error($"Can't initiate query - navmesh is not loaded");
+            return null;
+        }
+
+        var token = _queryCancelSource.Token;
+        var task = Task.Run(() =>
+        {
+            token.ThrowIfCancellationRequested();
+            return flying ? query.PathfindVolume(from, to, UseRaycasts, UseStringPulling, token) : query.PathfindMesh(from, to, UseRaycasts, UseStringPulling, token);
+        });
+        return task;
     }
 
     // if non-empty string is returned, active layout is ready
@@ -125,7 +153,12 @@ public class NavmeshManager : IDisposable
 
     private void ClearState()
     {
-        OnNavmeshChanged?.Invoke(null);
+        _queryCancelSource?.Cancel();
+        _queryCancelSource?.Dispose();
+        _queryCancelSource = null;
+
+        OnNavmeshChanged?.Invoke(null, null);
+        _query = null;
         _navmesh = null;
     }
 
@@ -157,7 +190,7 @@ public class NavmeshManager : IDisposable
             for (int x = 0; x < builder.NumTilesX; ++x)
             {
                 builder.BuildTile(x, z);
-                _taskProgress += deltaProgress;
+                _loadTaskProgress += deltaProgress;
             }
         }
 

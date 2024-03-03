@@ -154,7 +154,7 @@ public class NavmeshManager : IDisposable
     private void ClearState()
     {
         _queryCancelSource?.Cancel();
-        _queryCancelSource?.Dispose();
+        //_queryCancelSource?.Dispose(); - i don't think it's safe to call dispose at this point...
         _queryCancelSource = null;
 
         OnNavmeshChanged?.Invoke(null, null);

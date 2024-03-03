@@ -19,8 +19,3 @@
 -- theta* on mesh - easy?
 - jump / drop markup (offmesh connections?)
 - area transitions & high-level zone graph
-
-- volume map refactor:
-Zone: 959 (Mare Lamentorum)
-Starting XYZ -> -550.08856 132.49304 638.78754
-Ending XYZ ->  24.810400009155 21.935819625854 472.89755249023

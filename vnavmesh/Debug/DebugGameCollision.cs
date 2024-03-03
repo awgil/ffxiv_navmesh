@@ -95,7 +95,7 @@ public unsafe class DebugGameCollision : IDisposable
         {
             _meshDynamicBuilder.Dispose();
             _meshDynamicBuilder = null;
-            _dd.EffectMesh.Draw(_dd.RenderContext, _meshDynamicData);
+            _dd.EffectMesh?.Draw(_dd.RenderContext, _meshDynamicData);
         }
     }
 

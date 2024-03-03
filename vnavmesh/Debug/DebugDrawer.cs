@@ -14,8 +14,7 @@ public unsafe class DebugDrawer : IDisposable
 {
     public RenderContext RenderContext { get; init; } = new();
     public RenderTarget? RenderTarget { get; private set; }
-    public EffectMesh EffectMesh { get; init; }
-    public EffectBox EffectBox { get; init; }
+    public EffectMesh? EffectMesh { get; init; }
 
     public SharpDX.Matrix ViewProj { get; private set; }
     public SharpDX.Matrix Proj { get; private set; }
@@ -35,15 +34,20 @@ public unsafe class DebugDrawer : IDisposable
 
     public DebugDrawer()
     {
-        EffectMesh = new(RenderContext);
-        EffectBox = new(RenderContext);
+        try
+        {
+            EffectMesh = new(RenderContext);
+        }
+        catch (Exception ex)
+        {
+            Service.Log.Error($"Failed to set up renderer; some debug visualization will be unavailable: {ex}");
+        }
         _engineCoreSingleton = Marshal.GetDelegateForFunctionPointer<GetEngineCoreSingletonDelegate>(Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 48 8D 4C 24 ?? 48 89 4C 24 ?? 4C 8D 4D ?? 4C 8D 44 24 ??"))();
     }
 
     public void Dispose()
     {
-        EffectBox.Dispose();
-        EffectMesh.Dispose();
+        EffectMesh?.Dispose();
         RenderTarget?.Dispose();
         RenderContext.Dispose();
     }
@@ -58,8 +62,7 @@ public unsafe class DebugDrawer : IDisposable
         CameraAltitude = MathF.Asin(View.Column3.Y);
         ViewportSize = ReadVec2(_engineCoreSingleton + 0x1F4);
 
-        EffectMesh.UpdateConstants(RenderContext, new() { ViewProj = ViewProj, CameraPos = new(CameraWorld.M41, CameraWorld.M42, CameraWorld.M43), LightingWorldYThreshold = 55.Degrees().Cos() });
-        EffectBox.UpdateConstants(RenderContext, new() { ViewProj = ViewProj });
+        EffectMesh?.UpdateConstants(RenderContext, new() { ViewProj = ViewProj, CameraPos = new(CameraWorld.M41, CameraWorld.M42, CameraWorld.M43), LightingWorldYThreshold = 55.Degrees().Cos() });
 
         if (RenderTarget == null || RenderTarget.Size != ViewportSize)
         {

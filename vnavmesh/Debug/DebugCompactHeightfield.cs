@@ -235,12 +235,16 @@ public class DebugCompactHeightfield : DebugRecast
 
     private void VisualizeSolid()
     {
+        if (_dd.EffectMesh == null)
+            return;
         _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
         GetOrInitVisualizerSolid().DrawAll(_dd.RenderContext);
     }
 
     private void VisualizeSolidCell(int x, int z, bool showConnections)
     {
+        if (_dd.EffectMesh == null)
+            return;
         ref var cell = ref _chf.cells[z * _chf.width + x];
         _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
         GetOrInitVisualizerSolid().DrawSubset(_dd.RenderContext, cell.index, cell.count);
@@ -251,6 +255,8 @@ public class DebugCompactHeightfield : DebugRecast
 
     private void VisualizeSolidSpan(int x, int z, int spanIndex, bool showConnections)
     {
+        if (_dd.EffectMesh == null)
+            return;
         _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
         GetOrInitVisualizerSolid().DrawSubset(_dd.RenderContext, spanIndex, 1);
         if (showConnections)
@@ -259,24 +265,32 @@ public class DebugCompactHeightfield : DebugRecast
 
     private void VisualizeDistance()
     {
+        if (_dd.EffectMesh == null)
+            return;
         _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
         GetOrInitVisualizerDistance().DrawAll(_dd.RenderContext);
     }
 
     private void VisualizeRegions()
     {
+        if (_dd.EffectMesh == null)
+            return;
         _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
         GetOrInitVisualizerRegions().DrawAll(_dd.RenderContext);
     }
 
     private void VisualizeRegion(int reg)
     {
+        if (_dd.EffectMesh == null)
+            return;
         _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
         GetOrInitVisualizerRegions().DrawSubset(_dd.RenderContext, _regionsStartOffset[reg], _regionsNumSpans[reg]);
     }
 
     private void VisualizeRegionSpan(int index)
     {
+        if (_dd.EffectMesh == null)
+            return;
         _dd.EffectMesh.Bind(_dd.RenderContext, true, false);
         GetOrInitVisualizerRegions().DrawSubset(_dd.RenderContext, index, 1);
     }

@@ -138,7 +138,7 @@ public class DebugSolidHeightfield : DebugRecast
 
     private void Visualize()
     {
-        _dd.EffectMesh.Draw(_dd.RenderContext, GetOrInitVisualizer());
+        _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVisualizer());
     }
 
     private void VisualizeCell(int x, int z)
@@ -151,11 +151,11 @@ public class DebugSolidHeightfield : DebugRecast
             span = span.next;
         }
         if (numSpans > 0)
-            _dd.EffectMesh.DrawSubset(_dd.RenderContext, GetOrInitVisualizer(), _spanCellOffsets[x, z], numSpans);
+            _dd.EffectMesh?.DrawSubset(_dd.RenderContext, GetOrInitVisualizer(), _spanCellOffsets[x, z], numSpans);
     }
 
     private void VisualizeSpan(int spanIndex)
     {
-        _dd.EffectMesh.DrawSubset(_dd.RenderContext, GetOrInitVisualizer(), spanIndex, 1);
+        _dd.EffectMesh?.DrawSubset(_dd.RenderContext, GetOrInitVisualizer(), spanIndex, 1);
     }
 }

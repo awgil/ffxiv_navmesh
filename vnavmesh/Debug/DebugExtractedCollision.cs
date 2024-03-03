@@ -251,16 +251,18 @@ public class DebugExtractedCollision : IDisposable
 
     private void Visualize()
     {
-        _dd.EffectMesh.Draw(_dd.RenderContext, GetOrInitVisualizer());
+        _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVisualizer());
     }
 
     private void VisualizeMeshInstances(int meshIndex)
     {
-        _dd.EffectMesh.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), meshIndex);
+        _dd.EffectMesh?.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), meshIndex);
     }
 
     private void VisualizeMeshPart(SceneExtractor.Mesh mesh, int meshIndex, int partIndex)
     {
+        if (_dd.EffectMesh == null)
+            return;
         var visu = GetOrInitVisualizer();
         var visuMesh = visu.Meshes[meshIndex];
         visuMesh.FirstPrimitive += mesh.Parts.Take(partIndex).Sum(part => part.Primitives.Count);
@@ -272,6 +274,8 @@ public class DebugExtractedCollision : IDisposable
 
     private void VisualizeMeshInstance(int meshIndex, int instIndex)
     {
+        if (_dd.EffectMesh == null)
+            return;
         var visu = GetOrInitVisualizer();
         var visuMesh = visu.Meshes[meshIndex];
         visuMesh.FirstInstance += instIndex;

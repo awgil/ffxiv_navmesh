@@ -159,6 +159,8 @@ public class DebugVoxelMap : IDisposable
 
     private void VisualizeTile(VoxelMap.Tile tile)
     {
+        if (_dd.EffectMesh == null)
+            return;
         var data = GetOrInitVisualizer();
         if (_visuBoxes.TryGetValue(tile, out var b))
             _dd.EffectMesh.DrawSubset(_dd.RenderContext, data, b.firstBox, b.numBoxes);

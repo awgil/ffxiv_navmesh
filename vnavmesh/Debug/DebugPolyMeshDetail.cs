@@ -86,14 +86,14 @@ public class DebugPolyMeshDetail : DebugRecast
 
     public void Visualize()
     {
-        _dd.EffectMesh.Draw(_dd.RenderContext, GetOrInitVisualizer());
+        _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVisualizer());
         for (int i = 0; i < _mesh.nmeshes; ++i)
             VisualizeMeshEdges(i);
     }
 
     public void VisualizeMesh(int i)
     {
-        _dd.EffectMesh.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), i);
+        _dd.EffectMesh?.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), i);
         VisualizeMeshEdges(i);
     }
 

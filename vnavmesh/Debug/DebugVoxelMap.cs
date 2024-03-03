@@ -12,7 +12,7 @@ public class DebugVoxelMap : IDisposable
     private VoxelPathfind? _query;
     private UITree _tree;
     private DebugDrawer _dd;
-    private EffectBox.Data? _visu;
+    private EffectMesh.Data? _visu;
     private Dictionary<VoxelMap.Tile, (int firstBox, int numBoxes)> _visuBoxes = new();
     private int[] _numTilesPerLevel; // last is num leaves
 
@@ -119,13 +119,13 @@ public class DebugVoxelMap : IDisposable
         }
     }
 
-    private void InitTileVisualizer(VoxelMap.Tile tile, EffectBox.Data.Builder builder)
+    private void InitTileVisualizer(VoxelMap.Tile tile, EffectMesh.Data.Builder builder, AnalyticMeshBox box)
     {
-        var start = builder.NumBoxes;
+        var start = builder.NumInstances;
         if (tile.Level + 1 < _numTilesPerLevel.Length)
         {
             foreach (var sub in tile.Subdivision)
-                InitTileVisualizer(sub, builder);
+                InitTileVisualizer(sub, builder, box);
         }
         else
         {
@@ -134,24 +134,24 @@ public class DebugVoxelMap : IDisposable
                 if ((tile.Contents[i] & VoxelMap.VoxelOccupiedBit) != 0)
                 {
                     var bounds = tile.CalculateSubdivisionBounds(tile.LevelDesc.IndexToVoxel(i));
-                    var color = new Vector4(0.7f);
-                    builder.Add(bounds.min, bounds.max, color, color);
+                    box.Add(bounds.min, bounds.max, new(0.7f));
                 }
             }
         }
-        if (builder.NumBoxes > start)
-            _visuBoxes[tile] = (start, builder.NumBoxes - start);
+        if (builder.NumInstances > start)
+            _visuBoxes[tile] = (start, builder.NumInstances - start);
     }
 
-    private EffectBox.Data GetOrInitVisualizer()
+    private EffectMesh.Data GetOrInitVisualizer()
     {
         if (_visu == null)
         {
-            _visu = new(_dd.RenderContext, _numTilesPerLevel[_numTilesPerLevel.Length - 1], false);
+            _visu = new(_dd.RenderContext, 8, 12, _numTilesPerLevel[_numTilesPerLevel.Length - 1], false);
             using var builder = _visu.Map(_dd.RenderContext);
+            var box = new AnalyticMeshBox(builder);
 
             var timer = Timer.Create();
-            InitTileVisualizer(_vm.RootTile, builder);
+            InitTileVisualizer(_vm.RootTile, builder, box);
             Service.Log.Debug($"voxel map visualization build time: {timer.Value().TotalMilliseconds:f3}ms");
         }
         return _visu;
@@ -161,7 +161,7 @@ public class DebugVoxelMap : IDisposable
     {
         var data = GetOrInitVisualizer();
         if (_visuBoxes.TryGetValue(tile, out var b))
-            _dd.EffectBox.DrawSubset(_dd.RenderContext, data, b.firstBox, b.numBoxes);
+            _dd.EffectMesh.DrawSubset(_dd.RenderContext, data, b.firstBox, b.numBoxes);
     }
 
     private void VisualizeQuery()

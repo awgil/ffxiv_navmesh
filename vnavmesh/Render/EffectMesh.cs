@@ -123,7 +123,7 @@ public class EffectMesh : IDisposable
         // draw custom mesh; assumes both effect and data were bound
         public void DrawManual(RenderContext ctx, Mesh mesh) => ctx.Context.DrawIndexedInstanced(mesh.NumPrimitives * 3, mesh.NumInstances, mesh.FirstPrimitive * 3, mesh.FirstVertex, mesh.FirstInstance);
 
-        // Draw* should be called after EffectBox.Bind set up its state
+        // Draw* should be called after Bind set up its state
         public void DrawSubset(RenderContext ctx, int firstMesh, int numMeshes)
         {
             Bind(ctx);
@@ -270,7 +270,6 @@ public class EffectMesh : IDisposable
         ctx.Context.InputAssembler.InputLayout = _il;
         ctx.Context.VertexShader.Set(_vs);
         ctx.Context.VertexShader.SetConstantBuffer(0, _constantBuffer);
-        ctx.Context.GeometryShader.Set(null);
         if (wireframe)
             ctx.Context.Rasterizer.State = _rsWireframe;
         ctx.Context.PixelShader.Set(unlit ? _psUnlit : _ps);

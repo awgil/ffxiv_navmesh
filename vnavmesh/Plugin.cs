@@ -36,7 +36,7 @@ public sealed class Plugin : IDalamudPlugin
         _followPath = new(_navmeshManager);
         _asyncMove = new(_navmeshManager, _followPath);
         _wndMain = new(_navmeshManager, _followPath, _asyncMove);
-        _ipcProvider = new(_navmeshManager, _followPath, _wndMain);
+        _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain);
 
         WindowSystem.AddWindow(_wndMain);
         //_wndMain.IsOpen = true;

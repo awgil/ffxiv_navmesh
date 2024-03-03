@@ -61,7 +61,7 @@ public unsafe class DebugDrawer : IDisposable
         CameraAltitude = MathF.Asin(View.Column3.Y);
         ViewportSize = ReadVec2(_engineCoreSingleton + 0x1F4);
 
-        EffectMesh.UpdateConstants(RenderContext, new() { ViewProj = ViewProj, LightingWorldYThreshold = 55.Degrees().Cos() });
+        EffectMesh.UpdateConstants(RenderContext, new() { ViewProj = ViewProj, CameraPos = new(CameraWorld.M41, CameraWorld.M42, CameraWorld.M43), LightingWorldYThreshold = 55.Degrees().Cos() });
         EffectBox.UpdateConstants(RenderContext, new() { ViewProj = ViewProj });
         EffectQuad.UpdateConstants(RenderContext, new() { ViewProj = ViewProj });
 

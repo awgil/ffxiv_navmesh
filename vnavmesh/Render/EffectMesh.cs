@@ -21,6 +21,7 @@ public class EffectMesh : IDisposable
     public struct Constants
     {
         public Matrix ViewProj;
+        public Vector3 CameraPos;
         public float LightingWorldYThreshold; // to match recast demo, this should be equal to cos of max walkable angle
     }
 
@@ -141,7 +142,6 @@ public class EffectMesh : IDisposable
     private SharpDX.Direct3D11.Buffer _constantBuffer;
     private InputLayout _il;
     private VertexShader _vs;
-    private GeometryShader _gs;
     private PixelShader _ps;
     private RasterizerState _rsWireframe;
 
@@ -163,19 +163,15 @@ public class EffectMesh : IDisposable
 
             struct VSOutput
             {
-                float3 worldPos : Position;
+                float3 relPos : Position;
                 float4 color : Color;
-            };
-
-            struct GSOutput
-            {
                 float4 projPos : SV_Position;
-                float4 color : Color;
             };
 
             struct Constants
             {
                 float4x4 viewProj;
+                float3 cameraPos;
                 float lightingWorldYThreshold;
             };
             Constants k : register(c0);
@@ -187,20 +183,18 @@ public class EffectMesh : IDisposable
                 float wx = dot(lp, i.worldColX);
                 float wy = dot(lp, i.worldColY);
                 float wz = dot(lp, i.worldColZ);
-                res.worldPos = float3(wx, wy, wz);
+                res.relPos = float3(wx, wy, wz) - k.cameraPos;
                 res.color = i.color;
+                res.projPos = mul(float4(wx, wy, wz, 1), k.viewProj);
                 return res;
             }
 
-            [maxvertexcount(3)]
-            void gs(triangle VSOutput input[3], inout TriangleStream<GSOutput> output)
+            float4 ps(VSOutput input) : SV_Target
             {
-                float3 a = input[0].worldPos;
-                float3 b = input[1].worldPos;
-                float3 c = input[2].worldPos;
-                float3 ab = b - a;
-                float3 bc = c - b;
-                float3 normal = normalize(cross(ab, bc));
+                // calculate world-space triangle normal
+                float3 ab = ddx(input.relPos);
+                float3 ac = ddy(input.relPos);
+                float3 normal = normalize(cross(ab, ac));
 
                 // lighting calculations are taken from recast demo
                 float tint = 0.216 * (2 + normal.x + normal.z);
@@ -208,23 +202,10 @@ public class EffectMesh : IDisposable
                 if (-normal.y < k.lightingWorldYThreshold)
                     lighting = /*float3(0,0,0);*/lerp(lighting, float3(0.45, 0.15, 0), 0.4);
 
-                GSOutput v;
-                v.color = input[0].color;
-                v.color.rgb *= lighting;
-                v.color.a *= 0.7;
+                float4 color = input.color;
+                color.rgb *= lighting;
+                color.a *= 0.7;
 
-                v.projPos = mul(float4(a, 1), k.viewProj);
-                output.Append(v);
-                v.projPos = mul(float4(b, 1), k.viewProj);
-                output.Append(v);
-                v.projPos = mul(float4(c, 1), k.viewProj);
-                output.Append(v);
-
-                output.RestartStrip();
-            }
-
-            float4 ps(GSOutput input) : SV_Target
-            {
                 // to give some idea of depth, attenuate color by z-based 'fog'
                 //float fogStart = 0.1;
                 //float fogEnd = 1.25;
@@ -232,16 +213,12 @@ public class EffectMesh : IDisposable
                 //float fogFactor = input.projPos.w < 100 ? 0 : 1;
                 //float3 color = lerp(input.color.rgb, float3(0.3, 0.3, 0.32), fogFactor);
                 //return float4(color, input.color.a);
-                return input.color;
+                return color;
             }
             """;
         var vs = ShaderBytecode.Compile(shader, "vs", "vs_5_0");
         Service.Log.Debug($"VS compile: {vs.Message}");
         _vs = new(ctx.Device, vs.Bytecode);
-
-        var gs = ShaderBytecode.Compile(shader, "gs", "gs_5_0");
-        Service.Log.Debug($"GS compile: {gs.Message}");
-        _gs = new(ctx.Device, gs.Bytecode);
 
         var ps = ShaderBytecode.Compile(shader, "ps", "ps_5_0");
         Service.Log.Debug($"PS compile: {ps.Message}");
@@ -268,7 +245,6 @@ public class EffectMesh : IDisposable
         _constantBuffer.Dispose();
         _il.Dispose();
         _vs.Dispose();
-        _gs.Dispose();
         _ps.Dispose();
         _rsWireframe.Dispose();
     }
@@ -285,11 +261,11 @@ public class EffectMesh : IDisposable
         ctx.Context.InputAssembler.InputLayout = _il;
         ctx.Context.VertexShader.Set(_vs);
         ctx.Context.VertexShader.SetConstantBuffer(0, _constantBuffer);
-        ctx.Context.GeometryShader.Set(_gs);
-        ctx.Context.GeometryShader.SetConstantBuffer(0, _constantBuffer);
+        ctx.Context.GeometryShader.Set(null);
         if (wireframe)
             ctx.Context.Rasterizer.State = _rsWireframe;
         ctx.Context.PixelShader.Set(_ps);
+        ctx.Context.PixelShader.SetConstantBuffer(0, _constantBuffer);
     }
 
     // shortcut to bind + draw

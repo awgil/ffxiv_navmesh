@@ -11,7 +11,7 @@ namespace Navmesh;
 // individual tiles can be built concurrently
 public class NavmeshBuilder
 {
-    public RcTelemetry Telemetry = new();
+    public RcContext Telemetry = new();
     public NavmeshSettings Settings;
     public SceneExtractor Scene;
     public Vector3 BoundsMin;

@@ -1,4 +1,7 @@
-﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+﻿using Dalamud.Game.Gui.Dtr;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,6 +16,7 @@ namespace Navmesh;
 public class NavmeshManager : IDisposable
 {
     public bool AutoLoad = true; // whether we load/build mesh automatically when changing zone
+    public bool ShowDtrBar = true;
     public bool UseRaycasts = true;
     public bool UseStringPulling = true;
     public event Action<Navmesh?, NavmeshQuery?>? OnNavmeshChanged;
@@ -27,6 +31,7 @@ public class NavmeshManager : IDisposable
     private Task<Navmesh>? _loadTask;
     private volatile float _loadTaskProgress;
     private Navmesh? _navmesh;
+    private DtrBarEntry _dtrBarEntry;
     private NavmeshQuery? _query;
     private CancellationTokenSource? _queryCancelSource;
 
@@ -34,6 +39,7 @@ public class NavmeshManager : IDisposable
     {
         _cacheDir = cacheDir;
         cacheDir.Create(); // ensure directory exists
+        _dtrBarEntry = Service.DtrBar.Get("vnavmesh");
     }
 
     public void Dispose()
@@ -50,6 +56,16 @@ public class NavmeshManager : IDisposable
 
     public void Update()
     {
+        if (_dtrBarEntry.Shown = ShowDtrBar)
+        {
+            if (TaskProgress >= 0)
+                _dtrBarEntry.Text = new SeString(new TextPayload($"Mesh: {(int)(TaskProgress*100)}%"));
+            else if (Navmesh != null)
+                _dtrBarEntry.Text = new SeString(new TextPayload($"Mesh: Ready"));
+            else
+                _dtrBarEntry.Text = new SeString(new TextPayload($"Mesh: Not Ready"));
+        }
+
         if (_loadTask != null)
         {
             if (!_loadTask.IsCompleted)

@@ -8,12 +8,12 @@ namespace Navmesh;
 public class NavmeshRasterizer
 {
     private RcHeightfield _heightfield;
-    private RcTelemetry _telemetry;
+    private RcContext _telemetry;
     private float[] _vertices = new float[3 * 256];
     private int _walkableClimbThreshold; // if two spans have maximums within this number of voxels, their area is 'merged' (higher is selected)
     private float _walkableNormalThreshold; // triangle is considered 'walkable' if it's world-space normal's Y coordinate is >= this
 
-    public NavmeshRasterizer(RcHeightfield heightfield, Angle walkableMaxSlope, int walkableMaxClimb, RcTelemetry telemetry)
+    public NavmeshRasterizer(RcHeightfield heightfield, Angle walkableMaxSlope, int walkableMaxClimb, RcContext telemetry)
     {
         _heightfield = heightfield;
         _telemetry = telemetry;
@@ -68,7 +68,7 @@ public class NavmeshRasterizer
                         }
 
                         var areaId = walkable ? RcConstants.RC_WALKABLE_AREA : 0;
-                        RcRasterizations.RasterizeTriangle(_heightfield, _vertices, p.V1, p.V2, p.V3, areaId, _walkableClimbThreshold, _telemetry);
+                        RcRasterizations.RasterizeTriangle(_telemetry, _vertices, p.V1, p.V2, p.V3, areaId, _heightfield, _walkableClimbThreshold);
                     }
                 }
             }

@@ -34,8 +34,6 @@ public unsafe class DebugGameCollision : IDisposable
 
     private EffectMesh.Data _meshDynamicData;
     private EffectMesh.Data.Builder? _meshDynamicBuilder;
-    private EffectBox.Data _boxDynamicData;
-    private EffectBox.Data.Builder? _boxDynamicBuilder;
 
     private delegate bool RaycastDelegate(SceneWrapper* self, RaycastHit* result, ulong layerMask, RaycastParams* param);
     private Hook<RaycastDelegate>? _raycastHook;
@@ -43,9 +41,7 @@ public unsafe class DebugGameCollision : IDisposable
     public DebugGameCollision(DebugDrawer dd)
     {
         _dd = dd;
-
         _meshDynamicData = new(dd.RenderContext, 1024 * 1024, 1024 * 1024, 128 * 1024, true);
-        _boxDynamicData = new(dd.RenderContext, 16 * 1024, true);
 
         foreach (var s in Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
         {
@@ -57,8 +53,6 @@ public unsafe class DebugGameCollision : IDisposable
     public void Dispose()
     {
         _raycastHook?.Dispose();
-        _boxDynamicBuilder?.Dispose();
-        _boxDynamicData.Dispose();
         _meshDynamicBuilder?.Dispose();
         _meshDynamicData.Dispose();
     }
@@ -97,18 +91,11 @@ public unsafe class DebugGameCollision : IDisposable
 
     public void DrawVisualizers()
     {
-        if (_boxDynamicBuilder != null)
-        {
-            _boxDynamicBuilder.Dispose();
-            _boxDynamicBuilder = null;
-            _dd.EffectBox.Draw(_dd.RenderContext, _boxDynamicData);
-        }
-
         if (_meshDynamicBuilder != null)
         {
             _meshDynamicBuilder.Dispose();
             _meshDynamicBuilder = null;
-            _dd.EffectMesh.Draw(_dd.RenderContext, _meshDynamicData);
+            _dd.EffectMesh?.Draw(_dd.RenderContext, _meshDynamicData);
         }
     }
 
@@ -461,7 +448,7 @@ public unsafe class DebugGameCollision : IDisposable
 
         using var n = _tree.Node(tag);
         if (n.SelectedOrHovered)
-            VisualizeColliderMeshPCBNode(node, ref world, new(1, 1, 0, 1), objMatId, objMatId, _materialId, _materialMask);
+            VisualizeColliderMeshPCBNode(node, ref world, new(1, 1, 0, 0.7f), objMatId, objMatId, _materialId, _materialMask);
         if (!n.Opened)
             return;
 
@@ -519,20 +506,24 @@ public unsafe class DebugGameCollision : IDisposable
                         for (int i = 0; i < cast->Header->NumMeshes; ++i)
                         {
                             var elem = cast->Elements + i;
-                            VisualizeColliderMesh(elem->Mesh, new(0, 1, 0, 1), _materialId, _materialMask);
+                            VisualizeColliderMesh(elem->Mesh, new(0, 1, 0, 0.7f), _materialId, _materialMask);
                         }
                     }
                 }
                 break;
             case ColliderType.Mesh:
-                VisualizeColliderMesh((ColliderMesh*)coll, new(_streamedMeshes.Contains((nint)coll) ? 0 : 1, 1, 0, 1), _materialId, _materialMask);
+                VisualizeColliderMesh((ColliderMesh*)coll, new(_streamedMeshes.Contains((nint)coll) ? 0 : 1, 1, 0, 0.7f), _materialId, _materialMask);
                 break;
             case ColliderType.Box:
                 {
                     var cast = (ColliderBox*)coll;
                     //var boxOBB = new AABB() { Min = new(-1), Max = new(+1) };
                     //VisualizeOBB(ref boxOBB, ref cast->World, 0xff0000ff);
-                    GetDynamicBoxes().Add(ref cast->World, new(1, 0, 0, 1), new(1, 0, 0, 1));
+                    var render = GetDynamicMeshes();
+                    var box = new AnalyticMeshBox(render);
+                    var icnt = render.NumInstances;
+                    render.AddInstance(new(cast->World, new(1, 0, 0, 0.7f)));
+                    render.AddMesh(box.FirstVertex, box.FirstPrimitive, box.NumPrimitives, icnt, 1);
                 }
                 break;
             case ColliderType.Cylinder:
@@ -709,7 +700,6 @@ public unsafe class DebugGameCollision : IDisposable
     }
 
     private EffectMesh.Data.Builder GetDynamicMeshes() => _meshDynamicBuilder ??= _meshDynamicData.Map(_dd.RenderContext);
-    private EffectBox.Data.Builder GetDynamicBoxes() => _boxDynamicBuilder ??= _boxDynamicData.Map(_dd.RenderContext);
 
     private bool RaycastDetour(SceneWrapper* self, RaycastHit* result, ulong layerMask, RaycastParams* param)
     {

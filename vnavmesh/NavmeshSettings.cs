@@ -17,11 +17,11 @@ public class NavmeshSettings
         WalkableLowHeightSpans = 1 << 2,
     }
 
-    public float CellSize = 0.3f;
+    public float CellSize = 0.25f;
     public float CellHeight = 0.25f;
     public float AgentHeight = 2.0f;
     public float AgentRadius = 0.5f;
-    public float AgentMaxClimb = 0.8f; // consider web bridges in lost city of amdapor (h)
+    public float AgentMaxClimb = 0.75f; // consider web bridges in lost city of amdapor (h)
     public float AgentMaxSlopeDeg = 55f;
     public Filter Filtering = Filter.LowHangingObstacles | Filter.LedgeSpans | Filter.WalkableLowHeightSpans;
     public float RegionMinSize = 8;
@@ -32,7 +32,11 @@ public class NavmeshSettings
     public int PolyMaxVerts = 6;
     public float DetailSampleDist = 6f;
     public float DetailMaxSampleError = 1f;
-    public int TileSize = 512;
+
+    // we assume that bounds are constant -1024 to 1024 along each axis (since that's the quantization range of position in some packets)
+    // there is some code that relies on tiling being power-of-2
+    // current values mean 128x128x128 L1 tiles -> 16x16x16 L2 tiles -> 2x2x2 voxels
+    public int[] NumTiles = [16, 8, 8];
 
 
     public void Draw()
@@ -212,8 +216,17 @@ public class NavmeshSettings
         DrawConfigFloat(ref DetailMaxSampleError, 0.0f, 16.0f, 1.0f, "Detail Mesh: Max Sample Error", """
             The maximum distance the detail mesh surface should deviate from heightfield data. (For height detail only.) [Limit: >= 0] [Units: world]
             """); // TODO: verify that it's actually in voxels
-        DrawConfigInt(ref TileSize, 16, 1024, 16, "Tile size", """
-            The width/height size of tile on the xz-plane. [Limit: >= 0] [Units: voxels]
+        DrawConfigInt(ref NumTiles[0], 1, 32, 1, "L1 Tile count", """
+            Number of tiles per axis for first-level subdivision. Has to be power-of-2. [Limit: 1 <= value <= 32]
+            Affects both navmesh and nav volume.
+            """);
+        DrawConfigInt(ref NumTiles[1], 1, 32, 1, "L2 Tile count", """
+            Number of tiles per axis for second-level subdivision. Has to be power-of-2. [Limit: 1 <= value <= 32]
+            Affects only nav volume.
+            """);
+        DrawConfigInt(ref NumTiles[2], 1, 32, 1, "L3 Voxel count", """
+            Number of leaf voxels per axis per tile. Has to be power-of-2. [Limit: 1 <= value <= 32]
+            Affects only nav volume.
             """);
     }
 

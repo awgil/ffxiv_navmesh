@@ -46,18 +46,6 @@ public class SceneExtractor
     }
 
     public Dictionary<string, Mesh> Meshes { get; private set; } = new();
-    public Vector3 BoundsMin { get; private set; } = new(float.MaxValue);
-    public Vector3 BoundsMax { get; private set; } = new(float.MinValue);
-    public Vector3 PlaneBoundsMin = new(float.MaxValue);
-    public Vector3 PlaneBoundsMax = new(float.MinValue);
-    public Vector3 EffectiveBoundsMin => new(
-        Math.Max(PlaneBoundsMin.X < float.MaxValue ? PlaneBoundsMin.X : BoundsMin.X, -1024),
-        Math.Max(PlaneBoundsMin.Y < float.MaxValue ? PlaneBoundsMin.Y : BoundsMin.Y, -1024),
-        Math.Max(PlaneBoundsMin.Z < float.MaxValue ? PlaneBoundsMin.Z : BoundsMin.Z, -1024));
-    public Vector3 EffectiveBoundsMax => new(
-        Math.Min(PlaneBoundsMax.X > float.MinValue ? PlaneBoundsMax.X : BoundsMax.X, 1024),
-        Math.Min(PlaneBoundsMax.Y > float.MinValue ? PlaneBoundsMax.Y : BoundsMax.Y, 1024),
-        Math.Min(PlaneBoundsMax.Z > float.MinValue ? PlaneBoundsMax.Z : BoundsMax.Z, 1024));
 
     private const string _keyAnalyticBox = "<box>";
     private const string _keyAnalyticSphere = "<sphere>";
@@ -98,7 +86,6 @@ public class SceneExtractor
                 fixed (byte* data = &list.Data[0])
                 {
                     var header = (ColliderStreamed.FileHeader*)data;
-                    AddBounds(ref header->Bounds);
                     foreach (ref var entry in new Span<ColliderStreamed.FileEntry>(header + 1, header->NumMeshes))
                     {
                         var mesh = AddMesh($"{terr}/tr{entry.MeshId:d4}.pcb");
@@ -118,51 +105,6 @@ public class SceneExtractor
 
         foreach (var coll in scene.Colliders)
         {
-            if ((coll.matId & 0x202000) == 0x202000 && coll.type == FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Plane)
-            {
-                // bounding plane?
-                // we accept only planes that are properly aligned and cover (0,0) - TODO reconsider
-                var normal = Vector3.Transform(new(0, 0, 1), coll.transform.Rotation);
-                var localX = Vector3.Transform(new(1, 0, 0), coll.transform.Rotation);
-                var localY = Vector3.Transform(new(0, 1, 0), coll.transform.Rotation);
-                Service.Log.Info($"Potential collider: {coll.key:X}, n={normal}, lx={localX}, ly={localY}, t={coll.transform.Translation}, s={coll.transform.Scale}");
-                if (Math.Abs(normal.X) > 0.9999)
-                {
-                    bool coverOY = Math.Abs(localY.Y) > 0.9999 && Math.Abs(coll.transform.Translation.Y) < coll.transform.Scale.Y;
-                    bool coverOZ = Math.Abs(localX.Z) > 0.9999 && Math.Abs(coll.transform.Translation.Z) < coll.transform.Scale.X;
-                    if (coverOY && coverOZ)
-                    {
-                        if (normal.X < 0)
-                            PlaneBoundsMax.X = Math.Max(PlaneBoundsMax.X, coll.transform.Translation.X);
-                        else
-                            PlaneBoundsMin.X = Math.Min(PlaneBoundsMin.X, coll.transform.Translation.X);
-                    }
-                }
-                else if (Math.Abs(normal.Y) > 0.9999)
-                {
-                    bool coverOX = Math.Abs(localX.X) > 0.9999 ? Math.Abs(coll.transform.Translation.X) < coll.transform.Scale.X : Math.Abs(localY.X) > 0.9999 ? Math.Abs(coll.transform.Translation.X) < coll.transform.Scale.Y : false;
-                    bool coverOZ = Math.Abs(localX.Z) > 0.9999 ? Math.Abs(coll.transform.Translation.Z) < coll.transform.Scale.X : Math.Abs(localY.Z) > 0.9999 ? Math.Abs(coll.transform.Translation.Z) < coll.transform.Scale.Y : false;
-                    if (coverOX && coverOZ)
-                    {
-                        if (normal.Y < 0)
-                            PlaneBoundsMax.Y = Math.Max(PlaneBoundsMax.Y, coll.transform.Translation.Y);
-                        else
-                            PlaneBoundsMin.Y = Math.Min(PlaneBoundsMin.Y, coll.transform.Translation.Y);
-                    }
-                }
-                else if (Math.Abs(normal.Z) > 0.9999)
-                {
-                    bool coverOY = Math.Abs(localY.Y) > 0.9999 && Math.Abs(coll.transform.Translation.Y) < coll.transform.Scale.Y;
-                    bool coverOX = Math.Abs(localX.X) > 0.9999 && Math.Abs(coll.transform.Translation.X) < coll.transform.Scale.X;
-                    if (coverOY && coverOX)
-                    {
-                        if (normal.Z < 0)
-                            PlaneBoundsMax.Z = Math.Max(PlaneBoundsMax.Z, coll.transform.Translation.Z);
-                        else
-                            PlaneBoundsMin.Z = Math.Min(PlaneBoundsMin.Z, coll.transform.Translation.Z);
-                    }
-                }
-            }
             if ((coll.matId & 0x400) != 0)
                 continue; // TODO: reconsider... (this aims to filter out doors that are opened when you get near them, not sure whether it's the right condition)
 
@@ -245,7 +187,6 @@ public class SceneExtractor
     private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId, ulong matMask)
     {
         mesh.Instances.Add(new(id, worldTransform, worldBounds, ExtractMaterialFlags(matMask & matId), ExtractMaterialFlags(matMask & ~matId)));
-        AddBounds(ref worldBounds);
     }
 
     private static AABB CalculateBoxBounds(ref Matrix4x3 world)
@@ -294,12 +235,6 @@ public class SceneExtractor
             res.Max = Vector3.Max(res.Max, p);
         }
         return res;
-    }
-
-    private void AddBounds(ref AABB worldBB)
-    {
-        BoundsMin = Vector3.Min(BoundsMin, worldBB.Min);
-        BoundsMax = Vector3.Max(BoundsMax, worldBB.Max);
     }
 
     private unsafe void FillFromFileNode(List<MeshPart> parts, MeshPCB.FileNode* node)

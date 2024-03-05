@@ -4,22 +4,14 @@
 -- follow/target update
 - improve nearest search for blocked voxels to prefer voxels on correct side
 - per-zone custom markup (tighter borders? shapes to ignore?)
-- figure out max-climb and ch (max-climb should be 0.5wu, do we need an extra voxel?)
 - optimize voxelization - just rewrite this shit and add unittest to compare with recast
-- volume nav:
--- configurable voxelmap resolution
--- consider building equivalent of navmesh
---- do we even need any compact representation? connectivity sounds hard for 3d spans...
---- watershed-like partitioning - should be easy
---- contour tracing - moderate?
---- contour simplification - easy
---- building simple polys - moderate?
---- earcut triangulation - easy?
---- theta* on mesh - easy?
+- volume nav - consider building equivalent of navmesh
+-- do we even need any compact representation? connectivity sounds hard for 3d spans...
+-- watershed-like partitioning - should be easy
+-- contour tracing - moderate?
+-- contour simplification - easy
+-- building simple polys - moderate?
+-- earcut triangulation - easy?
+-- theta* on mesh - easy?
 - jump / drop markup (offmesh connections?)
 - area transitions & high-level zone graph
-
-- volume map refactor:
-Zone: 959 (Mare Lamentorum)
-Starting XYZ -> -550.08856,132.49304,638.78754
-Ending XYZ ->  24.810400009155,21.935819625854,472.89755249023

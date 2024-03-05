@@ -15,6 +15,8 @@ public sealed class Plugin : IDalamudPlugin
     private WindowSystem WindowSystem = new("vnavmesh");
     private NavmeshManager _navmeshManager;
     private FollowPath _followPath;
+    private AsyncMoveRequest _asyncMove;
+    private DTRProvider _dtrProvider;
     private MainWindow _wndMain;
     private IPCProvider _ipcProvider;
 
@@ -33,8 +35,10 @@ public sealed class Plugin : IDalamudPlugin
 
         _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
         _followPath = new(_navmeshManager);
-        _wndMain = new(_navmeshManager, _followPath);
-        _ipcProvider = new(_navmeshManager, _followPath, _wndMain);
+        _asyncMove = new(_navmeshManager, _followPath);
+        _dtrProvider = new(_navmeshManager);
+        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider);
+        _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain, _dtrProvider);
 
         WindowSystem.AddWindow(_wndMain);
         //_wndMain.IsOpen = true;
@@ -55,6 +59,7 @@ public sealed class Plugin : IDalamudPlugin
             /vnavmesh reload → reload current territory's navmesh from cache
             /vnavmesh rebuild → rebuild current territory's navmesh from scratch
             /vnavmesh aligncamera → toggle aligning camera to movement direction
+            /vnavmesh dtr → toggle dtr status
             """,
             ShowInHelp = true,
         });
@@ -71,6 +76,8 @@ public sealed class Plugin : IDalamudPlugin
 
         _ipcProvider.Dispose();
         _wndMain.Dispose();
+        _dtrProvider.Dispose();
+        _asyncMove.Dispose();
         _followPath.Dispose();
         _navmeshManager.Dispose();
     }
@@ -79,6 +86,8 @@ public sealed class Plugin : IDalamudPlugin
     {
         _navmeshManager.Update();
         _followPath.Update();
+        _asyncMove.Update();
+        _dtrProvider.Update();
     }
 
     private void OnCommand(string command, string arguments)
@@ -112,7 +121,7 @@ public sealed class Plugin : IDalamudPlugin
             case "movetarget":
                 var moveTarget = Service.TargetManager.Target;
                 if (moveTarget != null)
-                    _followPath.MoveTo(moveTarget.Position);
+                    _asyncMove.MoveTo(moveTarget.Position, false);
                 break;
             case "flyto":
                 if (args[1] == "flag")
@@ -127,13 +136,16 @@ public sealed class Plugin : IDalamudPlugin
             case "flytarget":
                 var flyTarget = Service.TargetManager.Target;
                 if (flyTarget != null)
-                    _followPath.FlyTo(flyTarget.Position);
+                    _asyncMove.MoveTo(flyTarget.Position, true);
                 break;
             case "stop":
                 _followPath.Stop();
                 break;
             case "aligncamera":
                 _followPath.AlignCamera ^= true;
+                break;
+            case "dtr":
+                _dtrProvider.ShowDtrBar ^= true;
                 break;
         }
     }
@@ -146,10 +158,7 @@ public sealed class Plugin : IDalamudPlugin
             float.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture),
             float.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture),
             float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture));
-        if (fly)
-            _followPath.FlyTo(origin + offset);
-        else
-            _followPath.MoveTo(origin + offset);
+        _asyncMove.MoveTo(origin + offset, fly);
     }
 
     private void MoveFlagCommand(bool fly)

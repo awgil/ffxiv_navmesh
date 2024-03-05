@@ -123,14 +123,14 @@ public class DebugPolyMesh : DebugRecast
 
     public void Visualize()
     {
-        _dd.EffectMesh.Draw(_dd.RenderContext, GetOrInitVisualizer());
+        _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVisualizer());
         for (int i = 0; i < _mesh.npolys; ++i)
             VisualizeEdges(i);
     }
 
     private void VisualizePolygon(int index)
     {
-        _dd.EffectMesh.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), index);
+        _dd.EffectMesh?.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), index);
         VisualizeEdges(index);
     }
 

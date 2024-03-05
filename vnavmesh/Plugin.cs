@@ -38,7 +38,7 @@ public sealed class Plugin : IDalamudPlugin
         _asyncMove = new(_navmeshManager, _followPath);
         _dtrProvider = new(_navmeshManager);
         _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider);
-        _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain);
+        _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain, _dtrProvider);
 
         WindowSystem.AddWindow(_wndMain);
         //_wndMain.IsOpen = true;
@@ -59,6 +59,7 @@ public sealed class Plugin : IDalamudPlugin
             /vnavmesh reload → reload current territory's navmesh from cache
             /vnavmesh rebuild → rebuild current territory's navmesh from scratch
             /vnavmesh aligncamera → toggle aligning camera to movement direction
+            /vnavmesh dtr → toggle dtr status
             """,
             ShowInHelp = true,
         });
@@ -138,6 +139,9 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "aligncamera":
                 _followPath.AlignCamera ^= true;
+                break;
+            case "dtr":
+                _dtrProvider.ShowDtrBar ^= true;
                 break;
         }
     }

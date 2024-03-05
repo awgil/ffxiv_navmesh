@@ -9,7 +9,7 @@ namespace Navmesh
     {
         private List<Action> _disposeActions = new();
 
-        public IPCProvider(NavmeshManager navmeshManager, FollowPath followPath, AsyncMoveRequest move, MainWindow mainWindow)
+        public IPCProvider(NavmeshManager navmeshManager, FollowPath followPath, AsyncMoveRequest move, MainWindow mainWindow, DTRProvider dtr)
         {
             RegisterFunc("Nav.IsReady", () => navmeshManager.Navmesh != null);
             RegisterFunc("Nav.BuildProgress", () => navmeshManager.LoadTaskProgress);
@@ -38,6 +38,9 @@ namespace Navmesh
 
             RegisterFunc("Window.IsOpen", () => mainWindow.IsOpen);
             RegisterAction("Window.SetOpen", (bool v) => mainWindow.IsOpen = v);
+
+            RegisterFunc("DTR.IsShown", () => dtr.ShowDtrBar);
+            RegisterAction("DTR.SetShown", (bool v) => dtr.ShowDtrBar = v);
         }
 
         public void Dispose()

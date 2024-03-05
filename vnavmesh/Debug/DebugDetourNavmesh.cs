@@ -263,8 +263,10 @@ public class DebugDetourNavmesh : DebugRecast
 
     private void VisualizeRoughPolygons(DtMeshTile tile, bool colorByArea)
     {
+        if (_dd.EffectMesh == null)
+            return;
         var visu = GetOrInitVisualizerRough(tile.index);
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         for (int i = 0; i < tile.data.header.polyCount; ++i)
             VisualizeRoughPolygon(tile, visu, tile.data.polys[i], colorByArea, false);
@@ -272,8 +274,10 @@ public class DebugDetourNavmesh : DebugRecast
 
     private void VisualizeRoughPolygon(DtMeshTile tile, DtPoly poly, bool colorByArea)
     {
+        if (_dd.EffectMesh == null)
+            return;
         var visu = GetOrInitVisualizerRough(tile.index);
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         VisualizeRoughPolygon(tile, visu, poly, colorByArea, true);
     }
@@ -332,8 +336,10 @@ public class DebugDetourNavmesh : DebugRecast
 
     private void VisualizeDetailPolygons(DtMeshTile tile, bool colorByArea)
     {
+        if (_dd.EffectMesh == null)
+            return;
         var visu = GetOrInitVisualizerDetail(tile.index);
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         for (int i = 0; i < tile.data.header.detailMeshCount; ++i)
             VisualizeDetailSubmeshWithEdges(tile, visu, tile.data.polys[i], colorByArea, false);
@@ -347,11 +353,13 @@ public class DebugDetourNavmesh : DebugRecast
 
     private void VisualizeDetailSubmesh(DtMeshTile tile, int index, bool colorByArea)
     {
+        if (_dd.EffectMesh == null)
+            return;
         var poly = tile.data.polys[index];
         ref var sub = ref tile.data.detailMeshes[poly.index];
 
         var visu = GetOrInitVisualizerDetail(tile.index);
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         VisualizeDetailSubmeshWithEdges(tile, visu, poly, colorByArea, true);
 

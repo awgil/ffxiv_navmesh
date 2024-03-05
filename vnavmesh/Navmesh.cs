@@ -4,6 +4,7 @@ using DotRecast.Detour.Io;
 using Navmesh.NavVolume;
 using System;
 using System.IO;
+using System.Numerics;
 
 namespace Navmesh;
 
@@ -11,10 +12,10 @@ namespace Navmesh;
 public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
-    public static readonly uint Version = 5;
+    public static readonly uint Version = 6;
 
     // throws an exception on failure
-    public static Navmesh Deserialize(BinaryReader reader)
+    public static Navmesh Deserialize(BinaryReader reader, NavmeshSettings settings)
     {
         var magic = reader.ReadUInt32();
         var version = reader.ReadUInt32();
@@ -24,17 +25,9 @@ public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
         var meshLen = reader.ReadInt32();
         var mesh = new DtMeshSetReader().Read(new RcByteBuffer(reader.ReadBytes(meshLen)));
 
-        var minX = reader.ReadSingle();
-        var minY = reader.ReadSingle();
-        var minZ = reader.ReadSingle();
-        var maxX = reader.ReadSingle();
-        var maxY = reader.ReadSingle();
-        var maxZ = reader.ReadSingle();
-        var nx = reader.ReadInt32();
-        var ny = reader.ReadInt32();
-        var nz = reader.ReadInt32();
-        var voxels = reader.ReadBytes((nx * ny * nz + 7) >> 3);
-        var volume = new VoxelMap(new(minX, minY, minZ), new(maxX, maxY, maxZ), nx, ny, nz, voxels); // TODO: there's an extra allocation here we could avoid
+        var (min, max) = DeserializeBounds(reader);
+        var volume = new VoxelMap(min, max, settings);
+        DeserializeTile(reader, volume.RootTile);
         return new(mesh, volume);
     }
 
@@ -51,17 +44,60 @@ public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
         writer.Write(postMeshSizePos - meshSizePos - 4);
         writer.Seek(postMeshSizePos, SeekOrigin.Begin);
 
-        writer.Write(Volume.BoundsMin.X);
-        writer.Write(Volume.BoundsMin.Y);
-        writer.Write(Volume.BoundsMin.Z);
-        writer.Write(Volume.BoundsMax.X);
-        writer.Write(Volume.BoundsMax.Y);
-        writer.Write(Volume.BoundsMax.Z);
-        writer.Write(Volume.NumCellsX);
-        writer.Write(Volume.NumCellsY);
-        writer.Write(Volume.NumCellsZ);
-        var voxels = new byte[(Volume.Voxels.Length + 7) >> 3];
-        Volume.Voxels.CopyTo(voxels, 0); // TODO: fuck this :(
-        writer.Write(voxels);
+        SerializeBounds(writer, Volume.RootTile.BoundsMin, Volume.RootTile.BoundsMax);
+        SerializeTile(writer, Volume.RootTile);
+    }
+
+    private static unsafe void DeserializeTile(BinaryReader reader, VoxelMap.Tile tile)
+    {
+        var contentLength = reader.ReadInt32();
+        if (tile.Contents.Length != contentLength)
+            throw new Exception($"Unexpected tile content length");
+        fixed (ushort* p = &tile.Contents[0])
+            reader.Read(new Span<byte>(p, tile.Contents.Length * 2));
+
+        var numSubtiles = reader.ReadInt32();
+        for (int i = 0; i < numSubtiles; ++i)
+        {
+            var subBounds = DeserializeBounds(reader);
+            var subTile = new VoxelMap.Tile(tile.Owner, subBounds.min, subBounds.max, tile.Level + 1);
+            DeserializeTile(reader, subTile);
+            tile.Subdivision.Add(subTile);
+        }
+    }
+
+    private static unsafe void SerializeTile(BinaryWriter writer, VoxelMap.Tile tile)
+    {
+        writer.Write(tile.Contents.Length);
+        fixed (ushort* p = &tile.Contents[0])
+            writer.Write(new ReadOnlySpan<byte>(p, tile.Contents.Length * 2));
+
+        writer.Write(tile.Subdivision.Count);
+        foreach (var sub in tile.Subdivision)
+        {
+            SerializeBounds(writer, sub.BoundsMin, sub.BoundsMax);
+            SerializeTile(writer, sub);
+        }
+    }
+
+    private static (Vector3 min, Vector3 max) DeserializeBounds(BinaryReader reader)
+    {
+        var minX = reader.ReadSingle();
+        var minY = reader.ReadSingle();
+        var minZ = reader.ReadSingle();
+        var maxX = reader.ReadSingle();
+        var maxY = reader.ReadSingle();
+        var maxZ = reader.ReadSingle();
+        return (new(minX, minY, minZ), new(maxX, maxY, maxZ));
+    }
+
+    private static void SerializeBounds(BinaryWriter writer, Vector3 min, Vector3 max)
+    {
+        writer.Write(min.X);
+        writer.Write(min.Y);
+        writer.Write(min.Z);
+        writer.Write(max.X);
+        writer.Write(max.Y);
+        writer.Write(max.Z);
     }
 }

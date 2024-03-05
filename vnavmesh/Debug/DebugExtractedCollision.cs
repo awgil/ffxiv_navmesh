@@ -128,9 +128,6 @@ public class DebugExtractedCollision : IDisposable
         if (!nr.Opened)
             return;
 
-        _tree.LeafNode($"Geometry Bounds: {_extractor.BoundsMin:f3} - {_extractor.BoundsMax:f3}");
-        _tree.LeafNode($"Plane Bounds: {_extractor.PlaneBoundsMin:f3} - {_extractor.PlaneBoundsMax:f3}");
-        _tree.LeafNode($"Effective Bounds: {_extractor.EffectiveBoundsMin:f3} - {_extractor.EffectiveBoundsMax:f3}");
         int meshIndex = 0;
         foreach (var (name, mesh) in _extractor.Meshes)
         {
@@ -254,32 +251,36 @@ public class DebugExtractedCollision : IDisposable
 
     private void Visualize()
     {
-        _dd.EffectMesh.Draw(_dd.RenderContext, GetOrInitVisualizer());
+        _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVisualizer());
     }
 
     private void VisualizeMeshInstances(int meshIndex)
     {
-        _dd.EffectMesh.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), meshIndex);
+        _dd.EffectMesh?.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), meshIndex);
     }
 
     private void VisualizeMeshPart(SceneExtractor.Mesh mesh, int meshIndex, int partIndex)
     {
+        if (_dd.EffectMesh == null)
+            return;
         var visu = GetOrInitVisualizer();
         var visuMesh = visu.Meshes[meshIndex];
         visuMesh.FirstPrimitive += mesh.Parts.Take(partIndex).Sum(part => part.Primitives.Count);
         visuMesh.NumPrimitives = mesh.Parts[partIndex].Primitives.Count;
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         visu.DrawManual(_dd.RenderContext, visuMesh);
     }
 
     private void VisualizeMeshInstance(int meshIndex, int instIndex)
     {
+        if (_dd.EffectMesh == null)
+            return;
         var visu = GetOrInitVisualizer();
         var visuMesh = visu.Meshes[meshIndex];
         visuMesh.FirstInstance += instIndex;
         visuMesh.NumInstances = 1;
-        _dd.EffectMesh.Bind(_dd.RenderContext, false);
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         visu.DrawManual(_dd.RenderContext, visuMesh);
     }
@@ -306,7 +307,7 @@ public class DebugExtractedCollision : IDisposable
     }
 
     private Vector4 MeshColor(SceneExtractor.Mesh mesh) =>
-        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain) ? new(0, 1, 0, 0.75f) :
-        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromFileMesh) ? new(1, 1, 0, 0.75f) :
-        new(1, 0, 0, 0.75f);
+        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain) ? new(0, 1, 0, 0.55f) :
+        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromFileMesh) ? new(1, 1, 0, 0.55f) :
+        new(1, 0, 0, 0.55f);
 }

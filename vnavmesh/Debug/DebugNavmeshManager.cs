@@ -11,6 +11,7 @@ class DebugNavmeshManager : IDisposable
     private NavmeshManager _manager;
     private FollowPath _path;
     private AsyncMoveRequest _asyncMove;
+    private DTRProvider _dtr;
     private UITree _tree = new();
     private DebugDrawer _dd;
     private DebugGameCollision _coll;
@@ -19,11 +20,12 @@ class DebugNavmeshManager : IDisposable
     private DebugDetourNavmesh? _drawNavmesh;
     private DebugVoxelMap? _debugVoxelMap;
 
-    public DebugNavmeshManager(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, FollowPath path, AsyncMoveRequest move)
+    public DebugNavmeshManager(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr)
     {
         _manager = manager;
         _path = path;
         _asyncMove = move;
+        _dtr = dtr;
         _dd = dd;
         _coll = coll;
         _manager.OnNavmeshChanged += OnNavmeshChanged;
@@ -69,12 +71,10 @@ class DebugNavmeshManager : IDisposable
         ImGui.SameLine();
         ImGui.TextUnformatted($"Current target: {_target}");
 
+        ImGui.Checkbox("Show mesh status in DTR Bar", ref _dtr.ShowDtrBar);
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
         ImGui.Checkbox("Align camera to movement direction", ref _path.AlignCamera);
         ImGui.Checkbox("Auto load mesh when changing zone", ref _manager.AutoLoad);
-        ImGui.Checkbox("Show mesh status in DTR Bar", ref _manager.ShowDtrBar);
-        ImGui.Checkbox("Use raycasts", ref _path.UseRaycasts);
-        ImGui.Checkbox("Use string pulling", ref _path.UseStringPulling);
         ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
         ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);
         if (ImGui.Button("Pathfind to target using navmesh"))

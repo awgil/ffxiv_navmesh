@@ -16,6 +16,7 @@ public sealed class Plugin : IDalamudPlugin
     private NavmeshManager _navmeshManager;
     private FollowPath _followPath;
     private AsyncMoveRequest _asyncMove;
+    private DTRProvider _dtrProvider;
     private MainWindow _wndMain;
     private IPCProvider _ipcProvider;
 
@@ -35,7 +36,8 @@ public sealed class Plugin : IDalamudPlugin
         _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
         _followPath = new(_navmeshManager);
         _asyncMove = new(_navmeshManager, _followPath);
-        _wndMain = new(_navmeshManager, _followPath, _asyncMove);
+        _dtrProvider = new(_navmeshManager);
+        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider);
         _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain);
 
         WindowSystem.AddWindow(_wndMain);
@@ -73,6 +75,7 @@ public sealed class Plugin : IDalamudPlugin
 
         _ipcProvider.Dispose();
         _wndMain.Dispose();
+        _dtrProvider.Dispose();
         _asyncMove.Dispose();
         _followPath.Dispose();
         _navmeshManager.Dispose();
@@ -83,6 +86,7 @@ public sealed class Plugin : IDalamudPlugin
         _navmeshManager.Update();
         _followPath.Update();
         _asyncMove.Update();
+        _dtrProvider.Update();
     }
 
     private void OnCommand(string command, string arguments)

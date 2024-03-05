@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
-using XIVRunner;
 
 namespace Navmesh.Movement;
 
@@ -16,7 +15,6 @@ public class FollowPath : IDisposable
     private NavmeshManager _manager;
     private OverrideCamera _camera = new();
     private OverrideMovement _movement = new();
-    private OverrideAFK _overrideAFK = new();
 
     public FollowPath(NavmeshManager manager)
     {
@@ -56,7 +54,7 @@ public class FollowPath : IDisposable
         }
         else
         {
-            _overrideAFK.ResetTimers();
+            OverrideAFK.ResetTimers();
             _movement.Enabled = MovementAllowed;
             _movement.DesiredPosition = Waypoints[0];
             _camera.Enabled = AlignCamera;

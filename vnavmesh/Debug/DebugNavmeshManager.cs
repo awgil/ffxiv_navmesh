@@ -56,6 +56,7 @@ class DebugNavmeshManager : IDisposable
         }
         ImGui.SameLine();
         ImGui.TextUnformatted(_manager.CurrentKey);
+        ImGui.TextUnformatted($"Num pathfinding tasks: {(_manager.PathfindInProgress ? 1 : 0)} in progress, {_manager.NumQueuedPathfindRequests} queued");
 
         if (_manager.Navmesh == null || _manager.Query == null)
             return;

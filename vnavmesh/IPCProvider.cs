@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading;
 
 namespace Navmesh
 {
@@ -16,6 +17,9 @@ namespace Navmesh
             RegisterFunc("Nav.Reload", () => navmeshManager.Reload(true));
             RegisterFunc("Nav.Rebuild", () => navmeshManager.Reload(false));
             RegisterFunc("Nav.Pathfind", (Vector3 from, Vector3 to, bool fly) => navmeshManager.QueryPath(from, to, fly));
+            RegisterFunc("Nav.PathfindCancelable", (Vector3 from, Vector3 to, bool fly, CancellationToken cancel) => navmeshManager.QueryPath(from, to, fly, cancel));
+            RegisterFunc("Nav.PathfindInProgress", () => navmeshManager.PathfindInProgress);
+            RegisterFunc("Nav.PathfindNumQueued", () => navmeshManager.NumQueuedPathfindRequests);
             RegisterFunc("Nav.IsAutoLoad", () => navmeshManager.AutoLoad);
             RegisterAction("Nav.SetAutoLoad", (bool v) => navmeshManager.AutoLoad = v);
 
@@ -73,6 +77,13 @@ namespace Navmesh
         private void RegisterFunc<TRet, T1, T2, T3>(string name, Func<T1, T2, T3, TRet> func)
         {
             var p = Service.PluginInterface.GetIpcProvider<T1, T2, T3, TRet>("vnavmesh." + name);
+            p.RegisterFunc(func);
+            _disposeActions.Add(p.UnregisterFunc);
+        }
+
+        private void RegisterFunc<TRet, T1, T2, T3, T4>(string name, Func<T1, T2, T3, T4, TRet> func)
+        {
+            var p = Service.PluginInterface.GetIpcProvider<T1, T2, T3, T4, TRet>("vnavmesh." + name);
             p.RegisterFunc(func);
             _disposeActions.Add(p.UnregisterFunc);
         }

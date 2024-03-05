@@ -52,9 +52,11 @@ public sealed class Plugin : IDalamudPlugin
             /vnavmesh moveto <X> <Y> <Z> → move to raw coordinates
             /vnavmesh movedir <X> <Y> <Z> → move this many units over (relative to player facing)
             /vnavmesh movetarget → move to target's position
+            /vnavmesh moveflag → move to flag position
             /vnavmesh flyto <X> <Y> <Z> → fly to raw coordinates
             /vnavmesh flydir <X> <Y> <Z> → fly this many units over (relative to player facing)
             /vnavmesh flytarget → fly to target's position
+            /vnavmesh flyflag → fly to flag position
             /vnavmesh stop → stop all movement
             /vnavmesh reload → reload current territory's navmesh from cache
             /vnavmesh rebuild → rebuild current territory's navmesh from scratch
@@ -109,10 +111,7 @@ public sealed class Plugin : IDalamudPlugin
                 _navmeshManager.Reload(false);
                 break;
             case "moveto":
-                if (args[1] == "flag")
-                    MoveFlagCommand(false);
-                else if (args.Length > 3)
-                    MoveToCommand(args, false, false);
+                MoveToCommand(args, false, false);
                 break;
             case "movedir":
                 if (args.Length > 3)
@@ -123,11 +122,11 @@ public sealed class Plugin : IDalamudPlugin
                 if (moveTarget != null)
                     _asyncMove.MoveTo(moveTarget.Position, false);
                 break;
+            case "moveflag":
+                MoveFlagCommand(false);
+                break;
             case "flyto":
-                if (args[1] == "flag")
-                    MoveFlagCommand(true);
-                else if (args.Length > 3)
-                    MoveToCommand(args, false, true);
+                MoveToCommand(args, false, true);
                 break;
             case "flydir":
                 if (args.Length > 3)
@@ -137,6 +136,9 @@ public sealed class Plugin : IDalamudPlugin
                 var flyTarget = Service.TargetManager.Target;
                 if (flyTarget != null)
                     _asyncMove.MoveTo(flyTarget.Position, true);
+                break;
+            case "flyflag":
+                MoveFlagCommand(true);
                 break;
             case "stop":
                 _followPath.Stop();
@@ -163,15 +165,11 @@ public sealed class Plugin : IDalamudPlugin
 
     private void MoveFlagCommand(bool fly)
     {
-        if (_followPath.Query is null)
+        if (_navmeshManager.Query == null)
             return;
-        var pt = MapUtils.FlagToPoint(_followPath.Query);
-        if (pt is null)
+        var pt = MapUtils.FlagToPoint(_navmeshManager.Query);
+        if (pt == null)
             return;
-
-        if (fly)
-            _followPath.FlyTo(pt.Value);
-        else
-            _followPath.MoveTo(pt.Value);
+        _asyncMove.MoveTo(pt.Value, fly);
     }
 }

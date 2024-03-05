@@ -69,6 +69,9 @@ class DebugNavmeshManager : IDisposable
         if (ImGui.Button("Set target to target pos"))
             _target = player?.TargetObject?.Position ?? default;
         ImGui.SameLine();
+        if (ImGui.Button("Set target to flag position") && _path.Query != null)
+            _target = MapUtils.FlagToPoint(_path.Query) ?? default;
+        ImGui.SameLine();
         ImGui.TextUnformatted($"Current target: {_target}");
 
         ImGui.Checkbox("Show mesh status in DTR Bar", ref _dtr.ShowDtrBar);
@@ -104,6 +107,8 @@ class DebugNavmeshManager : IDisposable
 
         if (_manager.Query != null)
         {
+            var flagPoint = MapUtils.FlagToPoint(_path.Query);
+            _tree.LeafNode($"Flag location: {flagPoint}");
             var playerVoxel = _manager.Query.FindNearestVolumeVoxel(playerPos);
             if (_tree.LeafNode($"Player voxel: {playerVoxel:X}###playervoxel").SelectedOrHovered && playerVoxel != VoxelMap.InvalidVoxel)
                 _debugVoxelMap?.VisualizeVoxel(playerVoxel);

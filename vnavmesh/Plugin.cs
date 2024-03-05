@@ -109,7 +109,9 @@ public sealed class Plugin : IDalamudPlugin
                 _navmeshManager.Reload(false);
                 break;
             case "moveto":
-                if (args.Length > 3)
+                if (args[1] == "flag")
+                    MoveFlagCommand(false);
+                else if (args.Length > 3)
                     MoveToCommand(args, false, false);
                 break;
             case "movedir":
@@ -122,7 +124,9 @@ public sealed class Plugin : IDalamudPlugin
                     _asyncMove.MoveTo(moveTarget.Position, false);
                 break;
             case "flyto":
-                if (args.Length > 3)
+                if (args[1] == "flag")
+                    MoveFlagCommand(true);
+                else if (args.Length > 3)
                     MoveToCommand(args, false, true);
                 break;
             case "flydir":
@@ -155,5 +159,19 @@ public sealed class Plugin : IDalamudPlugin
             float.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture),
             float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture));
         _asyncMove.MoveTo(origin + offset, fly);
+    }
+
+    private void MoveFlagCommand(bool fly)
+    {
+        if (_followPath.Query is null)
+            return;
+        var pt = MapUtils.FlagToPoint(_followPath.Query);
+        if (pt is null)
+            return;
+
+        if (fly)
+            _followPath.FlyTo(pt.Value);
+        else
+            _followPath.MoveTo(pt.Value);
     }
 }

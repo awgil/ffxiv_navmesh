@@ -1,4 +1,5 @@
-﻿using Dalamud.Hooking;
+﻿using Dalamud.Game.Config;
+using Dalamud.Hooking;
 using Dalamud.Utility.Signatures;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using System;
@@ -43,6 +44,8 @@ public unsafe class OverrideMovement : IDisposable
     public Vector3 DesiredPosition;
     public float Precision = 0.01f;
 
+    private bool _legacyMode;
+
     private delegate void RMIWalkDelegate(void* self, float* sumLeft, float* sumForward, float* sumTurnLeft, byte* haveBackwardOrStrafe, byte* a6, byte bAdditiveUnk);
     [Signature("E8 ?? ?? ?? ?? 80 7B 3E 00 48 8D 3D")]
     private Hook<RMIWalkDelegate> _rmiWalkHook = null!;
@@ -56,10 +59,13 @@ public unsafe class OverrideMovement : IDisposable
         Service.Hook.InitializeFromAttributes(this);
         Service.Log.Information($"RMIWalk address: 0x{_rmiWalkHook.Address:X}");
         Service.Log.Information($"RMIFly address: 0x{_rmiFlyHook.Address:X}");
+        Service.GameConfig.UiControlChanged += OnConfigChanged;
+        UpdateLegacyMode();
     }
 
     public void Dispose()
     {
+        Service.GameConfig.UiControlChanged -= OnConfigChanged;
         _rmiWalkHook.Dispose();
         _rmiFlyHook.Dispose();
     }
@@ -103,8 +109,16 @@ public unsafe class OverrideMovement : IDisposable
         var dirH = Angle.FromDirectionXZ(dist);
         var dirV = allowVertical ? Angle.FromDirection(new(dist.Y, new Vector2(dist.X, dist.Z).Length())) : default;
 
-        var camera = (CameraEx*)CameraManager.Instance()->GetActiveCamera();
-        var cameraDir = camera->DirH.Radians() + 180.Degrees();
-        return (dirH - cameraDir, dirV);
+        var refDir = _legacyMode
+            ? ((CameraEx*)CameraManager.Instance()->GetActiveCamera())->DirH.Radians() + 180.Degrees()
+            : player.Rotation.Radians();
+        return (dirH - refDir, dirV);
+    }
+
+    private void OnConfigChanged(object? sender, ConfigChangeEvent evt) => UpdateLegacyMode();
+    private void UpdateLegacyMode()
+    {
+        _legacyMode = Service.GameConfig.UiControl.TryGetUInt("MoveMode", out var mode) && mode == 1;
+        Service.Log.Info($"Legacy mode is now {(_legacyMode ? "enabled" : "disabled")}");
     }
 }

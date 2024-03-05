@@ -246,13 +246,14 @@ public class VoxelMap
             float x = x0;
             for (int ix = hf.borderSize; ix < hf.width - hf.borderSize; ++ix)
             {
-                var span = hf.spans[iz * hf.width + ix];
-                while (span != null)
+                var spanIndex = hf.spans[iz * hf.width + ix];
+                while (spanIndex != 0)
                 {
+                    ref var span = ref hf.Span(spanIndex);
                     float y0 = hf.bmin.Y + span.smin * hf.ch;
                     float y1 = hf.bmin.Y + span.smax * hf.ch;
                     AddFromHeightfieldSpan(RootTile, x, z, y0, y1);
-                    span = span.next;
+                    spanIndex = span.next;
                 }
                 x += hf.cs;
             }

@@ -44,6 +44,12 @@ public class DebugDetourNavmesh : DebugRecast
 
     public void Draw()
     {
+        DrawMesh();
+        DrawQuery();
+    }
+
+    private void DrawMesh()
+    {
         using var nr = _tree.Node("Detour navmesh");
         if (!nr.Opened)
             return;
@@ -78,7 +84,7 @@ public class DebugDetourNavmesh : DebugRecast
                         for (int j = 0; j < tile.data.header.polyCount; ++j)
                         {
                             var p = tile.data.polys[j];
-                            using var ntri = _tree.Node($"{p.index}: {p.vertCount} vertices, flags={p.flags:X}, area={p.GetArea()}, polytype={p.GetPolyType()}");
+                            using var ntri = _tree.Node($"{p.index} (0x{p.index:X}): {p.vertCount} vertices, flags={p.flags:X}, area={p.GetArea()}, polytype={p.GetPolyType()}");
                             if (ntri.SelectedOrHovered)
                                 VisualizeRoughPolygon(tile, p, true);
                             if (ntri.Opened)
@@ -86,6 +92,13 @@ public class DebugDetourNavmesh : DebugRecast
                                 for (int k = 0; k < p.vertCount; ++k)
                                     if (_tree.LeafNode($"{p.verts[k]} ({GetVertex(tile, p.verts[k])}), neighbours={p.neis[k]:X}").SelectedOrHovered)
                                         VisualizeVertex(GetVertex(tile, p.verts[k]));
+
+                                for (int k = tile.polyLinks[p.index]; k != DtNavMesh.DT_NULL_LINK; k = tile.links[k].next)
+                                {
+                                    var link = tile.links[k];
+                                    if (_tree.LeafNode($"Link {k}: refs={link.refs:X}, edge={link.edge}, side={link.side}, bmin={link.bmin}, bmax={link.bmax}").SelectedOrHovered)
+                                        VisualizeRoughPolygon(link.refs, true);
+                                }
                             }
                         }
                     }
@@ -156,6 +169,23 @@ public class DebugDetourNavmesh : DebugRecast
                 _tree.LeafNode($"Links ({tile.data.header.maxLinkCount} max)");
                 _tree.LeafNode($"Bounding volumes ({tile.data.header.bvNodeCount})");
                 _tree.LeafNode($"Off-mesh connections ({tile.data.header.offMeshConCount} starting from primitive #{tile.data.header.offMeshBase})");
+            }
+        }
+    }
+
+    private void DrawQuery()
+    {
+        using var nr = _tree.Node("Detour query", _query == null || _query.GetNodePool().GetNodeCount() == 0);
+        if (!nr.Opened)
+            return;
+
+        int i = 1;
+        foreach (var n in _query!.GetNodePool().AsEnumerable())
+        {
+            if (_tree.LeafNode($"{i++}: {n.id:X}, parent={n.pidx}, enter={n.pos}, cost={n.cost}, total={n.total}, state={n.state}, flags={n.flags}").SelectedOrHovered)
+            {
+                VisualizeRoughPolygon(n.id, true);
+                VisualizeVertex(n.pos.RecastToSystem());
             }
         }
     }
@@ -280,6 +310,12 @@ public class DebugDetourNavmesh : DebugRecast
         _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
         VisualizeRoughPolygon(tile, visu, poly, colorByArea, true);
+    }
+
+    private void VisualizeRoughPolygon(long refs, bool colorByArea)
+    {
+        if (_navmesh.GetTileAndPolyByRef(refs, out var tile, out var poly).Succeeded())
+            VisualizeRoughPolygon(tile, poly, colorByArea);
     }
 
     // effect + data are expected to be already bound

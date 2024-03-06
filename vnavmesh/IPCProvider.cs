@@ -18,6 +18,7 @@ namespace Navmesh
             RegisterFunc("Nav.Rebuild", () => navmeshManager.Reload(false));
             RegisterFunc("Nav.Pathfind", (Vector3 from, Vector3 to, bool fly) => navmeshManager.QueryPath(from, to, fly));
             RegisterFunc("Nav.PathfindCancelable", (Vector3 from, Vector3 to, bool fly, CancellationToken cancel) => navmeshManager.QueryPath(from, to, fly, cancel));
+            RegisterAction("Nav.PathfindCancelCurrent", () => navmeshManager.CancelCurrentPathfinding());
             RegisterFunc("Nav.PathfindInProgress", () => navmeshManager.PathfindInProgress);
             RegisterFunc("Nav.PathfindNumQueued", () => navmeshManager.NumQueuedPathfindRequests);
             RegisterFunc("Nav.IsAutoLoad", () => navmeshManager.AutoLoad);

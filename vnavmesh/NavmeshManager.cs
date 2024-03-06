@@ -95,7 +95,7 @@ public class NavmeshManager : IDisposable
         // at this point, we're not loading a mesh
         if (_query != null)
         {
-            if (_currentPathfindTask != null && _currentPathfindTask.IsCompleted)
+            if (_currentPathfindTask != null && (_currentPathfindTask.IsCompleted || _currentPathfindTask.IsCanceled))
             {
                 _currentPathfindTask = null;
             }
@@ -149,6 +149,19 @@ public class NavmeshManager : IDisposable
         });
         _queuedPathfindTasks.Add(task);
         return task;
+    }
+
+    public void CancelCurrentPathfinding()
+    {
+        if (_queryCancelSource == null || _currentPathfindTask is null || _query == null)
+        {
+            Service.Log.Error($"Can't cancel query - navmesh is not loaded");
+            return;
+        }
+
+        _queryCancelSource.Cancel(); // this will cancel current pathfind task
+        _queryCancelSource = new(); // create new token source for future tasks
+
     }
 
     // if non-empty string is returned, active layout is ready

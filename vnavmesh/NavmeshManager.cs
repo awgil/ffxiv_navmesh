@@ -151,17 +151,17 @@ public class NavmeshManager : IDisposable
         return task;
     }
 
-    public void CancelCurrentPathfinding()
+    public void CancelAllQueries()
     {
-        if (_queryCancelSource == null || _currentPathfindTask is null || _query == null)
+        if (_queryCancelSource == null)
         {
-            Service.Log.Error($"Can't cancel query - navmesh is not loaded");
+            Service.Log.Error($"Can't cancel queries - navmesh is not loaded");
             return;
         }
 
-        _queryCancelSource.Cancel(); // this will cancel current pathfind task
+        _queryCancelSource.Cancel(); // this will cancel current and all queued pathfind tasks
+        _queryCancelSource.Dispose();
         _queryCancelSource = new(); // create new token source for future tasks
-
     }
 
     // if non-empty string is returned, active layout is ready

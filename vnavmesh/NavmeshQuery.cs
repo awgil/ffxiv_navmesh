@@ -116,9 +116,11 @@ public class NavmeshQuery
     public Vector3? FindNearestPointOnMesh(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5) => FindNearestPointOnMeshPoly(p, FindNearestMeshPoly(p, halfExtentXZ, halfExtentY));
 
     // finds the point on the mesh within specified x/z tolerance and with largest Y that is still smaller than p.Y
-    public Vector3? FindPointOnFloor(Vector3 p, float halfExtentXZ = 5)
+    public Vector3? FindPointOnFloor(Vector3 p, bool allowUnlandable = false, float halfExtentXZ = 5)
     {
-        var polys = FindIntersectingMeshPolys(p, new(halfExtentXZ, 2048, halfExtentXZ));
+        IEnumerable<long> polys = FindIntersectingMeshPolys(p, new(halfExtentXZ, 2048, halfExtentXZ));
+        if (!allowUnlandable)
+            polys = polys.Where(poly => MeshQuery.GetAttachedNavMesh().GetPolyArea(poly, out var area).Succeeded() && area != Navmesh.UnlandableAreaId);
         return polys.Select(poly => FindNearestPointOnMeshPoly(p, poly)).Where(pt => pt != null && pt.Value.Y <= p.Y).MaxBy(pt => pt!.Value.Y);
     }
 

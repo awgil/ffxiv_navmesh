@@ -25,7 +25,7 @@ namespace Navmesh
             RegisterAction("Nav.SetAutoLoad", (bool v) => navmeshManager.AutoLoad = v);
 
             RegisterFunc("Query.Mesh.NearestPoint", (Vector3 p, float halfExtentXZ, float halfExtentY) => navmeshManager.Query?.FindNearestPointOnMesh(p, halfExtentXZ, halfExtentY));
-            RegisterFunc("Query.Mesh.PointOnFloor", (Vector3 p, float halfExtentXZ) => navmeshManager.Query?.FindPointOnFloor(p, halfExtentXZ));
+            RegisterFunc("Query.Mesh.PointOnFloor", (Vector3 p, bool allowUnlandable, float halfExtentXZ) => navmeshManager.Query?.FindPointOnFloor(p, allowUnlandable, halfExtentXZ));
 
             RegisterAction("Path.MoveTo", (List<Vector3> waypoints, bool fly) => followPath.Move(waypoints, !fly));
             RegisterAction("Path.Stop", followPath.Stop);

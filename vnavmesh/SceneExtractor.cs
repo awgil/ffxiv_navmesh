@@ -26,6 +26,7 @@ public class SceneExtractor
         None = 0,
         ForceUnwalkable = 1 << 0, // this primitive can't be walked on, even if normal is fine
         FlyThrough = 1 << 1, // this primitive should not be present in voxel map
+        Unlandable = 1 << 2, // this primitive can't be landed on (fly->walk transition)
     }
 
     public record struct Primitive(int V1, int V2, int V3, PrimitiveFlags Flags);
@@ -260,7 +261,7 @@ public class SceneExtractor
     {
         var res = PrimitiveFlags.None;
         if ((mat & 0x200000) != 0)
-            res |= PrimitiveFlags.ForceUnwalkable; // TODO: is it actually 'unlandable'? it seems that if you're already walking, you can proceed...
+            res |= PrimitiveFlags.Unlandable;
         if ((mat & 0x100000) != 0)
             res |= PrimitiveFlags.FlyThrough;
         return res;

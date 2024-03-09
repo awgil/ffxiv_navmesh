@@ -104,6 +104,7 @@ class DebugNavmeshManager : IDisposable
         DrawPosition("Player", playerPos);
         DrawPosition("Target", _target);
         DrawPosition("Flag", MapUtils.FlagToPoint(_manager.Query) ?? default);
+        DrawPosition("Floor", _manager.Query.FindPointOnFloor(playerPos) ?? default);
 
         _drawNavmesh ??= new(_manager.Navmesh.Mesh, _manager.Query.MeshQuery, _tree, _dd);
         _drawNavmesh.Draw();

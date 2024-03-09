@@ -67,7 +67,7 @@ public class NavmeshRasterizer
                             walkable = normal.Y >= _walkableNormalThreshold;
                         }
 
-                        var areaId = walkable ? RcConstants.RC_WALKABLE_AREA : 0;
+                        var areaId = !walkable ? 0 : flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable) ? Navmesh.UnlandableAreaId : RcConstants.RC_WALKABLE_AREA;
                         RcRasterizations.RasterizeTriangle(_telemetry, _vertices, p.V1, p.V2, p.V3, areaId, _heightfield, _walkableClimbThreshold);
                     }
                 }

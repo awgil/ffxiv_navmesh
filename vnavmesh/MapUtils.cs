@@ -9,7 +9,7 @@ public static class MapUtils
         var flag = GetFlagPosition();
         if (flag == null)
             return null;
-        return q.FindPointOnFloor(new(flag.Value.X, 2048, flag.Value.Y));
+        return q.FindPointOnFloor(new(flag.Value.X, 1024, flag.Value.Y));
     }
 
     private unsafe static Vector2? GetFlagPosition()

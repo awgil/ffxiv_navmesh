@@ -63,7 +63,7 @@ public class FollowPath : IDisposable
             {
                 if (!Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Mounted])
                     ExecuteJump(); // Spam jump to take off
-                else if (!Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight])
+                else if (!Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && !IgnoreDeltaY)
                     _movement.Enabled = false; // Else if we're not in flight, don't move since the target is above us and we can't reach it
             }
             _camera.Enabled = AlignCamera;

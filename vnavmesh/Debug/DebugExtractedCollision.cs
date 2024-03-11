@@ -1,9 +1,8 @@
 ﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
-using Lumina.Models.Models;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using Navmesh.Render;
 using System;
-using System.IO;
 using System.Linq;
 using System.Numerics;
 
@@ -17,6 +16,7 @@ public class DebugExtractedCollision : IDisposable
     private DebugDrawer _dd;
     private DebugGameCollision _coll;
     private EffectMesh.Data? _visu;
+    private EffectMesh.Data?[] _visuVoxels;
 
     public DebugExtractedCollision(SceneDefinition scene, SceneExtractor extractor, UITree tree, DebugDrawer dd, DebugGameCollision coll)
     {
@@ -25,6 +25,7 @@ public class DebugExtractedCollision : IDisposable
         _tree = tree;
         _dd = dd;
         _coll = coll;
+        _visuVoxels = new EffectMesh.Data?[extractor.Meshes.Sum(m => m.Value.Instances.Count)];
     }
 
     public void Dispose()
@@ -190,8 +191,14 @@ public class DebugExtractedCollision : IDisposable
                         int instIndex = 0;
                         foreach (var i in mesh.Instances)
                         {
-                            if (_tree.LeafNode($"{instIndex}: {i.WorldBounds.Min:f3}-{i.WorldBounds.Max:f3}, R0 = {i.WorldTransform.Row0:f3}, R1 = {i.WorldTransform.Row1:f3}, R2 = {i.WorldTransform.Row2:f3}, R3 = {i.WorldTransform.Row3:f3}, {i.WorldBounds.Min:f3} - {i.WorldBounds.Max:f3} (+: {i.ForceSetPrimFlags}, -: {i.ForceClearPrimFlags})").SelectedOrHovered)
+                            using var ninst = _tree.Node($"{instIndex}: {i.WorldBounds.Min:f3}-{i.WorldBounds.Max:f3}={i.WorldBounds.Max - i.WorldBounds.Min:f3}, R0 = {i.WorldTransform.Row0:f3}, R1 = {i.WorldTransform.Row1:f3}, R2 = {i.WorldTransform.Row2:f3}, R3 = {i.WorldTransform.Row3:f3} (+: {i.ForceSetPrimFlags}, -: {i.ForceClearPrimFlags})");
+                            if (ninst.SelectedOrHovered)
                                 VisualizeMeshInstance(meshIndex, instIndex);
+                            if (ninst.Opened)
+                            {
+                                if (_tree.LeafNode($"Voxelization").SelectedOrHovered)
+                                    VisualizeMeshInstanceVoxelization(mesh, instIndex);
+                            }
                             ++instIndex;
                         }
                     }
@@ -249,6 +256,65 @@ public class DebugExtractedCollision : IDisposable
         return _visu;
     }
 
+    private EffectMesh.Data GetOrInitVoxelizationVisualizer(SceneExtractor.Mesh mesh, int instIndex)
+    {
+        var globalIndex = _extractor.Meshes.TakeWhile(m => m.Value != mesh).Sum(m => m.Value.Instances.Count) + instIndex;
+
+        ref var visu = ref _visuVoxels.AsSpan()[globalIndex];
+        if (visu == null)
+        {
+            var timer = Timer.Create();
+
+            var inst = mesh.Instances[instIndex];
+            var settings = new NavmeshSettings();
+            var voxelization = new MeshVoxelization(new(settings.CellSize, settings.CellHeight, settings.CellSize), inst.WorldBounds.Min, inst.WorldBounds.Max);
+            voxelization.Voxelize(mesh, inst, settings.AgentMaxSlopeDeg.Degrees().Cos());
+            voxelization.FillInterior();
+
+            visu = new(_dd.RenderContext, 8, 12, voxelization.Voxels.Length, false);
+            using var builder = visu.Map(_dd.RenderContext);
+            var box = new AnalyticMeshBox(builder);
+
+            var bmin = voxelization.BoundsMin;
+            Matrix4x3 world = new() { M11 = settings.CellSize * 0.5f, M22 = settings.CellHeight * 0.5f, M33 = settings.CellSize * 0.5f };
+            world.M43 = bmin.Z + settings.CellSize * 0.5f;
+            var x0 = bmin.X + settings.CellSize * 0.5f;
+            var y0 = bmin.Y + settings.CellHeight * 0.5f;
+            int icell = 0;
+            for (int z = 0; z < voxelization.NumCellsZ; ++z)
+            {
+                world.M41 = x0;
+                for (int x = 0; x < voxelization.NumCellsX; ++x)
+                {
+                    world.M42 = y0;
+                    for (int y = 0; y < voxelization.NumCellsY; ++y)
+                    {
+                        var vox = voxelization.Voxels[icell++];
+                        if (vox != MeshVoxelization.Voxel.None)
+                        {
+                            var color = new Vector4(0, 0, 0, 0.7f);
+                            if (vox.HasFlag(MeshVoxelization.Voxel.Border))
+                                color.X += 1.0f;
+                            if (vox.HasFlag(MeshVoxelization.Voxel.Interior))
+                                color.Y += 1.0f;
+                            if (vox.HasFlag(MeshVoxelization.Voxel.Walkable))
+                                color.Z += 0.5f;
+                            if (vox.HasFlag(MeshVoxelization.Voxel.Landable))
+                                color.Z += 0.25f;
+                            builder.AddInstance(new(world, color));
+                        }
+                        world.M42 += settings.CellHeight;
+                    }
+                    world.M41 += settings.CellSize;
+                }
+                world.M43 += settings.CellSize;
+            }
+            builder.AddMesh(box.FirstVertex, box.FirstPrimitive, box.NumPrimitives, 0, builder.NumInstances);
+            Service.Log.Debug($"voxelization visualization build time: {timer.Value().TotalMilliseconds:f3}ms");
+        }
+        return visu;
+    }
+
     private void Visualize()
     {
         _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVisualizer());
@@ -257,6 +323,11 @@ public class DebugExtractedCollision : IDisposable
     private void VisualizeMeshInstances(int meshIndex)
     {
         _dd.EffectMesh?.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), meshIndex);
+    }
+
+    private void VisualizeMeshInstanceVoxelization(SceneExtractor.Mesh mesh, int instIndex)
+    {
+        _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVoxelizationVisualizer(mesh, instIndex));
     }
 
     private void VisualizeMeshPart(SceneExtractor.Mesh mesh, int meshIndex, int partIndex)

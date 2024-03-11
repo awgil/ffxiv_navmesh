@@ -21,7 +21,7 @@ public class NavmeshRasterizer
         _walkableNormalThreshold = walkableMaxSlope.Cos();
     }
 
-    public unsafe void Rasterize(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic)
+    public void Rasterize(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic)
     {
         foreach (var (name, mesh) in geom.Meshes)
         {
@@ -36,39 +36,60 @@ public class NavmeshRasterizer
                 if (inst.WorldBounds.Max.X <= _heightfield.bmin.X || inst.WorldBounds.Max.Z <= _heightfield.bmin.Z || inst.WorldBounds.Min.X >= _heightfield.bmax.X || inst.WorldBounds.Min.Z >= _heightfield.bmax.Z)
                     continue;
 
-                foreach (var part in mesh.Parts)
+                if (inst.Voxelization != null)
                 {
-                    // fill vertex buffer
-                    int iv = 0;
-                    foreach (var v in part.Vertices)
+                    var voxelizationMin = (inst.Voxelization.BoundsMin - _heightfield.bmin.RecastToSystem()) * inst.Voxelization.InvCellSize;
+                    int xOff = (int)voxelizationMin.X;
+                    int yOff = (int)voxelizationMin.Y;
+                    int zOff = (int)voxelizationMin.Z; // voxelization[z=0] corresponds to hf[z=zOff]
+                    foreach (var span in inst.Voxelization.Spans)
                     {
-                        var w = inst.WorldTransform.TransformCoordinate(v);
-                        _vertices[iv++] = w.X;
-                        _vertices[iv++] = w.Y;
-                        _vertices[iv++] = w.Z;
-                    }
-
-                    // TODO: move area-id calculations to extraction step + store indices in a form that allows using RasterizeTriangles()
-                    foreach (var p in part.Primitives)
-                    {
-                        var flags = (p.Flags & ~inst.ForceClearPrimFlags) | inst.ForceSetPrimFlags;
-                        if (flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
-                            continue; // TODO: rasterize to normal heightfield, can't do it right now, since we're using same heightfield for both mesh and volume
-
-                        bool walkable = !flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable);
-                        if (walkable)
+                        int sx = span.X + xOff;
+                        int sz = span.Z + zOff;
+                        if (sx >= 0 && sx < _heightfield.width && sz >= 0 && sz < _heightfield.height)
                         {
-                            var v1 = CachedVertex(p.V1);
-                            var v2 = CachedVertex(p.V2);
-                            var v3 = CachedVertex(p.V3);
-                            var v12 = v2 - v1;
-                            var v13 = v3 - v1;
-                            var normal = Vector3.Normalize(Vector3.Cross(v12, v13));
-                            walkable = normal.Y >= _walkableNormalThreshold;
+                            var areaId = !span.TopFlags.HasFlag(MeshVoxelization.Voxel.Walkable) ? 0 : !span.TopFlags.HasFlag(MeshVoxelization.Voxel.Landable) ? Navmesh.UnlandableAreaId : RcConstants.RC_WALKABLE_AREA;
+                            RcRasterizations.AddSpan(_heightfield, sx, sz, span.Y0 + yOff, span.Y1 + yOff, areaId, _walkableClimbThreshold);
+                        }
+                    }
+                }
+                else
+                {
+                    // TODO: this should reuse MeshVoxelization code...
+                    foreach (var part in mesh.Parts)
+                    {
+                        // fill vertex buffer
+                        int iv = 0;
+                        foreach (var v in part.Vertices)
+                        {
+                            var w = inst.WorldTransform.TransformCoordinate(v);
+                            _vertices[iv++] = w.X;
+                            _vertices[iv++] = w.Y;
+                            _vertices[iv++] = w.Z;
                         }
 
-                        var areaId = !walkable ? 0 : flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable) ? Navmesh.UnlandableAreaId : RcConstants.RC_WALKABLE_AREA;
-                        RcRasterizations.RasterizeTriangle(_telemetry, _vertices, p.V1, p.V2, p.V3, areaId, _heightfield, _walkableClimbThreshold);
+                        // TODO: move area-id calculations to extraction step + store indices in a form that allows using RasterizeTriangles()
+                        foreach (var p in part.Primitives)
+                        {
+                            var flags = (p.Flags & ~inst.ForceClearPrimFlags) | inst.ForceSetPrimFlags;
+                            if (flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
+                                continue; // TODO: rasterize to normal heightfield, can't do it right now, since we're using same heightfield for both mesh and volume
+
+                            bool walkable = !flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable);
+                            if (walkable)
+                            {
+                                var v1 = CachedVertex(p.V1);
+                                var v2 = CachedVertex(p.V2);
+                                var v3 = CachedVertex(p.V3);
+                                var v12 = v2 - v1;
+                                var v13 = v3 - v1;
+                                var normal = Vector3.Normalize(Vector3.Cross(v12, v13));
+                                walkable = normal.Y >= _walkableNormalThreshold;
+                            }
+
+                            var areaId = !walkable ? 0 : flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable) ? Navmesh.UnlandableAreaId : RcConstants.RC_WALKABLE_AREA;
+                            RcRasterizations.RasterizeTriangle(_telemetry, _vertices, p.V1, p.V2, p.V3, areaId, _heightfield, _walkableClimbThreshold);
+                        }
                     }
                 }
             }

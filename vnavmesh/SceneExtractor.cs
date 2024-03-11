@@ -37,7 +37,10 @@ public class SceneExtractor
         public List<Primitive> Primitives = new();
     }
 
-    public record struct MeshInstance(ulong Id, Matrix4x3 WorldTransform, AABB WorldBounds, PrimitiveFlags ForceSetPrimFlags, PrimitiveFlags ForceClearPrimFlags);
+    public record class MeshInstance(ulong Id, Matrix4x3 WorldTransform, AABB WorldBounds, PrimitiveFlags ForceSetPrimFlags, PrimitiveFlags ForceClearPrimFlags)
+    {
+        public MeshVoxelization.Compressed? Voxelization;
+    }
 
     public class Mesh
     {
@@ -187,7 +190,8 @@ public class SceneExtractor
 
     private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId, ulong matMask)
     {
-        mesh.Instances.Add(new(id, worldTransform, worldBounds, ExtractMaterialFlags(matMask & matId), ExtractMaterialFlags(matMask & ~matId)));
+        var instance = new MeshInstance(id, worldTransform, worldBounds, ExtractMaterialFlags(matMask & matId), ExtractMaterialFlags(matMask & ~matId));
+        mesh.Instances.Add(instance);
     }
 
     private static AABB CalculateBoxBounds(ref Matrix4x3 world)

@@ -95,6 +95,7 @@ public class LegacyNavmeshBuilder : IDisposable
             _intermediates = new(_builder.NumTilesX, _builder.NumTilesZ);
             if (includeTiles)
             {
+                _builder.VoxelizeMeshes();
                 for (int z = 0; z < _builder.NumTilesZ; ++z)
                 {
                     for (int x = 0; x < _builder.NumTilesX; ++x)

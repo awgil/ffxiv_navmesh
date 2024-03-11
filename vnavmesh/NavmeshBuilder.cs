@@ -23,6 +23,7 @@ public class NavmeshBuilder
     private int _walkableClimbVoxels;
     private int _walkableHeightVoxels;
     private int _walkableRadiusVoxels;
+    private float _walkableNormalThreshold;
     private int _borderSizeVoxels;
     private float _borderSizeWorld;
     private int _tileSizeXVoxels;
@@ -55,10 +56,38 @@ public class NavmeshBuilder
         _walkableClimbVoxels = (int)MathF.Floor(Settings.AgentMaxClimb / Settings.CellHeight);
         _walkableHeightVoxels = (int)MathF.Ceiling(Settings.AgentHeight / Settings.CellHeight);
         _walkableRadiusVoxels = (int)MathF.Ceiling(Settings.AgentRadius / Settings.CellSize);
+        _walkableNormalThreshold = Settings.AgentMaxSlopeDeg.Degrees().Cos();
         _borderSizeVoxels = 3 + _walkableRadiusVoxels;
         _borderSizeWorld = _borderSizeVoxels * Settings.CellSize;
         _tileSizeXVoxels = (int)MathF.Ceiling(navmeshParams.tileWidth / Settings.CellSize) + 2 * _borderSizeVoxels;
         _tileSizeZVoxels = (int)MathF.Ceiling(navmeshParams.tileHeight / Settings.CellSize) + 2 * _borderSizeVoxels;
+    }
+
+    // voxelize all meshes (TODO: this is parallelizable)
+    public void VoxelizeMeshes()
+    {
+        foreach (var (name, m) in Scene.Meshes)
+        {
+            Service.Log.Info($"Voxelizing {name}: {m.Instances.Count} instances...");
+            foreach (var i in m.Instances)
+            {
+                VoxelizeMesh(name, m, i);
+            }
+        }
+    }
+
+    public bool VoxelizeMesh(string key, SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance)
+    {
+        if (mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain))
+            return false; // terrain meshes are huge and typically non-manifold, don't bother trying to voxelize them...
+
+        var timer = Timer.Create();
+        var vox = new MeshVoxelization(new(Settings.CellSize, Settings.CellHeight, Settings.CellSize), Vector3.Max(BoundsMin, instance.WorldBounds.Min), Vector3.Min(BoundsMax, instance.WorldBounds.Max));
+        vox.Voxelize(mesh, instance, _walkableNormalThreshold);
+        vox.FillInterior();
+        instance.Voxelization = vox.Compress(_walkableHeightVoxels);
+        Service.Log.Debug($"voxelized mesh {key} in {timer.Value().TotalMilliseconds}ms");
+        return true;
     }
 
     // this can be called concurrently; returns intermediate data that can be discarded if not used

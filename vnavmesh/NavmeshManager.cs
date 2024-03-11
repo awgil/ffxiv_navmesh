@@ -1,4 +1,5 @@
 ﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -225,7 +226,19 @@ public class NavmeshManager : IDisposable
         // cache doesn't exist or can't be used for whatever reason - build navmesh from scratch
         // TODO: we can build multiple tiles concurrently
         var builder = new NavmeshBuilder(scene, _settings);
-        var deltaProgress = 1.0f / (builder.NumTilesX * builder.NumTilesZ);
+        var numMeshes = builder.Scene.Meshes.Values.Where(m => !m.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain)).Sum(m => m.Instances.Count);
+        var numTiles = builder.NumTilesX * builder.NumTilesZ;
+        var deltaProgress = 1.0f / (numMeshes + numTiles);
+        foreach (var (name, m) in builder.Scene.Meshes)
+        {
+            foreach (var i in m.Instances)
+            {
+                if (builder.VoxelizeMesh(name, m, i))
+                {
+                    _loadTaskProgress += deltaProgress;
+                }
+            }
+        }
         for (int z = 0; z < builder.NumTilesZ; ++z)
         {
             for (int x = 0; x < builder.NumTilesX; ++x)

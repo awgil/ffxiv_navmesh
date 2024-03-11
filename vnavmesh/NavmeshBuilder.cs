@@ -86,7 +86,7 @@ public class NavmeshBuilder
         vox.Voxelize(mesh, instance, _walkableNormalThreshold);
         vox.FillInterior();
         instance.Voxelization = vox.Compress(_walkableHeightVoxels);
-        Service.Log.Debug($"voxelized mesh {key} in {timer.Value().TotalMilliseconds}ms");
+        Service.Log.Debug($"voxelized mesh {key} ({vox.NumCellsX}x{vox.NumCellsY}x{vox.NumCellsZ} vx) in {timer.Value().TotalMilliseconds}ms");
         return true;
     }
 

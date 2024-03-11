@@ -57,9 +57,9 @@ public class MeshVoxelization
         MinCellX = (int)cmin.X;
         MinCellY = (int)cmin.Y;
         MinCellZ = (int)cmin.Z;
-        NumCellsX = (int)(cmax.X - cmin.X);
-        NumCellsY = (int)(cmax.Y - cmin.Y);
-        NumCellsZ = (int)(cmax.Z - cmin.Z);
+        NumCellsX = Math.Max((int)(cmax.X - cmin.X), 1);
+        NumCellsY = Math.Max((int)(cmax.Y - cmin.Y), 1);
+        NumCellsZ = Math.Max((int)(cmax.Z - cmin.Z), 1);
         Voxels = new Voxel[NumCellsX * NumCellsY * NumCellsZ];
     }
 

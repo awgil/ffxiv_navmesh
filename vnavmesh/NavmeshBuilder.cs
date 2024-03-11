@@ -82,11 +82,20 @@ public class NavmeshBuilder
             return false; // terrain meshes are huge and typically non-manifold, don't bother trying to voxelize them...
 
         var timer = Timer.Create();
-        var vox = new MeshVoxelization(new(Settings.CellSize, Settings.CellHeight, Settings.CellSize), Vector3.Max(BoundsMin, instance.WorldBounds.Min), Vector3.Min(BoundsMax, instance.WorldBounds.Max));
-        vox.Voxelize(mesh, instance, _walkableNormalThreshold);
-        vox.FillInterior();
-        instance.Voxelization = vox.Compress(_walkableHeightVoxels);
-        Service.Log.Debug($"voxelized mesh {key} ({vox.NumCellsX}x{vox.NumCellsY}x{vox.NumCellsZ} vx) in {timer.Value().TotalMilliseconds}ms");
+        var bmin = Vector3.Max(BoundsMin, instance.WorldBounds.Min);
+        var bmax = Vector3.Min(BoundsMax, instance.WorldBounds.Max);
+        if (bmin.X < bmax.X && bmin.Y < bmax.Y && bmin.Z < bmax.Z)
+        {
+            var vox = new MeshVoxelization(new(Settings.CellSize, Settings.CellHeight, Settings.CellSize), bmin, bmax);
+            vox.Voxelize(mesh, instance, _walkableNormalThreshold);
+            vox.FillInterior();
+            instance.Voxelization = vox.Compress(_walkableHeightVoxels);
+            Service.Log.Debug($"voxelized mesh {key} ({vox.NumCellsX}x{vox.NumCellsY}x{vox.NumCellsZ} vx) in {timer.Value().TotalMilliseconds}ms");
+        }
+        else
+        {
+            instance.Voxelization = new();
+        }
         return true;
     }
 

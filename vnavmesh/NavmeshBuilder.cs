@@ -25,6 +25,7 @@ public class NavmeshBuilder
     private int _walkableClimbVoxels;
     private int _walkableHeightVoxels;
     private int _walkableRadiusVoxels;
+    private float _walkableNormalThreshold;
     private int _borderSizeVoxels;
     private float _borderSizeWorld;
     private int _tileSizeXVoxels;
@@ -57,6 +58,7 @@ public class NavmeshBuilder
         _walkableClimbVoxels = (int)MathF.Floor(Settings.AgentMaxClimb / Settings.CellHeight);
         _walkableHeightVoxels = (int)MathF.Ceiling(Settings.AgentHeight / Settings.CellHeight);
         _walkableRadiusVoxels = (int)MathF.Ceiling(Settings.AgentRadius / Settings.CellSize);
+        _walkableNormalThreshold = Settings.AgentMaxSlopeDeg.Degrees().Cos();
         _borderSizeVoxels = 3 + _walkableRadiusVoxels;
         _borderSizeWorld = _borderSizeVoxels * Settings.CellSize;
         _tileSizeXVoxels = (int)MathF.Ceiling(navmeshParams.tileWidth / Settings.CellSize) + 2 * _borderSizeVoxels;
@@ -85,7 +87,7 @@ public class NavmeshBuilder
         // this creates a 'solid heightfield', which is a grid of sorted linked lists of spans
         // each span contains an 'area id', which is either walkable (if normal is good) or not (otherwise); areas outside spans contains no geometry at all
         var shf = new RcHeightfield(_tileSizeXVoxels, _tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), Settings.CellSize, Settings.CellHeight, _borderSizeVoxels);
-        var rasterizer = new NavmeshRasterizer(shf, Settings.AgentMaxSlopeDeg.Degrees(), _walkableClimbVoxels, Telemetry);
+        var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, Telemetry);
         rasterizer.Rasterize(Scene, true, true, true);
 
         // 2. perform a bunch of postprocessing on a heightfield

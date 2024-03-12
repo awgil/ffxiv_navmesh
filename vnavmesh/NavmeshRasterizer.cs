@@ -13,12 +13,12 @@ public class NavmeshRasterizer
     private int _walkableClimbThreshold; // if two spans have maximums within this number of voxels, their area is 'merged' (higher is selected)
     private float _walkableNormalThreshold; // triangle is considered 'walkable' if it's world-space normal's Y coordinate is >= this
 
-    public NavmeshRasterizer(RcHeightfield heightfield, Angle walkableMaxSlope, int walkableMaxClimb, RcContext telemetry)
+    public NavmeshRasterizer(RcHeightfield heightfield, float walkableNormalThreshold, int walkableMaxClimb, RcContext telemetry)
     {
         _heightfield = heightfield;
         _telemetry = telemetry;
         _walkableClimbThreshold = walkableMaxClimb;
-        _walkableNormalThreshold = walkableMaxSlope.Cos();
+        _walkableNormalThreshold = walkableNormalThreshold;
     }
 
     public unsafe void Rasterize(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic)

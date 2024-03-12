@@ -93,6 +93,9 @@ class DebugNavmeshCustom : IDisposable
                 {
                     for (int x = 0; x < intermediates.NumTilesX; ++x)
                     {
+                        if (intermediates.SolidHeightfields[x, z] == null)
+                            continue;
+
                         using var nt = _tree.Node($"Tile {x}x{z}");
                         if (!nt.Opened)
                             continue;

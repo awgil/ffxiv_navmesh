@@ -57,9 +57,9 @@ public class MeshVoxelization
         MinCellX = (int)cmin.X;
         MinCellY = (int)cmin.Y;
         MinCellZ = (int)cmin.Z;
-        NumCellsX = Math.Max((int)(cmax.X - cmin.X), 1);
-        NumCellsY = Math.Max((int)(cmax.Y - cmin.Y), 1);
-        NumCellsZ = Math.Max((int)(cmax.Z - cmin.Z), 1);
+        NumCellsX = Math.Max((int)(cmax.X - cmin.X), 0) + 1;
+        NumCellsY = Math.Max((int)(cmax.Y - cmin.Y), 0) + 1;
+        NumCellsZ = Math.Max((int)(cmax.Z - cmin.Z), 0) + 1;
         Voxels = new Voxel[NumCellsX * NumCellsY * NumCellsZ];
     }
 
@@ -233,7 +233,7 @@ public class MeshVoxelization
             {
                 int y = 0;
                 int gap = GetGapHeight(y, icell);
-                while (gap > 0)
+                while (true)
                 {
                     y += gap;
                     icell += gap;

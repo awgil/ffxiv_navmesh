@@ -196,8 +196,17 @@ public class DebugExtractedCollision : IDisposable
                                 VisualizeMeshInstance(meshIndex, instIndex);
                             if (ninst.Opened)
                             {
-                                if (_tree.LeafNode($"Voxelization").SelectedOrHovered)
+                                using var nvox = _tree.Node($"Voxelization: {i.Voxelization?.Spans.Count ?? -1} spans###vox");
+                                if (nvox.SelectedOrHovered)
                                     VisualizeMeshInstanceVoxelization(mesh, instIndex);
+                                if (nvox.Opened && i.Voxelization != null)
+                                {
+                                    for (int ispan = 0; ispan < i.Voxelization.Spans.Count; ++ispan)
+                                    {
+                                        var span = i.Voxelization.Spans[ispan];
+                                        _tree.LeafNode($"Span {ispan}: x={span.X}, z={span.Z}, y={span.Y0}-{span.Y1}, v={span.TopFlags}");
+                                    }
+                                }
                             }
                             ++instIndex;
                         }
@@ -270,6 +279,7 @@ public class DebugExtractedCollision : IDisposable
             var voxelization = new MeshVoxelization(new(settings.CellSize, settings.CellHeight, settings.CellSize), inst.WorldBounds.Min, inst.WorldBounds.Max);
             voxelization.Voxelize(mesh, inst, settings.AgentMaxSlopeDeg.Degrees().Cos());
             voxelization.FillInterior();
+            inst.Voxelization = voxelization.Compress((int)MathF.Ceiling(settings.AgentHeight / settings.CellHeight));
 
             visu = new(_dd.RenderContext, 8, 12, voxelization.Voxels.Length, false);
             using var builder = visu.Map(_dd.RenderContext);

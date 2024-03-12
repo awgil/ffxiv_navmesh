@@ -11,6 +11,8 @@ namespace Navmesh;
 // individual tiles can be built concurrently
 public class NavmeshBuilder
 {
+    public record struct Intermediates(RcHeightfield SolidHeightfield, RcCompactHeightfield CompactHeightfield, RcContourSet ContourSet, RcPolyMesh PolyMesh, RcPolyMeshDetail? DetailMesh);
+
     public RcContext Telemetry = new();
     public NavmeshSettings Settings;
     public SceneExtractor Scene;
@@ -62,7 +64,7 @@ public class NavmeshBuilder
     }
 
     // this can be called concurrently; returns intermediate data that can be discarded if not used
-    public (RcHeightfield, RcCompactHeightfield, RcContourSet, RcPolyMesh, RcPolyMeshDetail?) BuildTile(int x, int z)
+    public Intermediates BuildTile(int x, int z)
     {
         var timer = Timer.Create();
 
@@ -205,6 +207,6 @@ public class NavmeshBuilder
         }
 
         Service.Log.Debug($"built navmesh tile {x}x{z} in {timer.Value().TotalMilliseconds}ms");
-        return (shf, chf, cset, pmesh, dmesh);
+        return new(shf, chf, cset, pmesh, dmesh);
     }
 }

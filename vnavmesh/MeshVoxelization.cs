@@ -249,7 +249,7 @@ public class MeshVoxelization
                     icell += solid;
 
                     gap = GetGapHeight(y, icell);
-                    while (gap > 0 && gap < minGap)
+                    while (gap > 0 && gap < minGap && y + gap < NumCellsY)
                     {
                         // the next gap is too small, consume it
                         y += gap;

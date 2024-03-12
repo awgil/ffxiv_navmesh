@@ -1,10 +1,10 @@
+- fill solids!
 - walk/fly transitions
 - better pathfind
 -- use same string-pulling idea for navvolumes
 -- follow/target update
 - improve nearest search for blocked voxels to prefer voxels on correct side
 - per-zone custom markup (tighter borders? shapes to ignore?)
-- optimize voxelization - just rewrite this shit and add unittest to compare with recast
 - volume nav - consider building equivalent of navmesh
 -- do we even need any compact representation? connectivity sounds hard for 3d spans...
 -- watershed-like partitioning - should be easy

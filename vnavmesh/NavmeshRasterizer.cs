@@ -23,24 +23,32 @@ public class NavmeshRasterizer
     }
 
     // a set of per-cell intersections with vertical ray
-    // high 31 bits of entry is the remapped Y coordinate (0 = -1024, 0x7fffffff = 1024-eps), low bit is normal sign (1 if points up)
+    // we build a sort key with high 31 bits as the remapped Y coordinate (0 = -1024, 0x7fffffff = 1024-eps) and low bit as normal sign (1 if points up)
+    // we need the extra precision to disambiguate faces that map to a single voxel
     private class IntersectionSet
     {
         public const int PageShift = 20;
         public const int PageSize = 1 << PageShift;
         public const int ValueScale = 1 << 20; // 2048 = 2^11, we have 32 bits => 20 bits of scale; note: this is a bit extreme, mantissa is only 24 bits...
-        public const float InvValueScale = 1.0f / ValueScale;
 
-        public record struct Entry(int Next, uint Value);
+        public struct Entry
+        {
+            public int Next; // index of next entry in the same cell in page storage
+            public uint SortKey;
+            public int VoxelY; // if normal points up - this is inclusive upper limit of area 'below' triangle (>0), otherwise it's negative inclusive lower limit of area 'above' triangle (<=0)
+
+            public Entry(int next, int voxelY, float preciseY, bool normalUp)
+            {
+                Next = next;
+                SortKey = ((uint)((preciseY + 1024) * ValueScale) << 1) | (normalUp ? 1u : 0);
+                VoxelY = normalUp ? voxelY : -voxelY;
+            }
+        }
 
         private int _numCellsX;
         private int[] _firstIndices; // x then z
         private List<Entry[]> _pages = new();
         private int _firstFree = 1;
-
-        public static uint Encode(float value, bool normalUp) => ((uint)((value + 1024) * ValueScale) << 1) | (normalUp ? 1u : 0);
-        public static float DecodeValue(uint v) => (v >> 1) * InvValueScale - 1024;
-        public static bool DecodeNormalUp(uint v) => (v & 1) != 0;
 
         public IntersectionSet(int numCellsX, int numCellsZ)
         {
@@ -49,7 +57,7 @@ public class NavmeshRasterizer
             _pages.Add(new Entry[PageSize]);
         }
 
-        public void Add(int x, int z, float value, bool normalUp)
+        public void Add(int x, int y, int z, float value, bool normalUp)
         {
             if (value <= -1024 || value >= 1024)
                 return;
@@ -57,13 +65,12 @@ public class NavmeshRasterizer
             if (pageIndex == _pages.Count)
                 _pages.Add(new Entry[PageSize]);
             var indexInPage = _firstFree & (PageSize - 1);
-            var ival = Encode(value, normalUp);
             ref var first = ref _firstIndices[z * _numCellsX + x];
-            _pages[pageIndex][indexInPage] = new(first, ival);
+            _pages[pageIndex][indexInPage] = new(first, y, value, normalUp);
             first = _firstFree++;
         }
 
-        public int FetchSorted(int x, int z, Span<uint> buffer)
+        public int FetchSorted(int x, int z, Span<uint> bufferSort, Span<int> bufferVoxel)
         {
             var idx = _firstIndices[z * _numCellsX + x];
             if (idx == 0)
@@ -73,11 +80,13 @@ public class NavmeshRasterizer
             do
             {
                 var entry = _pages[idx >> PageShift][idx & (PageSize - 1)];
-                buffer[cnt++] = entry.Value;
+                bufferSort[cnt] = entry.SortKey;
+                bufferVoxel[cnt] = entry.VoxelY;
                 idx = entry.Next;
+                ++cnt;
             }
             while (idx != 0);
-            buffer.Slice(0, cnt).Sort();
+            bufferSort.Slice(0, cnt).Sort(bufferVoxel);
             return cnt;
         }
 
@@ -109,7 +118,8 @@ public class NavmeshRasterizer
         Span<Vector3> clipRemainingX = stackalloc Vector3[7];
         Span<Vector3> clipScratch = stackalloc Vector3[7];
         Span<Vector3> clipCell = stackalloc Vector3[7];
-        Span<uint> interiors = stackalloc uint[256];
+        Span<uint> solidSort = stackalloc uint[256];
+        Span<int> solidVoxel = stackalloc int[256];
         float invCellXZ = 1.0f / _heightfield.cs;
         float invCellY = 1.0f / _heightfield.ch;
         float worldHeight = _heightfield.bmax.Y - _heightfield.bmin.Y;
@@ -161,7 +171,9 @@ public class NavmeshRasterizer
                         var v3 = worldVertices[p.V3];
                         var v12 = v2 - v1;
                         var v13 = v3 - v1;
-                        var normal = Vector3.Normalize(Vector3.Cross(v12, v13));
+                        var v12cross13 = Vector3.Cross(v12, v13);
+                        var normal = Vector3.Normalize(v12cross13);
+                        var invDiv = iset != null && v12cross13.Y != 0 ? -1.0f / v12cross13.Y : 0; // see below
 
                         // for flyable scenes, assume unlandable == unwalkable
                         bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable) || normal.Y < _walkableNormalThreshold || flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable);
@@ -238,7 +250,7 @@ public class NavmeshRasterizer
 
                                 RcRasterizations.AddSpan(_heightfield, x, z, y0, y1, areaId, _walkableClimbThreshold);
 
-                                if (iset != null)
+                                if (iset != null && invDiv != 0)
                                 {
                                     // intersect a ray passing through the middle of the cell vertically with the triangle
                                     // A + AB*b + AC*c = P, b >= 0, c >= 0, a + b <= 1
@@ -251,23 +263,21 @@ public class NavmeshRasterizer
                                     //  ==> b = (APx*ACz*ABx - APx*ACx*ABz - ACx*APz*ABx + ACx*APx*ABz) / ABx*(ACz*ABx - ACx*ABz)
                                     //  ==> b = (APx*ACz - APz*ACx) / (ACz*ABx - ACx*ABz)
                                     //  ==> y = Ay + ABy*b + ACy*c
+                                    // note that (ACz*ABx - ACx*ABz) == (AC cross AB).y
                                     var cellXMid = _heightfield.bmin.X + (x + 0.5f) * _heightfield.cs;
-                                    var div = v13.Z * v12.X - v13.X * v12.Z;
-                                    if (div != 0)
+                                    var apx = cellXMid - v1.X;
+                                    var apz = cellZMid - v1.Z;
+                                    var c = (apz * v12.X - apx * v12.Z) * invDiv;
+                                    var b = (apx * v13.Z - apz * v13.X) * invDiv;
+                                    if (c >= 0 && b >= 0 && c + b <= 1)
                                     {
-                                        var apx = cellXMid - v1.X;
-                                        var apz = cellZMid - v1.Z;
-                                        var invDiv = 1.0f / div;
-                                        var c = (apz * v12.X - apx * v12.Z) * invDiv;
-                                        var b = (apx * v13.Z - apz * v13.X) * invDiv;
-                                        if (c >= 0 && b >= 0 && c + b <= 1)
-                                        {
-                                            var intersectY = v1.Y + b * v12.Y + c * v13.Y;
-                                            iset.Add(x, z, intersectY, normal.Y > 0);
-                                        }
-                                        // else: intersection is outside triangle
+                                        var intersectY = v1.Y + b * v12.Y + c * v13.Y;
+                                        if (normal.Y > 0 && y0 > 0)
+                                            iset.Add(x, y0 - 1, z, intersectY, true);
+                                        else if (normal.Y < 0 && y1 < RcConstants.RC_SPAN_MAX_HEIGHT - 1)
+                                            iset.Add(x, y1 + 1, z, intersectY, false);
                                     }
-                                    // else: normal is orthogonal to OY
+                                    // else: intersection is outside triangle
                                 }
                             }
                         }
@@ -285,37 +295,32 @@ public class NavmeshRasterizer
                     {
                         for (int x = ix0; x <= ix1; ++x)
                         {
-                            var cnt = iset.FetchSorted(x, z, interiors);
+                            var cnt = iset.FetchSorted(x, z, solidSort, solidVoxel);
                             if (cnt == 0)
                                 continue; // empty
 
                             int idx = 0;
-                            if (IntersectionSet.DecodeNormalUp(interiors[idx]))
+                            if (solidVoxel[idx] > 0)
                             {
                                 // non-manifold mesh, assume everything below is interior
-                                var maxY = IntersectionSet.DecodeValue(interiors[idx]) - _heightfield.bmin.Y;
-                                int y1 = Math.Clamp((int)MathF.Ceiling(maxY * invCellY), 0, RcConstants.RC_SPAN_MAX_HEIGHT) - 1;
-                                if (y1 > 0)
-                                    RcRasterizations.AddSpan(_heightfield, x, z, 0, y1, 0, _walkableClimbThreshold);
+                                RcRasterizations.AddSpan(_heightfield, x, z, 0, solidVoxel[idx], 0, _walkableClimbThreshold);
                                 ++idx;
                             }
 
                             while (true)
                             {
-                                while (idx < cnt && IntersectionSet.DecodeNormalUp(interiors[idx]))
+                                while (idx < cnt && solidVoxel[idx] > 0)
                                     ++idx;
                                 if (idx == cnt)
                                     break;
-                                var minY = IntersectionSet.DecodeValue(interiors[idx]) - _heightfield.bmin.Y;
-                                while (idx < cnt && !IntersectionSet.DecodeNormalUp(interiors[idx]))
+                                var minY = -solidVoxel[idx];
+                                while (idx < cnt && solidVoxel[idx] <= 0)
                                     ++idx;
                                 if (idx == cnt)
                                     break;
-                                var maxY = IntersectionSet.DecodeValue(interiors[idx]) - _heightfield.bmin.Y;
-                                int y0 = Math.Clamp((int)MathF.Ceiling(minY * invCellY), 0, RcConstants.RC_SPAN_MAX_HEIGHT) + 1;
-                                int y1 = Math.Clamp((int)MathF.Ceiling(maxY * invCellY), 0, RcConstants.RC_SPAN_MAX_HEIGHT) - 1;
-                                if (y1 > y0)
-                                    RcRasterizations.AddSpan(_heightfield, x, z, y0, y1, 0, _walkableClimbThreshold);
+                                var maxY = solidVoxel[idx];
+                                if (maxY >= minY)
+                                    RcRasterizations.AddSpan(_heightfield, x, z, minY, maxY, 0, _walkableClimbThreshold);
                             }
                         }
                     }

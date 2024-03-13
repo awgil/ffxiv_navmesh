@@ -1,5 +1,4 @@
 - fill solids!
--- optimize solid filling by storing min/max y
 -- fill voxelmap directly during rasterization
 - walk/fly transitions
 - better pathfind

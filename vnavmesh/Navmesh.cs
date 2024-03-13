@@ -12,7 +12,7 @@ namespace Navmesh;
 public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
-    public static readonly uint Version = 8;
+    public static readonly uint Version = 9;
 
     public static int UnlandableAreaId = 1;
 

@@ -29,7 +29,7 @@ public class NavmeshSettings
     public float RegionMergeSize = 20;
     public RcPartition Partitioning = RcPartition.WATERSHED;
     public float PolyMaxEdgeLen = 12f;
-    public float PolyMaxSimplificationError = 1.3f;
+    public float PolyMaxSimplificationError = 1.5f;
     public int PolyMaxVerts = 6;
     public float DetailSampleDist = 6f;
     public float DetailMaxSampleError = 1f;

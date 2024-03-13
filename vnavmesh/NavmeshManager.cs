@@ -124,8 +124,9 @@ public class NavmeshManager : IDisposable
             var scene = new SceneDefinition();
             scene.FillFromActiveLayout();
             var cacheKey = GetCacheKey(scene);
+            var flyable = GetFlyable();
             _loadTaskProgress = 0;
-            _loadTask = Task.Run(() => BuildNavmesh(scene, cacheKey, allowLoadFromCache));
+            _loadTask = Task.Run(() => BuildNavmesh(scene, flyable, cacheKey, allowLoadFromCache));
         }
         return true;
     }
@@ -190,6 +191,12 @@ public class NavmeshManager : IDisposable
         return $"{terrRow.Bg.ToString().Replace('/', '_')}__{filterKey:X}__{string.Join('.', scene.FestivalLayers.Select(id => id.ToString("X")))}";
     }
 
+    private unsafe bool GetFlyable()
+    {
+        var layout = LayoutWorld.Instance()->ActiveLayout;
+        return layout->TerritoryTypeId != 250 && Service.LuminaRow<Lumina.Excel.GeneratedSheets.TerritoryType>(layout->TerritoryTypeId)?.TerritoryIntendedUse == 1; // exclude wolves' den pier
+    }
+
     private void ClearState()
     {
         _queryCancelSource?.Cancel();
@@ -203,7 +210,7 @@ public class NavmeshManager : IDisposable
         _navmesh = null;
     }
 
-    private Navmesh BuildNavmesh(SceneDefinition scene, string cacheKey, bool allowLoadFromCache)
+    private Navmesh BuildNavmesh(SceneDefinition scene, bool flyable, string cacheKey, bool allowLoadFromCache)
     {
         // try reading from cache
         var cache = new FileInfo($"{_cacheDir.FullName}/{cacheKey}.navmesh");
@@ -224,7 +231,7 @@ public class NavmeshManager : IDisposable
 
         // cache doesn't exist or can't be used for whatever reason - build navmesh from scratch
         // TODO: we can build multiple tiles concurrently
-        var builder = new NavmeshBuilder(scene, _settings);
+        var builder = new NavmeshBuilder(scene, flyable, _settings);
         var deltaProgress = 1.0f / (builder.NumTilesX * builder.NumTilesZ);
         for (int z = 0; z < builder.NumTilesZ; ++z)
         {

@@ -31,7 +31,7 @@ public class NavmeshBuilder
     private int _tileSizeXVoxels;
     private int _tileSizeZVoxels;
 
-    public NavmeshBuilder(SceneDefinition scene, NavmeshSettings settings)
+    public NavmeshBuilder(SceneDefinition scene, bool flyable, NavmeshSettings settings)
     {
         Settings = settings;
 
@@ -51,7 +51,7 @@ public class NavmeshBuilder
         navmeshParams.maxPolys = 1 << DtNavMesh.DT_POLY_BITS;
 
         var navmesh = new DtNavMesh(navmeshParams, settings.PolyMaxVerts);
-        var volume = new VoxelMap(BoundsMin, BoundsMax, settings); // TODO: improve...
+        var volume = flyable ? new VoxelMap(BoundsMin, BoundsMax, settings) : null;
         Navmesh = new(navmesh, volume);
 
         // calculate derived parameters
@@ -88,7 +88,7 @@ public class NavmeshBuilder
         // each span contains an 'area id', which is either walkable (if normal is good) or not (otherwise); areas outside spans contains no geometry at all
         var shf = new RcHeightfield(_tileSizeXVoxels, _tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), Settings.CellSize, Settings.CellHeight, _borderSizeVoxels);
         var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, Telemetry);
-        rasterizer.Rasterize(Scene, true, true, true, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors));
+        rasterizer.Rasterize(Scene, true, true, true, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), Navmesh.Volume != null);
 
         // 2. perform a bunch of postprocessing on a heightfield
         if (Settings.Filtering.HasFlag(NavmeshSettings.Filter.LowHangingObstacles))
@@ -203,9 +203,12 @@ public class NavmeshBuilder
 
         // 11. build nav volume data
         // TODO: keep local 1x1x16 voxel map, and just merge under lock
-        lock (Navmesh.Volume)
+        if (Navmesh.Volume != null)
         {
-            Navmesh.Volume.AddFromHeightfield(shf);
+            lock (Navmesh.Volume)
+            {
+                Navmesh.Volume.AddFromHeightfield(shf);
+            }
         }
 
         Service.Log.Debug($"built navmesh tile {x}x{z} in {timer.Value().TotalMilliseconds}ms");

@@ -6,7 +6,6 @@ using DotRecast.Recast;
 using ImGuiNET;
 using Navmesh.NavVolume;
 using System;
-using System.Diagnostics;
 using System.Numerics;
 using System.Threading.Tasks;
 
@@ -57,14 +56,14 @@ class DebugNavmeshCustom : IDisposable
             Clear();
         }
 
-        public void Rebuild(NavmeshSettings settings, bool includeTiles)
+        public void Rebuild(NavmeshSettings settings, bool flyable, bool includeTiles)
         {
             Clear();
             Service.Log.Debug("[navmesh] extract from scene");
             _scene = new();
             _scene.FillFromActiveLayout();
             Service.Log.Debug("[navmesh] schedule async build");
-            _task = Task.Run(() => BuildNavmesh(_scene, settings, includeTiles));
+            _task = Task.Run(() => BuildNavmesh(_scene, flyable, settings, includeTiles));
         }
 
         public void Clear()
@@ -83,12 +82,12 @@ class DebugNavmeshCustom : IDisposable
             //GC.Collect();
         }
 
-        private void BuildNavmesh(SceneDefinition scene, NavmeshSettings settings, bool includeTiles)
+        private void BuildNavmesh(SceneDefinition scene, bool flyable, NavmeshSettings settings, bool includeTiles)
         {
             try
             {
                 var timer = Timer.Create();
-                _builder = new(scene, settings);
+                _builder = new(scene, flyable, settings);
 
                 // create tile data and add to navmesh
                 _intermediates = new(_builder.NumTilesX, _builder.NumTilesZ);
@@ -169,16 +168,22 @@ class DebugNavmeshCustom : IDisposable
 
         using (var d = ImRaii.Disabled(_navmesh.CurrentState == AsyncBuilder.State.InProgress))
         {
-            if (ImGui.Button("Rebuild navmesh"))
+            if (ImGui.Button("Rebuild navmesh flyable"))
             {
                 Clear();
-                _navmesh.Rebuild(_settings, true);
+                _navmesh.Rebuild(_settings, true, true);
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Rebuild navmesh non-flyable"))
+            {
+                Clear();
+                _navmesh.Rebuild(_settings, false, true);
             }
             ImGui.SameLine();
             if (ImGui.Button("Rebuild scene extract only"))
             {
                 Clear();
-                _navmesh.Rebuild(_settings, false);
+                _navmesh.Rebuild(_settings, true, false);
             }
             ImGui.SameLine();
             ImGui.TextUnformatted($"State: {_navmesh.CurrentState}");
@@ -242,7 +247,7 @@ class DebugNavmeshCustom : IDisposable
                         {
                             if (nhfc.Opened)
                             {
-                                debug.HFC ??= CompareHeightfields(x, z, _navmesh.Extractor!);
+                                debug.HFC ??= CompareHeightfields(x, z, _navmesh.Extractor!, true);
                                 _tree.LeafNode($"Old: {debug.HFC.Value.DurationOld:f3}");
                                 _tree.LeafNode($"New: {debug.HFC.Value.DurationNew:f3}");
                                 _tree.LeafNode($"Match: {debug.HFC.Value.Identical}");
@@ -274,7 +279,7 @@ class DebugNavmeshCustom : IDisposable
         _navmesh.Clear();
     }
 
-    private HeightfieldComparison CompareHeightfields(int tx, int tz, SceneExtractor scene)
+    private HeightfieldComparison CompareHeightfields(int tx, int tz, SceneExtractor scene, bool flyable)
     {
         var telemetry = new RcContext();
         var boundsMin = new Vector3(-1024);
@@ -299,12 +304,12 @@ class DebugNavmeshCustom : IDisposable
         var timer = Timer.Create();
         var shfOld = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.CellSize, _settings.CellHeight, borderSizeVoxels);
         var rasterizerOld = new NavmeshRasterizer(shfOld, walkableNormalThreshold, walkableClimbVoxels, telemetry);
-        rasterizerOld.RasterizeOld(scene, true, true, true);
+        rasterizerOld.RasterizeOld(scene, true, true, true, flyable);
         var dur1 = (float)timer.Value().TotalSeconds;
 
         var shfNew = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.CellSize, _settings.CellHeight, borderSizeVoxels);
         var rasterizerNew = new NavmeshRasterizer(shfNew, walkableNormalThreshold, walkableClimbVoxels, telemetry);
-        rasterizerNew.Rasterize(scene, true, true, true, false);
+        rasterizerNew.Rasterize(scene, true, true, true, false, flyable);
         var dur2 = (float)timer.Value().TotalSeconds;
 
         bool identical = true;
@@ -339,7 +344,7 @@ class DebugNavmeshCustom : IDisposable
         {
             for (int tx = 0; tx < numTilesXZ; ++tx)
             {
-                var hfc = CompareHeightfields(tx, tz, scene);
+                var hfc = CompareHeightfields(tx, tz, scene, true);
                 dur1 += hfc.DurationOld;
                 dur2 += hfc.DurationNew;
                 identical &= hfc.Identical;

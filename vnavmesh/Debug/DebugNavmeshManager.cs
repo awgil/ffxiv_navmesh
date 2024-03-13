@@ -108,8 +108,11 @@ class DebugNavmeshManager : IDisposable
 
         _drawNavmesh ??= new(_manager.Navmesh.Mesh, _manager.Query.MeshQuery, _tree, _dd);
         _drawNavmesh.Draw();
-        _debugVoxelMap ??= new(_manager.Navmesh.Volume, _manager.Query.VolumeQuery, _tree, _dd);
-        _debugVoxelMap.Draw();
+        if (_manager.Navmesh.Volume != null)
+        {
+            _debugVoxelMap ??= new(_manager.Navmesh.Volume, _manager.Query.VolumeQuery, _tree, _dd);
+            _debugVoxelMap.Draw();
+        }
     }
 
     private void DrawPosition(string tag, Vector3 position)

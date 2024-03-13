@@ -9,12 +9,10 @@ using System.Numerics;
 namespace Navmesh;
 
 // full set of data needed for navigation in the zone
-public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
+public record class Navmesh(DtNavMesh Mesh, VoxelMap? Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
-    public static readonly uint Version = 9;
-
-    public static int UnlandableAreaId = 1;
+    public static readonly uint Version = 10;
 
     // throws an exception on failure
     public static Navmesh Deserialize(BinaryReader reader, NavmeshSettings settings)
@@ -23,13 +21,19 @@ public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
         var version = reader.ReadUInt32();
         if (magic != Magic || version != Version)
             throw new Exception("Incorrect header");
-
         var meshLen = reader.ReadInt32();
+        var volumeLen = reader.ReadInt32();
+
         var mesh = new DtMeshSetReader().Read(new RcByteBuffer(reader.ReadBytes(meshLen)));
 
-        var (min, max) = DeserializeBounds(reader);
-        var volume = new VoxelMap(min, max, settings);
-        DeserializeTile(reader, volume.RootTile);
+        VoxelMap? volume = null;
+        if (volumeLen > 0)
+        {
+            var (min, max) = DeserializeBounds(reader);
+            volume = new VoxelMap(min, max, settings);
+            DeserializeTile(reader, volume.RootTile);
+        }
+
         return new(mesh, volume);
     }
 
@@ -37,17 +41,26 @@ public record class Navmesh(DtNavMesh Mesh, VoxelMap Volume)
     {
         writer.Write(Magic);
         writer.Write(Version);
+        writer.Write(0); // mesh size placeholder
+        writer.Write(0); // volume size placeholder
+        var payloadStartPos = (int)writer.Seek(0, SeekOrigin.Current);
 
-        var meshSizePos = (int)writer.Seek(0, SeekOrigin.Current);
-        writer.Write(0);
         new DtMeshSetWriter().Write(writer, Mesh, RcByteOrder.LITTLE_ENDIAN, false);
-        var postMeshSizePos = (int)writer.Seek(0, SeekOrigin.Current);
-        writer.Seek(meshSizePos, SeekOrigin.Begin);
-        writer.Write(postMeshSizePos - meshSizePos - 4);
-        writer.Seek(postMeshSizePos, SeekOrigin.Begin);
+        int meshLen = (int)writer.Seek(0, SeekOrigin.Current) - payloadStartPos;
 
-        SerializeBounds(writer, Volume.RootTile.BoundsMin, Volume.RootTile.BoundsMax);
-        SerializeTile(writer, Volume.RootTile);
+        int volumeLen = 0;
+        if (Volume != null)
+        {
+            SerializeBounds(writer, Volume.RootTile.BoundsMin, Volume.RootTile.BoundsMax);
+            SerializeTile(writer, Volume.RootTile);
+            volumeLen = (int)writer.Seek(0, SeekOrigin.Current) - payloadStartPos - meshLen;
+        }
+
+        writer.Seek(payloadStartPos - 8, SeekOrigin.Begin);
+        writer.Write(meshLen);
+        writer.Write(volumeLen);
+        writer.Seek(payloadStartPos + meshLen + volumeLen, SeekOrigin.Begin);
+
     }
 
     private static unsafe void DeserializeTile(BinaryReader reader, VoxelMap.Tile tile)

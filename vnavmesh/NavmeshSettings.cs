@@ -15,6 +15,7 @@ public class NavmeshSettings
         LowHangingObstacles = 1 << 0,
         LedgeSpans = 1 << 1,
         WalkableLowHeightSpans = 1 << 2,
+        Interiors = 1 << 3,
     }
 
     public float CellSize = 0.25f;
@@ -278,6 +279,9 @@ public class NavmeshSettings
             maximum to the minimum of the next higher span in the same column.
             If there is no higher span in the column, the clearance is computed as the
             distance from the top of the span to the maximum heightfield height.
+            """);
+        DrawConfigFilteringEnum(ref value, Filter.Interiors, "Interiors", """
+            Marks spans inside manifold geometry (or below non-manifold) as non-walkable.
             """);
     }
 

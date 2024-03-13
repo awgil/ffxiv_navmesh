@@ -1,6 +1,7 @@
 ﻿using DotRecast.Core;
 using DotRecast.Recast;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace Navmesh;
@@ -21,6 +22,72 @@ public class NavmeshRasterizer
         PosZ = 1 << 5,
     }
 
+    // a set of per-cell intersections with vertical ray
+    // high 31 bits of entry is the remapped Y coordinate (0 = -1024, 0x7fffffff = 1024-eps), low bit is normal sign (1 if points up)
+    private class IntersectionSet
+    {
+        public const int PageShift = 20;
+        public const int PageSize = 1 << PageShift;
+        public const int ValueScale = 1 << 20; // 2048 = 2^11, we have 32 bits => 20 bits of scale; note: this is a bit extreme, mantissa is only 24 bits...
+        public const float InvValueScale = 1.0f / ValueScale;
+
+        public record struct Entry(int Next, uint Value);
+
+        private int _numCellsX;
+        private int[] _firstIndices; // x then z
+        private List<Entry[]> _pages = new();
+        private int _firstFree = 1;
+
+        public static uint Encode(float value, bool normalUp) => ((uint)((value + 1024) * ValueScale) << 1) | (normalUp ? 1u : 0);
+        public static float DecodeValue(uint v) => (v >> 1) * InvValueScale - 1024;
+        public static bool DecodeNormalUp(uint v) => (v & 1) != 0;
+
+        public IntersectionSet(int numCellsX, int numCellsZ)
+        {
+            _numCellsX = numCellsX;
+            _firstIndices = new int[numCellsX * numCellsZ];
+            _pages.Add(new Entry[PageSize]);
+        }
+
+        public void Add(int x, int z, float value, bool normalUp)
+        {
+            if (value <= -1024 || value >= 1024)
+                return;
+            var pageIndex = _firstFree >> PageShift;
+            if (pageIndex == _pages.Count)
+                _pages.Add(new Entry[PageSize]);
+            var indexInPage = _firstFree & (PageSize - 1);
+            var ival = Encode(value, normalUp);
+            ref var first = ref _firstIndices[z * _numCellsX + x];
+            _pages[pageIndex][indexInPage] = new(first, ival);
+            first = _firstFree++;
+        }
+
+        public int FetchSorted(int x, int z, Span<uint> buffer)
+        {
+            var idx = _firstIndices[z * _numCellsX + x];
+            if (idx == 0)
+                return 0;
+
+            int cnt = 0;
+            do
+            {
+                var entry = _pages[idx >> PageShift][idx & (PageSize - 1)];
+                buffer[cnt++] = entry.Value;
+                idx = entry.Next;
+            }
+            while (idx != 0);
+            buffer.Slice(0, cnt).Sort();
+            return cnt;
+        }
+
+        public void Clear()
+        {
+            Array.Fill(_firstIndices, 0);
+            _firstFree = 1;
+        }
+    }
+
     private RcHeightfield _heightfield;
     private RcContext _telemetry;
     private int _walkableClimbThreshold; // if two spans have maximums within this number of voxels, their area is 'merged' (higher is selected)
@@ -34,7 +101,7 @@ public class NavmeshRasterizer
         _walkableNormalThreshold = walkableNormalThreshold;
     }
 
-    public void Rasterize(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic)
+    public void Rasterize(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic, bool fillInteriors)
     {
         Span<Vector3> worldVertices = stackalloc Vector3[256];
         Span<OutFlags> outFlags = stackalloc OutFlags[256];
@@ -42,9 +109,11 @@ public class NavmeshRasterizer
         Span<Vector3> clipRemainingX = stackalloc Vector3[7];
         Span<Vector3> clipScratch = stackalloc Vector3[7];
         Span<Vector3> clipCell = stackalloc Vector3[7];
+        Span<uint> interiors = stackalloc uint[256];
         float invCellXZ = 1.0f / _heightfield.cs;
         float invCellY = 1.0f / _heightfield.ch;
         float worldHeight = _heightfield.bmax.Y - _heightfield.bmin.Y;
+        var iset = fillInteriors ? new IntersectionSet(_heightfield.width, _heightfield.height) : null;
         foreach (var (name, mesh) in geom.Meshes)
         {
             var terrain = mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain);
@@ -138,6 +207,7 @@ public class NavmeshRasterizer
                             x0 = Math.Clamp(x0, -1, _heightfield.width - 1);
                             x1 = Math.Clamp(x1, 0, _heightfield.width - 1);
 
+                            var cellZMid = _heightfield.bmin.Z + (z + 0.5f) * _heightfield.cs;
                             for (int x = x0; x <= x1; ++x)
                             {
                                 if (numRemainingX < 3)
@@ -168,10 +238,88 @@ public class NavmeshRasterizer
 
                                 RcRasterizations.AddSpan(_heightfield, x, z, y0, y1, areaId, _walkableClimbThreshold);
 
-                                // TODO: find intersection with ray along -y through the center of the cell, combine with normal.Y sign and add to per-cell list of enter/exit points
+                                if (iset != null)
+                                {
+                                    // intersect a ray passing through the middle of the cell vertically with the triangle
+                                    // A + AB*b + AC*c = P, b >= 0, c >= 0, a + b <= 1
+                                    //  ==>
+                                    // ABx*b + ACx*c = APx
+                                    // ABz*b + ACz*c = APz
+                                    //  ==> ABx*b = APx - ACx*c, ABz*ABx*b + ACz*ABx*c = APz*ABx
+                                    //  ==> ABz*(APx - ACx*c) + ACz*ABx*c = APz*ABx
+                                    //  ==> c = (APz*ABx - APx*ABz) / (ACz*ABx - ACx*ABz)
+                                    //  ==> b = (APx*ACz*ABx - APx*ACx*ABz - ACx*APz*ABx + ACx*APx*ABz) / ABx*(ACz*ABx - ACx*ABz)
+                                    //  ==> b = (APx*ACz - APz*ACx) / (ACz*ABx - ACx*ABz)
+                                    //  ==> y = Ay + ABy*b + ACy*c
+                                    var cellXMid = _heightfield.bmin.X + (x + 0.5f) * _heightfield.cs;
+                                    var div = v13.Z * v12.X - v13.X * v12.Z;
+                                    if (div != 0)
+                                    {
+                                        var apx = cellXMid - v1.X;
+                                        var apz = cellZMid - v1.Z;
+                                        var invDiv = 1.0f / div;
+                                        var c = (apz * v12.X - apx * v12.Z) * invDiv;
+                                        var b = (apx * v13.Z - apz * v13.X) * invDiv;
+                                        if (c >= 0 && b >= 0 && c + b <= 1)
+                                        {
+                                            var intersectY = v1.Y + b * v12.Y + c * v13.Y;
+                                            iset.Add(x, z, intersectY, normal.Y > 0);
+                                        }
+                                        // else: intersection is outside triangle
+                                    }
+                                    // else: normal is orthogonal to OY
+                                }
                             }
                         }
                     }
+                }
+
+                if (iset != null)
+                {
+                    // fill interiors
+                    int iz0 = Math.Clamp((int)((instance.WorldBounds.Min.Z - _heightfield.bmin.Z) * invCellXZ), 0, _heightfield.height - 1);
+                    int iz1 = Math.Clamp((int)((instance.WorldBounds.Max.Z - _heightfield.bmin.Z) * invCellXZ), 0, _heightfield.height - 1);
+                    int ix0 = Math.Clamp((int)((instance.WorldBounds.Min.X - _heightfield.bmin.X) * invCellXZ), 0, _heightfield.width - 1);
+                    int ix1 = Math.Clamp((int)((instance.WorldBounds.Max.X - _heightfield.bmin.X) * invCellXZ), 0, _heightfield.width - 1);
+                    for (int z = iz0; z <= iz1; ++z)
+                    {
+                        for (int x = ix0; x <= ix1; ++x)
+                        {
+                            var cnt = iset.FetchSorted(x, z, interiors);
+                            if (cnt == 0)
+                                continue; // empty
+
+                            int idx = 0;
+                            if (IntersectionSet.DecodeNormalUp(interiors[idx]))
+                            {
+                                // non-manifold mesh, assume everything below is interior
+                                var maxY = IntersectionSet.DecodeValue(interiors[idx]) - _heightfield.bmin.Y;
+                                int y1 = Math.Clamp((int)MathF.Ceiling(maxY * invCellY), 0, RcConstants.RC_SPAN_MAX_HEIGHT) - 1;
+                                if (y1 > 0)
+                                    RcRasterizations.AddSpan(_heightfield, x, z, 0, y1, 0, _walkableClimbThreshold);
+                                ++idx;
+                            }
+
+                            while (true)
+                            {
+                                while (idx < cnt && IntersectionSet.DecodeNormalUp(interiors[idx]))
+                                    ++idx;
+                                if (idx == cnt)
+                                    break;
+                                var minY = IntersectionSet.DecodeValue(interiors[idx]) - _heightfield.bmin.Y;
+                                while (idx < cnt && !IntersectionSet.DecodeNormalUp(interiors[idx]))
+                                    ++idx;
+                                if (idx == cnt)
+                                    break;
+                                var maxY = IntersectionSet.DecodeValue(interiors[idx]) - _heightfield.bmin.Y;
+                                int y0 = Math.Clamp((int)MathF.Ceiling(minY * invCellY), 0, RcConstants.RC_SPAN_MAX_HEIGHT) + 1;
+                                int y1 = Math.Clamp((int)MathF.Ceiling(maxY * invCellY), 0, RcConstants.RC_SPAN_MAX_HEIGHT) - 1;
+                                if (y1 > y0)
+                                    RcRasterizations.AddSpan(_heightfield, x, z, y0, y1, 0, _walkableClimbThreshold);
+                            }
+                        }
+                    }
+                    iset.Clear();
                 }
             }
         }

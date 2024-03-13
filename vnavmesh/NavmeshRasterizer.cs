@@ -86,7 +86,7 @@ public class NavmeshRasterizer
                 ++cnt;
             }
             while (idx != 0);
-            bufferSort.Slice(0, cnt).Sort(bufferVoxel);
+            bufferSort.Slice(0, cnt).Sort(bufferVoxel.Slice(0, cnt));
             return cnt;
         }
 
@@ -303,6 +303,7 @@ public class NavmeshRasterizer
                             if (solidVoxel[idx] > 0)
                             {
                                 // non-manifold mesh, assume everything below is interior
+                                // TODO: we only really need to bother for voxelmap...
                                 RcRasterizations.AddSpan(_heightfield, x, z, 0, solidVoxel[idx], 0, _walkableClimbThreshold);
                                 ++idx;
                             }

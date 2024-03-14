@@ -1,5 +1,7 @@
 ﻿using DotRecast.Core;
 using DotRecast.Recast;
+using Lumina.Excel.GeneratedSheets;
+using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -99,25 +101,39 @@ public class NavmeshRasterizer
 
     private RcHeightfield _heightfield;
     private RcContext _telemetry;
+    private Voxelizer? _voxelizer;
     private IntersectionSet? _iset;
-    private bool _flyable;
     private float _invCellXZ;
     private float _invCellY;
     private float _worldHeight;
     private int _walkableClimbThreshold; // if two spans have maximums within this number of voxels, their area is 'merged' (higher is selected)
     private float _walkableNormalThreshold; // triangle is considered 'walkable' if it's world-space normal's Y coordinate is >= this
+    private int _voxShiftX;
+    private int _voxShiftY;
+    private int _voxShiftZ;
 
-    public NavmeshRasterizer(RcHeightfield heightfield, float walkableNormalThreshold, int walkableMaxClimb, bool fillInteriors, bool flyable, RcContext telemetry)
+    public NavmeshRasterizer(RcHeightfield heightfield, float walkableNormalThreshold, int walkableMaxClimb, bool fillInteriors, Voxelizer? voxelizer, RcContext telemetry)
     {
         _heightfield = heightfield;
         _telemetry = telemetry;
+        _voxelizer = voxelizer;
         _iset = fillInteriors ? new IntersectionSet(heightfield.width, heightfield.height) : null;
-        _flyable = flyable;
         _invCellXZ = 1.0f / _heightfield.cs;
         _invCellY = 1.0f / _heightfield.ch;
         _worldHeight = _heightfield.bmax.Y - _heightfield.bmin.Y;
         _walkableClimbThreshold = walkableMaxClimb;
         _walkableNormalThreshold = walkableNormalThreshold;
+        if (voxelizer != null)
+        {
+            var dx = (heightfield.width - 2 * heightfield.borderSize) / voxelizer.NumX;
+            var dy = (int)(_worldHeight * _invCellY) / voxelizer.NumY;
+            var dz = (heightfield.height - 2 * heightfield.borderSize) / voxelizer.NumZ;
+            if (!BitOperations.IsPow2(dx) || !BitOperations.IsPow2(dy) || !BitOperations.IsPow2(dz))
+                throw new Exception($"Cell size mismatch: {dx}x{dy}x{dz}");
+            _voxShiftX = BitOperations.Log2((uint)dx);
+            _voxShiftY = BitOperations.Log2((uint)dy);
+            _voxShiftZ = BitOperations.Log2((uint)dz);
+        }
     }
 
     public void Rasterize(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic, bool perMeshInteriors, bool solidBelowNonManifold)
@@ -168,10 +184,6 @@ public class NavmeshRasterizer
 
             foreach (var p in part.Primitives)
             {
-                var flags = (p.Flags & ~instance.ForceClearPrimFlags) | instance.ForceSetPrimFlags;
-                if (_flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
-                    continue; // TODO: rasterize to normal heightfield, can't do it right now, since we're using same heightfield for both mesh and volume
-
                 if ((outFlags[p.V1] & outFlags[p.V2] & outFlags[p.V3]) != OutFlags.None)
                     continue; // vertex is fully outside bounds, on one side of some plane
 
@@ -185,7 +197,9 @@ public class NavmeshRasterizer
                 var invDiv = _iset != null && v12cross13.Y != 0 ? -1.0f / v12cross13.Y : 0; // see below
 
                 // for flyable scenes, assume unlandable == unwalkable
-                bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable) || normal.Y < _walkableNormalThreshold || _flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable);
+                var flags = (p.Flags & ~instance.ForceClearPrimFlags) | instance.ForceSetPrimFlags;
+                bool realSolid = !flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough);
+                bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable) || normal.Y < _walkableNormalThreshold || _voxelizer != null && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable);
                 var areaId = unwalkable ? 0 : RcConstants.RC_WALKABLE_AREA;
 
                 // prepare for clipping: while iterating over z, we'll keep the 'remaining polygon' in clipRemainingZ
@@ -257,9 +271,9 @@ public class NavmeshRasterizer
                         int y0 = Math.Clamp((int)MathF.Floor(minY * _invCellY), 0, RcConstants.RC_SPAN_MAX_HEIGHT);
                         int y1 = Math.Clamp((int)MathF.Ceiling(maxY * _invCellY), y0 + 1, RcConstants.RC_SPAN_MAX_HEIGHT);
 
-                        RcRasterizations.AddSpan(_heightfield, x, z, y0, y1, areaId, _walkableClimbThreshold);
+                        AddSpan(x, z, y0, y1, areaId, realSolid);
 
-                        if (_iset != null && invDiv != 0)
+                        if (realSolid && _iset != null && invDiv != 0)
                         {
                             // intersect a ray passing through the middle of the cell vertically with the triangle
                             // A + AB*b + AC*c = P, b >= 0, c >= 0, a + b <= 1
@@ -295,6 +309,13 @@ public class NavmeshRasterizer
         return true;
     }
 
+    private void AddSpan(int x, int z, int y0, int y1, int areaId, bool includeInVolume)
+    {
+        RcRasterizations.AddSpan(_heightfield, x, z, y0, y1, areaId, _walkableClimbThreshold);
+        if (includeInVolume && _voxelizer != null)
+            _voxelizer.AddSpan(x >> _voxShiftX, z >> _voxShiftZ, y0 >> _voxShiftY, y1 >> _voxShiftY);
+    }
+
     // TODO: maintain non-empty cells in intersection set?
     private void FillInterior(bool solidBelowNonManifold, int z0, int z1, int x0, int x1)
     {
@@ -321,7 +342,7 @@ public class NavmeshRasterizer
                 {
                     // non-manifold mesh, assume everything below is interior - this has problems with some terrain in elpis
                     // TODO: we only really need to bother for voxelmap...
-                    RcRasterizations.AddSpan(_heightfield, x, z, 0, solidVoxel[idx], 0, _walkableClimbThreshold);
+                    AddSpan(x, z, 0, solidVoxel[idx], 0, true);
                     ++idx;
                 }
 
@@ -338,7 +359,7 @@ public class NavmeshRasterizer
                         break;
                     var maxY = solidVoxel[idx];
                     if (maxY >= minY)
-                        RcRasterizations.AddSpan(_heightfield, x, z, minY, maxY, 0, _walkableClimbThreshold);
+                        AddSpan(x, z, minY, maxY, 0, true);
                 }
             }
         }
@@ -378,11 +399,11 @@ public class NavmeshRasterizer
                     foreach (var p in part.Primitives)
                     {
                         var flags = (p.Flags & ~inst.ForceClearPrimFlags) | inst.ForceSetPrimFlags;
-                        if (_flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
+                        if (_voxelizer != null && flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
                             continue; // TODO: rasterize to normal heightfield, can't do it right now, since we're using same heightfield for both mesh and volume
 
                         bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable);
-                        unwalkable |= _flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable); // for flyable scenes, assume unlandable == unwalkable
+                        unwalkable |= _voxelizer != null && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable); // for flyable scenes, assume unlandable == unwalkable
                         if (!unwalkable)
                         {
                             var v1 = CachedVertex(vertices, p.V1);

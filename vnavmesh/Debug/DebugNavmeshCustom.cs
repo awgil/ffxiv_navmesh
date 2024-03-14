@@ -249,7 +249,7 @@ class DebugNavmeshCustom : IDisposable
                         {
                             if (nhfc.Opened)
                             {
-                                debug.HFC ??= CompareHeightfields(x, z, _navmesh.Extractor!, true);
+                                debug.HFC ??= CompareHeightfields(x, z, _navmesh.Extractor!);
                                 _tree.LeafNode($"Old: {debug.HFC.Value.DurationOld:f3}");
                                 _tree.LeafNode($"New: {debug.HFC.Value.DurationNew:f3}");
                                 _tree.LeafNode($"Match: {debug.HFC.Value.Identical}");
@@ -284,7 +284,7 @@ class DebugNavmeshCustom : IDisposable
         _navmesh.Clear();
     }
 
-    private HeightfieldComparison CompareHeightfields(int tx, int tz, SceneExtractor scene, bool flyable)
+    private HeightfieldComparison CompareHeightfields(int tx, int tz, SceneExtractor scene)
     {
         var telemetry = new RcContext();
         var boundsMin = new Vector3(-1024);
@@ -308,12 +308,12 @@ class DebugNavmeshCustom : IDisposable
 
         var timer = Timer.Create();
         var shfOld = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.CellSize, _settings.CellHeight, borderSizeVoxels);
-        var rasterizerOld = new NavmeshRasterizer(shfOld, walkableNormalThreshold, walkableClimbVoxels, false, flyable, telemetry);
+        var rasterizerOld = new NavmeshRasterizer(shfOld, walkableNormalThreshold, walkableClimbVoxels, false, null, telemetry);
         rasterizerOld.RasterizeOld(scene, true, true, true);
         var dur1 = (float)timer.Value().TotalSeconds;
 
         var shfNew = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.CellSize, _settings.CellHeight, borderSizeVoxels);
-        var rasterizerNew = new NavmeshRasterizer(shfNew, walkableNormalThreshold, walkableClimbVoxels, false, flyable, telemetry);
+        var rasterizerNew = new NavmeshRasterizer(shfNew, walkableNormalThreshold, walkableClimbVoxels, false, null, telemetry);
         rasterizerNew.Rasterize(scene, true, true, true, false, false);
         var dur2 = (float)timer.Value().TotalSeconds;
 
@@ -349,7 +349,7 @@ class DebugNavmeshCustom : IDisposable
         {
             for (int tx = 0; tx < numTilesXZ; ++tx)
             {
-                var hfc = CompareHeightfields(tx, tz, scene, true);
+                var hfc = CompareHeightfields(tx, tz, scene);
                 dur1 += hfc.DurationOld;
                 dur2 += hfc.DurationNew;
                 identical &= hfc.Identical;

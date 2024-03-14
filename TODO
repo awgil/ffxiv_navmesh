@@ -1,5 +1,4 @@
 - fill solids!
--- fill voxelmap directly during rasterization
 -- figure out nonmanifold meshes terrain (eg elpis)
 -- addspan improvement
 -- intersectionset dirty roots

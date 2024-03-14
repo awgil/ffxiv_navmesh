@@ -30,6 +30,9 @@ public class NavmeshBuilder
     private float _borderSizeWorld;
     private int _tileSizeXVoxels;
     private int _tileSizeZVoxels;
+    private int _voxelizerNumX = 1;
+    private int _voxelizerNumY = 1;
+    private int _voxelizerNumZ = 1;
 
     public NavmeshBuilder(SceneDefinition scene, bool flyable, NavmeshSettings settings)
     {
@@ -63,6 +66,17 @@ public class NavmeshBuilder
         _borderSizeWorld = _borderSizeVoxels * Settings.CellSize;
         _tileSizeXVoxels = (int)MathF.Ceiling(navmeshParams.tileWidth / Settings.CellSize) + 2 * _borderSizeVoxels;
         _tileSizeZVoxels = (int)MathF.Ceiling(navmeshParams.tileHeight / Settings.CellSize) + 2 * _borderSizeVoxels;
+        if (volume != null)
+        {
+            _voxelizerNumY = settings.NumTiles[0];
+            for (int i = 1; i < settings.NumTiles.Length; ++i)
+            {
+                var n = settings.NumTiles[i];
+                _voxelizerNumX *= n;
+                _voxelizerNumY *= n;
+                _voxelizerNumZ *= n;
+            }
+        }
     }
 
     // this can be called concurrently; returns intermediate data that can be discarded if not used
@@ -87,7 +101,8 @@ public class NavmeshBuilder
         // this creates a 'solid heightfield', which is a grid of sorted linked lists of spans
         // each span contains an 'area id', which is either walkable (if normal is good) or not (otherwise); areas outside spans contains no geometry at all
         var shf = new RcHeightfield(_tileSizeXVoxels, _tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), Settings.CellSize, Settings.CellHeight, _borderSizeVoxels);
-        var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), Navmesh.Volume != null, Telemetry);
+        var vox = Navmesh.Volume != null ? new Voxelizer(_voxelizerNumX, _voxelizerNumY, _voxelizerNumZ) : null;
+        var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), vox, Telemetry);
         rasterizer.Rasterize(Scene, true, false, false, false, true); // rasterize terrain
         rasterizer.Rasterize(Scene, false, true, true, true, false); // rasterize everything else
 
@@ -204,11 +219,11 @@ public class NavmeshBuilder
 
         // 11. build nav volume data
         // TODO: keep local 1x1x16 voxel map, and just merge under lock
-        if (Navmesh.Volume != null)
+        if (Navmesh.Volume != null && vox != null)
         {
             lock (Navmesh.Volume)
             {
-                Navmesh.Volume.AddFromHeightfield(shf, x, z);
+                Navmesh.Volume.Build(vox, x, z);
             }
         }
 

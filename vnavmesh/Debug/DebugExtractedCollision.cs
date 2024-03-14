@@ -131,7 +131,7 @@ public class DebugExtractedCollision : IDisposable
         int meshIndex = 0;
         foreach (var (name, mesh) in _extractor.Meshes)
         {
-            using var nm = _tree.Node($"{name}: flags={mesh.MeshFlags}");
+            using var nm = _tree.Node($"{name}: flags={mesh.MeshType}");
             if (nm.SelectedOrHovered)
                 VisualizeMeshInstances(meshIndex);
 
@@ -307,7 +307,7 @@ public class DebugExtractedCollision : IDisposable
     }
 
     private Vector4 MeshColor(SceneExtractor.Mesh mesh) =>
-        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain) ? new(0, 1, 0, 0.55f) :
-        mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromFileMesh) ? new(1, 1, 0, 0.55f) :
+        mesh.MeshType.HasFlag(SceneExtractor.MeshType.Terrain) ? new(0, 1, 0, 0.55f) :
+        mesh.MeshType.HasFlag(SceneExtractor.MeshType.FileMesh) ? new(1, 1, 0, 0.55f) :
         new(1, 0, 0, 0.55f);
 }

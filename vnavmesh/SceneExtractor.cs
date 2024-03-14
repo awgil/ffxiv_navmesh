@@ -11,13 +11,16 @@ namespace Navmesh;
 public class SceneExtractor
 {
     [Flags]
-    public enum MeshFlags
+    public enum MeshType
     {
         None = 0,
-        FromTerrain = 1 << 0,
-        FromFileMesh = 1 << 1,
-        FromCylinderMesh = 1 << 2,
-        FromAnalyticShape = 1 << 3,
+        Terrain = 1 << 0,
+        FileMesh = 1 << 1,
+        CylinderMesh = 1 << 2,
+        AnalyticShape = 1 << 3,
+        AnalyticPlane = 1 << 4,
+
+        All = (1 << 5) - 1
     }
 
     [Flags]
@@ -43,7 +46,7 @@ public class SceneExtractor
     {
         public List<MeshPart> Parts = new();
         public List<MeshInstance> Instances = new();
-        public MeshFlags MeshFlags;
+        public MeshType MeshType;
     }
 
     public Dictionary<string, Mesh> Meshes { get; private set; } = new();
@@ -70,14 +73,14 @@ public class SceneExtractor
 
     public unsafe SceneExtractor(SceneDefinition scene)
     {
-        Meshes[_keyAnalyticBox] = new() { Parts = _meshBox, MeshFlags = MeshFlags.FromAnalyticShape };
-        Meshes[_keyAnalyticSphere] = new() { Parts = _meshSphere, MeshFlags = MeshFlags.FromAnalyticShape };
-        Meshes[_keyAnalyticCylinder] = new() { Parts = _meshCylinder, MeshFlags = MeshFlags.FromAnalyticShape };
-        Meshes[_keyAnalyticPlaneSingle] = new() { Parts = _meshPlane, MeshFlags = MeshFlags.FromAnalyticShape };
-        Meshes[_keyAnalyticPlaneDouble] = new() { Parts = _meshPlane, MeshFlags = MeshFlags.FromAnalyticShape };
-        Meshes[_keyMeshCylinder] = new() { Parts = _meshCylinder, MeshFlags = MeshFlags.FromCylinderMesh };
+        Meshes[_keyAnalyticBox] = new() { Parts = _meshBox, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticSphere] = new() { Parts = _meshSphere, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticCylinder] = new() { Parts = _meshCylinder, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticPlaneSingle] = new() { Parts = _meshPlane, MeshType = MeshType.AnalyticPlane };
+        Meshes[_keyAnalyticPlaneDouble] = new() { Parts = _meshPlane, MeshType = MeshType.AnalyticPlane };
+        Meshes[_keyMeshCylinder] = new() { Parts = _meshCylinder, MeshType = MeshType.CylinderMesh };
         foreach (var path in scene.MeshPaths.Values)
-            AddMesh(path);
+            AddMesh(path, MeshType.FileMesh);
 
         foreach (var terr in scene.Terrains)
         {
@@ -89,8 +92,7 @@ public class SceneExtractor
                     var header = (ColliderStreamed.FileHeader*)data;
                     foreach (ref var entry in new Span<ColliderStreamed.FileEntry>(header + 1, header->NumMeshes))
                     {
-                        var mesh = AddMesh($"{terr}/tr{entry.MeshId:d4}.pcb");
-                        mesh.MeshFlags |= MeshFlags.FromTerrain;
+                        var mesh = AddMesh($"{terr}/tr{entry.MeshId:d4}.pcb", MeshType.Terrain);
                         AddInstance(mesh, 0, ref Matrix4x3.Identity, ref entry.Bounds, 0, 0);
                     }
                 }
@@ -165,7 +167,7 @@ public class SceneExtractor
         return (path, transform, bounds);
     }
 
-    private unsafe Mesh AddMesh(string path)
+    private unsafe Mesh AddMesh(string path, MeshType type)
     {
         var mesh = new Mesh();
         var f = Service.DataManager.GetFile(path);
@@ -180,7 +182,7 @@ public class SceneExtractor
                 }
             }
         }
-        mesh.MeshFlags = MeshFlags.FromFileMesh;
+        mesh.MeshType = type;
         Meshes[path] = mesh;
         return mesh;
     }

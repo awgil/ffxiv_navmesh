@@ -136,14 +136,11 @@ public class NavmeshRasterizer
         }
     }
 
-    public void Rasterize(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic, bool perMeshInteriors, bool solidBelowNonManifold)
+    public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold)
     {
         foreach (var (name, mesh) in geom.Meshes)
         {
-            var terrain = mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain);
-            var analytic = mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromAnalyticShape);
-            bool include = terrain ? includeTerrain : analytic ? includeAnalytic : includeMeshes;
-            if (!include)
+            if ((mesh.MeshType & types) == SceneExtractor.MeshType.None)
                 continue;
 
             foreach (var instance in mesh.Instances)
@@ -367,15 +364,12 @@ public class NavmeshRasterizer
     }
 
     // TODO: remove after i'm confident in my replacement code
-    public void RasterizeOld(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic)
+    public void RasterizeOld(SceneExtractor geom, SceneExtractor.MeshType types)
     {
         float[] vertices = new float[3 * 256];
         foreach (var (name, mesh) in geom.Meshes)
         {
-            var terrain = mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain);
-            var analytic = mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromAnalyticShape);
-            bool include = terrain ? includeTerrain : analytic ? includeAnalytic : includeMeshes;
-            if (!include)
+            if ((mesh.MeshType & types) == SceneExtractor.MeshType.None)
                 continue;
 
             foreach (var inst in mesh.Instances)

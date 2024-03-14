@@ -309,12 +309,12 @@ class DebugNavmeshCustom : IDisposable
         var timer = Timer.Create();
         var shfOld = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.CellSize, _settings.CellHeight, borderSizeVoxels);
         var rasterizerOld = new NavmeshRasterizer(shfOld, walkableNormalThreshold, walkableClimbVoxels, false, null, telemetry);
-        rasterizerOld.RasterizeOld(scene, true, true, true);
+        rasterizerOld.RasterizeOld(scene, SceneExtractor.MeshType.All);
         var dur1 = (float)timer.Value().TotalSeconds;
 
         var shfNew = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.CellSize, _settings.CellHeight, borderSizeVoxels);
         var rasterizerNew = new NavmeshRasterizer(shfNew, walkableNormalThreshold, walkableClimbVoxels, false, null, telemetry);
-        rasterizerNew.Rasterize(scene, true, true, true, false, false);
+        rasterizerNew.Rasterize(scene, SceneExtractor.MeshType.All, false, false);
         var dur2 = (float)timer.Value().TotalSeconds;
 
         bool identical = true;

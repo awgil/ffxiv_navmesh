@@ -1,6 +1,5 @@
 ﻿using DotRecast.Core;
 using DotRecast.Recast;
-using Lumina.Excel.GeneratedSheets;
 using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
@@ -105,14 +104,15 @@ public class NavmeshRasterizer
     private IntersectionSet? _iset;
     private float _invCellXZ;
     private float _invCellY;
-    private float _worldHeight;
+    private int _maxY;
+    private int _minSpanGap;
     private int _walkableClimbThreshold; // if two spans have maximums within this number of voxels, their area is 'merged' (higher is selected)
     private float _walkableNormalThreshold; // triangle is considered 'walkable' if it's world-space normal's Y coordinate is >= this
     private int _voxShiftX;
     private int _voxShiftY;
     private int _voxShiftZ;
 
-    public NavmeshRasterizer(RcHeightfield heightfield, float walkableNormalThreshold, int walkableMaxClimb, bool fillInteriors, Voxelizer? voxelizer, RcContext telemetry)
+    public NavmeshRasterizer(RcHeightfield heightfield, float walkableNormalThreshold, int walkableMaxClimb, int minGap, bool fillInteriors, Voxelizer? voxelizer, RcContext telemetry)
     {
         _heightfield = heightfield;
         _telemetry = telemetry;
@@ -120,13 +120,14 @@ public class NavmeshRasterizer
         _iset = fillInteriors ? new IntersectionSet(heightfield.width, heightfield.height) : null;
         _invCellXZ = 1.0f / _heightfield.cs;
         _invCellY = 1.0f / _heightfield.ch;
-        _worldHeight = _heightfield.bmax.Y - _heightfield.bmin.Y;
+        _maxY = (int)((_heightfield.bmax.Y - _heightfield.bmin.Y) * _invCellY);
+        _minSpanGap = minGap;
         _walkableClimbThreshold = walkableMaxClimb;
         _walkableNormalThreshold = walkableNormalThreshold;
         if (voxelizer != null)
         {
             var dx = (heightfield.width - 2 * heightfield.borderSize) / voxelizer.NumX;
-            var dy = (int)(_worldHeight * _invCellY) / voxelizer.NumY;
+            var dy = _maxY / voxelizer.NumY;
             var dz = (heightfield.height - 2 * heightfield.borderSize) / voxelizer.NumZ;
             if (!BitOperations.IsPow2(dx) || !BitOperations.IsPow2(dy) || !BitOperations.IsPow2(dz))
                 throw new Exception($"Cell size mismatch: {dx}x{dy}x{dz}");
@@ -259,14 +260,12 @@ public class NavmeshRasterizer
 
                         // find y bounds of the cell (TODO: this can probably be slightly simplified)
                         var (minY, maxY) = AxisMinMax(clipCell, numCell, 1);
-                        minY -= _heightfield.bmin.Y;
-                        maxY -= _heightfield.bmin.Y;
-                        if (maxY < 0 || minY > _worldHeight)
+                        int y0 = (int)MathF.Floor((minY - _heightfield.bmin.Y) * _invCellY);
+                        int y1 = (int)MathF.Ceiling((maxY - _heightfield.bmin.Y) * _invCellY);
+                        if (y1 < 0 || y0 >= _maxY)
                             continue;
-                        minY = Math.Max(minY, 0);
-                        maxY = Math.Min(maxY, _worldHeight);
-                        int y0 = Math.Clamp((int)MathF.Floor(minY * _invCellY), 0, RcConstants.RC_SPAN_MAX_HEIGHT);
-                        int y1 = Math.Clamp((int)MathF.Ceiling(maxY * _invCellY), y0 + 1, RcConstants.RC_SPAN_MAX_HEIGHT);
+                        y0 = Math.Clamp(y0, 0, _maxY - 1);
+                        y1 = Math.Clamp(y1, y0 + 1, _maxY - 1);
 
                         AddSpan(x, z, y0, y1, areaId, realSolid);
 
@@ -294,7 +293,7 @@ public class NavmeshRasterizer
                                 var intersectY = v1.Y + b * v12.Y + c * v13.Y;
                                 if (normal.Y > 0 && y0 > 0)
                                     _iset.Add(x, y0 - 1, z, intersectY, true);
-                                else if (normal.Y < 0 && y1 < RcConstants.RC_SPAN_MAX_HEIGHT - 1)
+                                else if (normal.Y < 0 && y1 < _maxY - 1)
                                     _iset.Add(x, y1 + 1, z, intersectY, false);
                             }
                             // else: intersection is outside triangle
@@ -308,9 +307,58 @@ public class NavmeshRasterizer
 
     private void AddSpan(int x, int z, int y0, int y1, int areaId, bool includeInVolume)
     {
-        RcRasterizations.AddSpan(_heightfield, x, z, y0, y1, areaId, _walkableClimbThreshold);
+        ref var cellHead = ref _heightfield.spans[z * _heightfield.width + x];
+
+        // find insert position for new span: skip any existing spans that end before new span start
+        var prevMaxY = y0 - _minSpanGap - 1; // any spans that have smax >= prevMaxY are merged
+        var nextMinY = y1 + _minSpanGap + 1; // any spans that have smin <= nextMinY are merged
+        uint prevSpanIndex = 0;
+        uint currSpanIndex = cellHead;
+        while (currSpanIndex != 0)
+        {
+            ref var currSpan = ref _heightfield.Span(currSpanIndex);
+            if (currSpan.smin > nextMinY)
+            {
+                // new span should be inserted before current one
+                break;
+            }
+
+            if (currSpan.smax < prevMaxY)
+            {
+                // new span is fully above current one - continue...
+                prevSpanIndex = currSpanIndex;
+                currSpanIndex = currSpan.next;
+                continue;
+            }
+
+            // new span overlaps current one - merge and remove old one
+            // the trickiest part is how to merge area ids
+            // idea is: if one of the spans is significantly 'above', take area from it; if they are of similar height, take higher area value (assuming it's more permissive)
+            var heightDiff = currSpan.smax - y1;
+            if (heightDiff > _walkableClimbThreshold || heightDiff >= -_walkableClimbThreshold && currSpan.area > areaId)
+                areaId = currSpan.area;
+            y0 = Math.Min(y0, currSpan.smin);
+            y1 = Math.Max(y1, currSpan.smax);
+
+            // free merged span; note that prev would still point to it, we'll fix it later
+            var nextSpanIndex = currSpan.next;
+            _heightfield.spanPool.Free(currSpanIndex);
+            currSpanIndex = nextSpanIndex;
+        }
+
+        // insert new span
+        var newSpanIndex = _heightfield.spanPool.Alloc();
+        _heightfield.Span(newSpanIndex) = new() { smin = y0, smax = y1, area = areaId, next = currSpanIndex };
+        if (prevSpanIndex == 0)
+            cellHead = newSpanIndex;
+        else
+            _heightfield.Span(prevSpanIndex).next = newSpanIndex;
+
+        // and also mark overlapping voxels as solid
         if (includeInVolume && _voxelizer != null)
+        {
             _voxelizer.AddSpan(x >> _voxShiftX, z >> _voxShiftZ, y0 >> _voxShiftY, y1 >> _voxShiftY);
+        }
     }
 
     // TODO: maintain non-empty cells in intersection set?

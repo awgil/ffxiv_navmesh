@@ -1,6 +1,5 @@
 - fill solids!
 -- figure out nonmanifold meshes terrain (eg elpis)
--- addspan improvement
 -- intersectionset dirty roots
 - compress cache
 - walk/fly transitions

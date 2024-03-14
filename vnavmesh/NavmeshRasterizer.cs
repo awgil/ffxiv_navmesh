@@ -357,7 +357,17 @@ public class NavmeshRasterizer
         // and also mark overlapping voxels as solid
         if (includeInVolume && _voxelizer != null)
         {
-            _voxelizer.AddSpan(x >> _voxShiftX, z >> _voxShiftZ, y0 >> _voxShiftY, y1 >> _voxShiftY);
+            x -= _heightfield.borderSize;
+            z -= _heightfield.borderSize;
+            if (x >= 0 && z >= 0)
+            {
+                x >>= _voxShiftX;
+                z >>= _voxShiftZ;
+                if (x < _voxelizer.NumX && z < _voxelizer.NumZ)
+                {
+                    _voxelizer.AddSpan(x, z, y0 >> _voxShiftY, y1 >> _voxShiftY);
+                }
+            }
         }
     }
 

@@ -261,12 +261,13 @@ public class VoxelMap
     private void BuildTile(Tile parent, ushort index, int x0, int y0, int z0, Span<Voxelizer> source)
     {
         var (solid, empty) = source[0].Get(x0, y0, z0);
-        if (empty)
+        if (!solid)
         {
-            // nothing to do
+            // fully empty => nothing to do
         }
-        else if (solid)
+        else if (!empty)
         {
+            // fully solid
             parent.Contents[index] = VoxelOccupiedBit | VoxelIdMask;
         }
         else

@@ -57,8 +57,8 @@ public class Voxelizer
                 {
                     var (solid, empty) = Get(idx);
                     var resIndex = result.VoxelToIndex(x >> shiftX, y >> shiftY, z >> shiftZ);
-                    result.Contents[resIndex] = solid;
-                    result.Contents[resIndex + 1] = empty;
+                    result.Contents[resIndex] |= solid;
+                    result.Contents[resIndex + 1] |= empty;
                 }
             }
         }

@@ -87,8 +87,9 @@ public class NavmeshBuilder
         // this creates a 'solid heightfield', which is a grid of sorted linked lists of spans
         // each span contains an 'area id', which is either walkable (if normal is good) or not (otherwise); areas outside spans contains no geometry at all
         var shf = new RcHeightfield(_tileSizeXVoxels, _tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), Settings.CellSize, Settings.CellHeight, _borderSizeVoxels);
-        var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, Telemetry);
-        rasterizer.Rasterize(Scene, true, true, true, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), Navmesh.Volume != null);
+        var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), Navmesh.Volume != null, Telemetry);
+        rasterizer.Rasterize(Scene, true, false, false, false, true); // rasterize terrain
+        rasterizer.Rasterize(Scene, false, true, true, true, false); // rasterize everything else
 
         // 2. perform a bunch of postprocessing on a heightfield
         if (Settings.Filtering.HasFlag(NavmeshSettings.Filter.LowHangingObstacles))

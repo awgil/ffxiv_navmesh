@@ -100,6 +100,8 @@ class DebugNavmeshCustom : IDisposable
                             _intermediates.Tiles[x, z] = _builder.BuildTile(x, z);
                         }
                     }
+                    //int x = 11, z = 7;
+                    //_intermediates.Tiles[x, z] = _builder.BuildTile(x, z);
                 }
 
                 _query = new(_builder.Navmesh);
@@ -306,13 +308,13 @@ class DebugNavmeshCustom : IDisposable
 
         var timer = Timer.Create();
         var shfOld = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.CellSize, _settings.CellHeight, borderSizeVoxels);
-        var rasterizerOld = new NavmeshRasterizer(shfOld, walkableNormalThreshold, walkableClimbVoxels, telemetry);
-        rasterizerOld.RasterizeOld(scene, true, true, true, flyable);
+        var rasterizerOld = new NavmeshRasterizer(shfOld, walkableNormalThreshold, walkableClimbVoxels, false, flyable, telemetry);
+        rasterizerOld.RasterizeOld(scene, true, true, true);
         var dur1 = (float)timer.Value().TotalSeconds;
 
         var shfNew = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.CellSize, _settings.CellHeight, borderSizeVoxels);
-        var rasterizerNew = new NavmeshRasterizer(shfNew, walkableNormalThreshold, walkableClimbVoxels, telemetry);
-        rasterizerNew.Rasterize(scene, true, true, true, false, flyable);
+        var rasterizerNew = new NavmeshRasterizer(shfNew, walkableNormalThreshold, walkableClimbVoxels, false, flyable, telemetry);
+        rasterizerNew.Rasterize(scene, true, true, true, false, false);
         var dur2 = (float)timer.Value().TotalSeconds;
 
         bool identical = true;

@@ -99,31 +99,29 @@ public class NavmeshRasterizer
 
     private RcHeightfield _heightfield;
     private RcContext _telemetry;
+    private IntersectionSet? _iset;
+    private bool _flyable;
+    private float _invCellXZ;
+    private float _invCellY;
+    private float _worldHeight;
     private int _walkableClimbThreshold; // if two spans have maximums within this number of voxels, their area is 'merged' (higher is selected)
     private float _walkableNormalThreshold; // triangle is considered 'walkable' if it's world-space normal's Y coordinate is >= this
 
-    public NavmeshRasterizer(RcHeightfield heightfield, float walkableNormalThreshold, int walkableMaxClimb, RcContext telemetry)
+    public NavmeshRasterizer(RcHeightfield heightfield, float walkableNormalThreshold, int walkableMaxClimb, bool fillInteriors, bool flyable, RcContext telemetry)
     {
         _heightfield = heightfield;
         _telemetry = telemetry;
+        _iset = fillInteriors ? new IntersectionSet(heightfield.width, heightfield.height) : null;
+        _flyable = flyable;
+        _invCellXZ = 1.0f / _heightfield.cs;
+        _invCellY = 1.0f / _heightfield.ch;
+        _worldHeight = _heightfield.bmax.Y - _heightfield.bmin.Y;
         _walkableClimbThreshold = walkableMaxClimb;
         _walkableNormalThreshold = walkableNormalThreshold;
     }
 
-    public void Rasterize(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic, bool fillInteriors, bool flyable)
+    public void Rasterize(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic, bool perMeshInteriors, bool solidBelowNonManifold)
     {
-        Span<Vector3> worldVertices = stackalloc Vector3[256];
-        Span<OutFlags> outFlags = stackalloc OutFlags[256];
-        Span<Vector3> clipRemainingZ = stackalloc Vector3[7];
-        Span<Vector3> clipRemainingX = stackalloc Vector3[7];
-        Span<Vector3> clipScratch = stackalloc Vector3[7];
-        Span<Vector3> clipCell = stackalloc Vector3[7];
-        Span<uint> solidSort = stackalloc uint[256];
-        Span<int> solidVoxel = stackalloc int[256];
-        float invCellXZ = 1.0f / _heightfield.cs;
-        float invCellY = 1.0f / _heightfield.ch;
-        float worldHeight = _heightfield.bmax.Y - _heightfield.bmin.Y;
-        var iset = fillInteriors ? new IntersectionSet(_heightfield.width, _heightfield.height) : null;
         foreach (var (name, mesh) in geom.Meshes)
         {
             var terrain = mesh.MeshFlags.HasFlag(SceneExtractor.MeshFlags.FromTerrain);
@@ -134,205 +132,221 @@ public class NavmeshRasterizer
 
             foreach (var instance in mesh.Instances)
             {
-                if (instance.WorldBounds.Max.X <= _heightfield.bmin.X || instance.WorldBounds.Max.Z <= _heightfield.bmin.Z || instance.WorldBounds.Min.X >= _heightfield.bmax.X || instance.WorldBounds.Min.Z >= _heightfield.bmax.Z)
-                    continue;
-
-                foreach (var part in mesh.Parts)
+                if (RasterizeMesh(mesh, instance) && perMeshInteriors)
                 {
-                    // fill vertex buffer
-                    int iv = 0;
-                    foreach (var v in part.Vertices)
-                    {
-                        var w = instance.WorldTransform.TransformCoordinate(v);
-                        var f = OutFlags.None;
-                        if (w.X <= _heightfield.bmin.X) f |= OutFlags.NegX;
-                        if (w.X >= _heightfield.bmax.X) f |= OutFlags.PosX;
-                        if (w.Y <= _heightfield.bmin.Y) f |= OutFlags.NegY;
-                        if (w.Y >= _heightfield.bmax.Y) f |= OutFlags.PosY;
-                        if (w.Z <= _heightfield.bmin.Z) f |= OutFlags.NegZ;
-                        if (w.Z >= _heightfield.bmax.Z) f |= OutFlags.PosZ;
-                        worldVertices[iv] = w;
-                        outFlags[iv] = f;
-                        ++iv;
-                    }
-
-                    // TODO: move area-id calculations to extraction step + store indices in a form that allows using RasterizeTriangles()
-                    foreach (var p in part.Primitives)
-                    {
-                        var flags = (p.Flags & ~instance.ForceClearPrimFlags) | instance.ForceSetPrimFlags;
-                        if (flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
-                            continue; // TODO: rasterize to normal heightfield, can't do it right now, since we're using same heightfield for both mesh and volume
-
-                        if ((outFlags[p.V1] & outFlags[p.V2] & outFlags[p.V3]) != OutFlags.None)
-                            continue; // vertex is fully outside bounds, on one side of some plane
-
-                        var v1 = worldVertices[p.V1];
-                        var v2 = worldVertices[p.V2];
-                        var v3 = worldVertices[p.V3];
-                        var v12 = v2 - v1;
-                        var v13 = v3 - v1;
-                        var v12cross13 = Vector3.Cross(v12, v13);
-                        var normal = Vector3.Normalize(v12cross13);
-                        var invDiv = iset != null && v12cross13.Y != 0 ? -1.0f / v12cross13.Y : 0; // see below
-
-                        // for flyable scenes, assume unlandable == unwalkable
-                        bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable) || normal.Y < _walkableNormalThreshold || flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable);
-                        var areaId = unwalkable ? 0 : RcConstants.RC_WALKABLE_AREA;
-
-                        // prepare for clipping: while iterating over z, we'll keep the 'remaining polygon' in clipRemainingZ
-                        int numRemainingZ = 0;
-                        clipRemainingZ[numRemainingZ++] = v1;
-                        clipRemainingZ[numRemainingZ++] = v2;
-                        clipRemainingZ[numRemainingZ++] = v3;
-
-                        // calculate the footprint of the triangle on the grid's z-axis
-                        var (minZ, maxZ) = AxisMinMax(clipRemainingZ, numRemainingZ, 2);
-                        int z0 = (int)((minZ - _heightfield.bmin.Z) * invCellXZ); // TODO: not sure whether this is correct (round to 0 instead of floor...)
-                        int z1 = (int)((maxZ - _heightfield.bmin.Z) * invCellXZ);
-                        // note: no need to check for fully outside here, it was checked before
-                        z0 = Math.Clamp(z0, -1, _heightfield.height - 1); // use -1 rather than 0 to cut the polygon properly at the start of the tile
-                        z1 = Math.Clamp(z1, 0, _heightfield.height - 1);
-
-                        for (int z = z0; z <= z1; ++z)
-                        {
-                            if (numRemainingZ < 3)
-                                break;
-
-                            // clip polygon to 'row'
-                            var cellZMax = _heightfield.bmin.Z + (z + 1) * _heightfield.cs;
-                            int numRemainingX = SplitConvexPoly(clipRemainingZ, clipRemainingX, clipScratch, ref numRemainingZ, 2, cellZMax);
-
-                            // previous buffer is now new scratch
-                            var swapZ = clipRemainingZ;
-                            clipRemainingZ = clipScratch;
-                            clipScratch = swapZ;
-
-                            if (numRemainingX < 3 || z < 0)
-                                continue;
-
-                            // find x bounds of the row
-                            var (minX, maxX) = AxisMinMax(clipRemainingX, numRemainingX, 0);
-                            int x0 = (int)((minX - _heightfield.bmin.X) * invCellXZ); // TODO: not sure whether this is correct (round to 0 instead of floor...)
-                            int x1 = (int)((maxX - _heightfield.bmin.X) * invCellXZ);
-                            if (x1 < 0 || x0 >= _heightfield.width)
-                                continue;
-                            x0 = Math.Clamp(x0, -1, _heightfield.width - 1);
-                            x1 = Math.Clamp(x1, 0, _heightfield.width - 1);
-
-                            var cellZMid = _heightfield.bmin.Z + (z + 0.5f) * _heightfield.cs;
-                            for (int x = x0; x <= x1; ++x)
-                            {
-                                if (numRemainingX < 3)
-                                    break;
-
-                                // clip polygon to 'column'
-                                var cellXMax = _heightfield.bmin.X + (x + 1) * _heightfield.cs;
-                                int numCell = SplitConvexPoly(clipRemainingX, clipCell, clipScratch, ref numRemainingX, 0, cellXMax);
-
-                                // previous buffer is now new scratch
-                                var swapX = clipRemainingX;
-                                clipRemainingX = clipScratch;
-                                clipScratch = swapX;
-
-                                if (numCell < 3 || x < 0)
-                                    continue;
-
-                                // find y bounds of the cell (TODO: this can probably be slightly simplified)
-                                var (minY, maxY) = AxisMinMax(clipCell, numCell, 1);
-                                minY -= _heightfield.bmin.Y;
-                                maxY -= _heightfield.bmin.Y;
-                                if (maxY < 0 || minY > worldHeight)
-                                    continue;
-                                minY = Math.Max(minY, 0);
-                                maxY = Math.Min(maxY, worldHeight);
-                                int y0 = Math.Clamp((int)MathF.Floor(minY * invCellY), 0, RcConstants.RC_SPAN_MAX_HEIGHT);
-                                int y1 = Math.Clamp((int)MathF.Ceiling(maxY * invCellY), y0 + 1, RcConstants.RC_SPAN_MAX_HEIGHT);
-
-                                RcRasterizations.AddSpan(_heightfield, x, z, y0, y1, areaId, _walkableClimbThreshold);
-
-                                if (iset != null && invDiv != 0)
-                                {
-                                    // intersect a ray passing through the middle of the cell vertically with the triangle
-                                    // A + AB*b + AC*c = P, b >= 0, c >= 0, a + b <= 1
-                                    //  ==>
-                                    // ABx*b + ACx*c = APx
-                                    // ABz*b + ACz*c = APz
-                                    //  ==> ABx*b = APx - ACx*c, ABz*ABx*b + ACz*ABx*c = APz*ABx
-                                    //  ==> ABz*(APx - ACx*c) + ACz*ABx*c = APz*ABx
-                                    //  ==> c = (APz*ABx - APx*ABz) / (ACz*ABx - ACx*ABz)
-                                    //  ==> b = (APx*ACz*ABx - APx*ACx*ABz - ACx*APz*ABx + ACx*APx*ABz) / ABx*(ACz*ABx - ACx*ABz)
-                                    //  ==> b = (APx*ACz - APz*ACx) / (ACz*ABx - ACx*ABz)
-                                    //  ==> y = Ay + ABy*b + ACy*c
-                                    // note that (ACz*ABx - ACx*ABz) == (AC cross AB).y
-                                    var cellXMid = _heightfield.bmin.X + (x + 0.5f) * _heightfield.cs;
-                                    var apx = cellXMid - v1.X;
-                                    var apz = cellZMid - v1.Z;
-                                    var c = (apz * v12.X - apx * v12.Z) * invDiv;
-                                    var b = (apx * v13.Z - apz * v13.X) * invDiv;
-                                    if (c >= 0 && b >= 0 && c + b <= 1)
-                                    {
-                                        var intersectY = v1.Y + b * v12.Y + c * v13.Y;
-                                        if (normal.Y > 0 && y0 > 0)
-                                            iset.Add(x, y0 - 1, z, intersectY, true);
-                                        else if (normal.Y < 0 && y1 < RcConstants.RC_SPAN_MAX_HEIGHT - 1)
-                                            iset.Add(x, y1 + 1, z, intersectY, false);
-                                    }
-                                    // else: intersection is outside triangle
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (iset != null)
-                {
-                    // fill interiors
-                    int iz0 = Math.Clamp((int)((instance.WorldBounds.Min.Z - _heightfield.bmin.Z) * invCellXZ), 0, _heightfield.height - 1);
-                    int iz1 = Math.Clamp((int)((instance.WorldBounds.Max.Z - _heightfield.bmin.Z) * invCellXZ), 0, _heightfield.height - 1);
-                    int ix0 = Math.Clamp((int)((instance.WorldBounds.Min.X - _heightfield.bmin.X) * invCellXZ), 0, _heightfield.width - 1);
-                    int ix1 = Math.Clamp((int)((instance.WorldBounds.Max.X - _heightfield.bmin.X) * invCellXZ), 0, _heightfield.width - 1);
-                    for (int z = iz0; z <= iz1; ++z)
-                    {
-                        for (int x = ix0; x <= ix1; ++x)
-                        {
-                            var cnt = iset.FetchSorted(x, z, solidSort, solidVoxel);
-                            if (cnt == 0)
-                                continue; // empty
-
-                            int idx = 0;
-                            if (solidVoxel[idx] > 0)
-                            {
-                                // non-manifold mesh, assume everything below is interior
-                                // TODO: we only really need to bother for voxelmap...
-                                RcRasterizations.AddSpan(_heightfield, x, z, 0, solidVoxel[idx], 0, _walkableClimbThreshold);
-                                ++idx;
-                            }
-
-                            while (true)
-                            {
-                                while (idx < cnt && solidVoxel[idx] > 0)
-                                    ++idx;
-                                if (idx == cnt)
-                                    break;
-                                var minY = -solidVoxel[idx];
-                                while (idx < cnt && solidVoxel[idx] <= 0)
-                                    ++idx;
-                                if (idx == cnt)
-                                    break;
-                                var maxY = solidVoxel[idx];
-                                if (maxY >= minY)
-                                    RcRasterizations.AddSpan(_heightfield, x, z, minY, maxY, 0, _walkableClimbThreshold);
-                            }
-                        }
-                    }
-                    iset.Clear();
+                    int z0 = Math.Clamp((int)((instance.WorldBounds.Min.Z - _heightfield.bmin.Z) * _invCellXZ), 0, _heightfield.height - 1);
+                    int z1 = Math.Clamp((int)((instance.WorldBounds.Max.Z - _heightfield.bmin.Z) * _invCellXZ), 0, _heightfield.height - 1);
+                    int x0 = Math.Clamp((int)((instance.WorldBounds.Min.X - _heightfield.bmin.X) * _invCellXZ), 0, _heightfield.width - 1);
+                    int x1 = Math.Clamp((int)((instance.WorldBounds.Max.X - _heightfield.bmin.X) * _invCellXZ), 0, _heightfield.width - 1);
+                    FillInterior(solidBelowNonManifold, z0, z1, x0, x1);
                 }
             }
         }
+
+        if (!perMeshInteriors)
+        {
+            FillInterior(solidBelowNonManifold, 0, _heightfield.height - 1, 0, _heightfield.width - 1);
+        }
+    }
+
+    // if it returns true, the mesh borders were rasterized, so intersection set could be modified
+    public bool RasterizeMesh(SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance)
+    {
+        if (instance.WorldBounds.Max.X <= _heightfield.bmin.X || instance.WorldBounds.Max.Z <= _heightfield.bmin.Z || instance.WorldBounds.Min.X >= _heightfield.bmax.X || instance.WorldBounds.Min.Z >= _heightfield.bmax.Z)
+            return false;
+
+        Span<Vector3> worldVertices = stackalloc Vector3[256];
+        Span<OutFlags> outFlags = stackalloc OutFlags[256];
+        Span<Vector3> clipRemainingZ = stackalloc Vector3[7];
+        Span<Vector3> clipRemainingX = stackalloc Vector3[7];
+        Span<Vector3> clipScratch = stackalloc Vector3[7];
+        Span<Vector3> clipCell = stackalloc Vector3[7];
+        foreach (var part in mesh.Parts)
+        {
+            // fill vertex buffer
+            TransformVertices(instance, part.Vertices, worldVertices, outFlags);
+
+            foreach (var p in part.Primitives)
+            {
+                var flags = (p.Flags & ~instance.ForceClearPrimFlags) | instance.ForceSetPrimFlags;
+                if (_flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
+                    continue; // TODO: rasterize to normal heightfield, can't do it right now, since we're using same heightfield for both mesh and volume
+
+                if ((outFlags[p.V1] & outFlags[p.V2] & outFlags[p.V3]) != OutFlags.None)
+                    continue; // vertex is fully outside bounds, on one side of some plane
+
+                var v1 = worldVertices[p.V1];
+                var v2 = worldVertices[p.V2];
+                var v3 = worldVertices[p.V3];
+                var v12 = v2 - v1;
+                var v13 = v3 - v1;
+                var v12cross13 = Vector3.Cross(v12, v13);
+                var normal = Vector3.Normalize(v12cross13);
+                var invDiv = _iset != null && v12cross13.Y != 0 ? -1.0f / v12cross13.Y : 0; // see below
+
+                // for flyable scenes, assume unlandable == unwalkable
+                bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable) || normal.Y < _walkableNormalThreshold || _flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable);
+                var areaId = unwalkable ? 0 : RcConstants.RC_WALKABLE_AREA;
+
+                // prepare for clipping: while iterating over z, we'll keep the 'remaining polygon' in clipRemainingZ
+                int numRemainingZ = 0;
+                clipRemainingZ[numRemainingZ++] = v1;
+                clipRemainingZ[numRemainingZ++] = v2;
+                clipRemainingZ[numRemainingZ++] = v3;
+
+                // calculate the footprint of the triangle on the grid's z-axis
+                var (minZ, maxZ) = AxisMinMax(clipRemainingZ, numRemainingZ, 2);
+                int z0 = (int)((minZ - _heightfield.bmin.Z) * _invCellXZ); // TODO: not sure whether this is correct (round to 0 instead of floor...)
+                int z1 = (int)((maxZ - _heightfield.bmin.Z) * _invCellXZ);
+                // note: no need to check for fully outside here, it was checked before
+                z0 = Math.Clamp(z0, -1, _heightfield.height - 1); // use -1 rather than 0 to cut the polygon properly at the start of the tile
+                z1 = Math.Clamp(z1, 0, _heightfield.height - 1);
+
+                for (int z = z0; z <= z1; ++z)
+                {
+                    if (numRemainingZ < 3)
+                        break;
+
+                    // clip polygon to 'row'
+                    var cellZMax = _heightfield.bmin.Z + (z + 1) * _heightfield.cs;
+                    int numRemainingX = SplitConvexPoly(clipRemainingZ, clipRemainingX, clipScratch, ref numRemainingZ, 2, cellZMax);
+
+                    // previous buffer is now new scratch
+                    var swapZ = clipRemainingZ;
+                    clipRemainingZ = clipScratch;
+                    clipScratch = swapZ;
+
+                    if (numRemainingX < 3 || z < 0)
+                        continue;
+
+                    // find x bounds of the row
+                    var (minX, maxX) = AxisMinMax(clipRemainingX, numRemainingX, 0);
+                    int x0 = (int)((minX - _heightfield.bmin.X) * _invCellXZ); // TODO: not sure whether this is correct (round to 0 instead of floor...)
+                    int x1 = (int)((maxX - _heightfield.bmin.X) * _invCellXZ);
+                    if (x1 < 0 || x0 >= _heightfield.width)
+                        continue;
+                    x0 = Math.Clamp(x0, -1, _heightfield.width - 1);
+                    x1 = Math.Clamp(x1, 0, _heightfield.width - 1);
+
+                    var cellZMid = _heightfield.bmin.Z + (z + 0.5f) * _heightfield.cs;
+                    for (int x = x0; x <= x1; ++x)
+                    {
+                        if (numRemainingX < 3)
+                            break;
+
+                        // clip polygon to 'column'
+                        var cellXMax = _heightfield.bmin.X + (x + 1) * _heightfield.cs;
+                        int numCell = SplitConvexPoly(clipRemainingX, clipCell, clipScratch, ref numRemainingX, 0, cellXMax);
+
+                        // previous buffer is now new scratch
+                        var swapX = clipRemainingX;
+                        clipRemainingX = clipScratch;
+                        clipScratch = swapX;
+
+                        if (numCell < 3 || x < 0)
+                            continue;
+
+                        // find y bounds of the cell (TODO: this can probably be slightly simplified)
+                        var (minY, maxY) = AxisMinMax(clipCell, numCell, 1);
+                        minY -= _heightfield.bmin.Y;
+                        maxY -= _heightfield.bmin.Y;
+                        if (maxY < 0 || minY > _worldHeight)
+                            continue;
+                        minY = Math.Max(minY, 0);
+                        maxY = Math.Min(maxY, _worldHeight);
+                        int y0 = Math.Clamp((int)MathF.Floor(minY * _invCellY), 0, RcConstants.RC_SPAN_MAX_HEIGHT);
+                        int y1 = Math.Clamp((int)MathF.Ceiling(maxY * _invCellY), y0 + 1, RcConstants.RC_SPAN_MAX_HEIGHT);
+
+                        RcRasterizations.AddSpan(_heightfield, x, z, y0, y1, areaId, _walkableClimbThreshold);
+
+                        if (_iset != null && invDiv != 0)
+                        {
+                            // intersect a ray passing through the middle of the cell vertically with the triangle
+                            // A + AB*b + AC*c = P, b >= 0, c >= 0, a + b <= 1
+                            //  ==>
+                            // ABx*b + ACx*c = APx
+                            // ABz*b + ACz*c = APz
+                            //  ==> ABx*b = APx - ACx*c, ABz*ABx*b + ACz*ABx*c = APz*ABx
+                            //  ==> ABz*(APx - ACx*c) + ACz*ABx*c = APz*ABx
+                            //  ==> c = (APz*ABx - APx*ABz) / (ACz*ABx - ACx*ABz)
+                            //  ==> b = (APx*ACz*ABx - APx*ACx*ABz - ACx*APz*ABx + ACx*APx*ABz) / ABx*(ACz*ABx - ACx*ABz)
+                            //  ==> b = (APx*ACz - APz*ACx) / (ACz*ABx - ACx*ABz)
+                            //  ==> y = Ay + ABy*b + ACy*c
+                            // note that (ACz*ABx - ACx*ABz) == (AC cross AB).y
+                            var cellXMid = _heightfield.bmin.X + (x + 0.5f) * _heightfield.cs;
+                            var apx = cellXMid - v1.X;
+                            var apz = cellZMid - v1.Z;
+                            var c = (apz * v12.X - apx * v12.Z) * invDiv;
+                            var b = (apx * v13.Z - apz * v13.X) * invDiv;
+                            if (c >= 0 && b >= 0 && c + b <= 1)
+                            {
+                                var intersectY = v1.Y + b * v12.Y + c * v13.Y;
+                                if (normal.Y > 0 && y0 > 0)
+                                    _iset.Add(x, y0 - 1, z, intersectY, true);
+                                else if (normal.Y < 0 && y1 < RcConstants.RC_SPAN_MAX_HEIGHT - 1)
+                                    _iset.Add(x, y1 + 1, z, intersectY, false);
+                            }
+                            // else: intersection is outside triangle
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    // TODO: maintain non-empty cells in intersection set?
+    private void FillInterior(bool solidBelowNonManifold, int z0, int z1, int x0, int x1)
+    {
+        if (_iset == null)
+            return; // interior filling is disabled
+
+        // fill interiors
+        Span<uint> solidSort = stackalloc uint[256];
+        Span<int> solidVoxel = stackalloc int[256];
+        for (int z = z0; z <= z1; ++z)
+        {
+            for (int x = x0; x <= x1; ++x)
+            {
+                var cnt = _iset.FetchSorted(x, z, solidSort, solidVoxel);
+                if (cnt == 0)
+                    continue; // empty
+
+                //if (x == 521 && z == 0)
+                //    for (int i = 0; i < cnt; ++i)
+                //        Service.Log.Info($"{name}.{ii} {haveNegNormal} [{i}]: {solidSort[i]:X} {solidVoxel[i]}");
+
+                int idx = 0;
+                if (solidBelowNonManifold && solidVoxel[idx] > 0)
+                {
+                    // non-manifold mesh, assume everything below is interior - this has problems with some terrain in elpis
+                    // TODO: we only really need to bother for voxelmap...
+                    RcRasterizations.AddSpan(_heightfield, x, z, 0, solidVoxel[idx], 0, _walkableClimbThreshold);
+                    ++idx;
+                }
+
+                while (true)
+                {
+                    while (idx < cnt && solidVoxel[idx] > 0)
+                        ++idx;
+                    if (idx == cnt)
+                        break;
+                    var minY = -solidVoxel[idx];
+                    while (idx < cnt && solidVoxel[idx] <= 0)
+                        ++idx;
+                    if (idx == cnt)
+                        break;
+                    var maxY = solidVoxel[idx];
+                    if (maxY >= minY)
+                        RcRasterizations.AddSpan(_heightfield, x, z, minY, maxY, 0, _walkableClimbThreshold);
+                }
+            }
+        }
+        _iset.Clear();
     }
 
     // TODO: remove after i'm confident in my replacement code
-    public void RasterizeOld(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic, bool flyable)
+    public void RasterizeOld(SceneExtractor geom, bool includeTerrain, bool includeMeshes, bool includeAnalytic)
     {
         float[] vertices = new float[3 * 256];
         foreach (var (name, mesh) in geom.Meshes)
@@ -364,11 +378,11 @@ public class NavmeshRasterizer
                     foreach (var p in part.Primitives)
                     {
                         var flags = (p.Flags & ~inst.ForceClearPrimFlags) | inst.ForceSetPrimFlags;
-                        if (flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
+                        if (_flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
                             continue; // TODO: rasterize to normal heightfield, can't do it right now, since we're using same heightfield for both mesh and volume
 
                         bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable);
-                        unwalkable |= flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable); // for flyable scenes, assume unlandable == unwalkable
+                        unwalkable |= _flyable && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable); // for flyable scenes, assume unlandable == unwalkable
                         if (!unwalkable)
                         {
                             var v1 = CachedVertex(vertices, p.V1);
@@ -392,6 +406,25 @@ public class NavmeshRasterizer
     {
         var offset = 3 * i;
         return new(vertices[offset], vertices[offset + 1], vertices[offset + 2]);
+    }
+
+    private void TransformVertices(SceneExtractor.MeshInstance instance, List<Vector3> localVertices, Span<Vector3> outWorld, Span<OutFlags> outFlags)
+    {
+        int iv = 0;
+        foreach (var v in localVertices)
+        {
+            var w = instance.WorldTransform.TransformCoordinate(v);
+            var f = OutFlags.None;
+            if (w.X <= _heightfield.bmin.X) f |= OutFlags.NegX;
+            if (w.X >= _heightfield.bmax.X) f |= OutFlags.PosX;
+            if (w.Y <= _heightfield.bmin.Y) f |= OutFlags.NegY;
+            if (w.Y >= _heightfield.bmax.Y) f |= OutFlags.PosY;
+            if (w.Z <= _heightfield.bmin.Z) f |= OutFlags.NegZ;
+            if (w.Z >= _heightfield.bmax.Z) f |= OutFlags.PosZ;
+            outWorld[iv] = w;
+            outFlags[iv] = f;
+            ++iv;
+        }
     }
 
     private static (float min, float max) AxisMinMax(Span<Vector3> vertices, int count, int axis)

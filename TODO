@@ -1,5 +1,9 @@
 - fill solids!
 -- fill voxelmap directly during rasterization
+-- figure out nonmanifold meshes terrain (eg elpis)
+-- addspan improvement
+-- intersectionset dirty roots
+- compress cache
 - walk/fly transitions
 - better pathfind
 -- use same string-pulling idea for navvolumes

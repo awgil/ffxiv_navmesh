@@ -1,7 +1,6 @@
 - fill solids!
 -- figure out nonmanifold meshes terrain (eg elpis)
 -- intersectionset dirty roots
-- compress cache
 - walk/fly transitions
 - better pathfind
 -- use same string-pulling idea for navvolumes

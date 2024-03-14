@@ -4,6 +4,7 @@ using DotRecast.Detour.Io;
 using Navmesh.NavVolume;
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Numerics;
 
 namespace Navmesh;
@@ -12,7 +13,7 @@ namespace Navmesh;
 public record class Navmesh(DtNavMesh Mesh, VoxelMap? Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
-    public static readonly uint Version = 10;
+    public static readonly uint Version = 11;
 
     // throws an exception on failure
     public static Navmesh Deserialize(BinaryReader reader, NavmeshSettings settings)
@@ -24,16 +25,8 @@ public record class Navmesh(DtNavMesh Mesh, VoxelMap? Volume)
         var meshLen = reader.ReadInt32();
         var volumeLen = reader.ReadInt32();
 
-        var mesh = new DtMeshSetReader().Read(new RcByteBuffer(reader.ReadBytes(meshLen)));
-
-        VoxelMap? volume = null;
-        if (volumeLen > 0)
-        {
-            var (min, max) = DeserializeBounds(reader);
-            volume = new VoxelMap(min, max, settings);
-            DeserializeTile(reader, volume.RootTile);
-        }
-
+        var mesh = DeserializeNavmesh(reader, meshLen);
+        var volume = volumeLen > 0 ? DeserializeNavvolume(reader, settings) : null;
         return new(mesh, volume);
     }
 
@@ -45,14 +38,13 @@ public record class Navmesh(DtNavMesh Mesh, VoxelMap? Volume)
         writer.Write(0); // volume size placeholder
         var payloadStartPos = (int)writer.Seek(0, SeekOrigin.Current);
 
-        new DtMeshSetWriter().Write(writer, Mesh, RcByteOrder.LITTLE_ENDIAN, false);
+        SerializeNavmesh(writer, Mesh);
         int meshLen = (int)writer.Seek(0, SeekOrigin.Current) - payloadStartPos;
 
         int volumeLen = 0;
         if (Volume != null)
         {
-            SerializeBounds(writer, Volume.RootTile.BoundsMin, Volume.RootTile.BoundsMax);
-            SerializeTile(writer, Volume.RootTile);
+            SerializeNavvolume(writer, Volume);
             volumeLen = (int)writer.Seek(0, SeekOrigin.Current) - payloadStartPos - meshLen;
         }
 
@@ -61,6 +53,34 @@ public record class Navmesh(DtNavMesh Mesh, VoxelMap? Volume)
         writer.Write(volumeLen);
         writer.Seek(payloadStartPos + meshLen + volumeLen, SeekOrigin.Begin);
 
+    }
+
+    private static DtNavMesh DeserializeNavmesh(BinaryReader reader, int length)
+    {
+        using var compressedReader = new BinaryReader(new BrotliStream(reader.BaseStream, CompressionMode.Decompress, true));
+        return new DtMeshSetReader().Read(new RcByteBuffer(compressedReader.ReadBytes(length)));
+    }
+
+    private static void SerializeNavmesh(BinaryWriter writer, DtNavMesh mesh)
+    {
+        using var compressedWriter = new BinaryWriter(new BrotliStream(writer.BaseStream, CompressionLevel.Optimal, true));
+        new DtMeshSetWriter().Write(compressedWriter, mesh, RcByteOrder.LITTLE_ENDIAN, false);
+    }
+
+    private static VoxelMap DeserializeNavvolume(BinaryReader reader, NavmeshSettings settings)
+    {
+        using var compressedReader = new BinaryReader(new BrotliStream(reader.BaseStream, CompressionMode.Decompress, true));
+        var (min, max) = DeserializeBounds(compressedReader);
+        var volume = new VoxelMap(min, max, settings);
+        DeserializeTile(compressedReader, volume.RootTile);
+        return volume;
+    }
+
+    private static void SerializeNavvolume(BinaryWriter writer, VoxelMap volume)
+    {
+        using var compressedWriter = new BinaryWriter(new BrotliStream(writer.BaseStream, CompressionLevel.Optimal, true));
+        SerializeBounds(writer, volume.RootTile.BoundsMin, volume.RootTile.BoundsMax);
+        SerializeTile(writer, volume.RootTile);
     }
 
     private static unsafe void DeserializeTile(BinaryReader reader, VoxelMap.Tile tile)

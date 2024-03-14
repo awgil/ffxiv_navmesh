@@ -207,7 +207,7 @@ public class NavmeshBuilder
         {
             lock (Navmesh.Volume)
             {
-                Navmesh.Volume.AddFromHeightfield(shf);
+                Navmesh.Volume.AddFromHeightfield(shf, x, z);
             }
         }
 

@@ -1,5 +1,6 @@
 ﻿using DotRecast.Recast;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -66,7 +67,7 @@ public class VoxelMap
         public Vector3 BoundsMin { get; init; }
         public Vector3 BoundsMax { get; init; }
         public int Level { get; init; }
-        public ushort[] Contents { get; init; } // high bit unset: empty voxel (TODO: region id in low bits); high bit set: voxel with solid geometry (subvoxel index in lower bits if non-leaf); order is (y,x,z)
+        public ushort[] Contents { get; init; } // high bit unset: empty voxel (TODO: region id in low bits?); high bit set: voxel with solid geometry (VoxelIdMask if leaf, subvoxel index otherwise); order is (y,x,z)
         public List<Tile> Subdivision { get; init; } = new();
 
         public Level LevelDesc => Owner.Levels[Level];
@@ -108,13 +109,14 @@ public class VoxelMap
             {
                 return (EncodeIndex(idx), true); // empty at this level
             }
-            else if (Level + 1 == Owner.Levels.Length)
+            data &= VoxelIdMask;
+            if (data == VoxelIdMask)
             {
                 return (EncodeIndex(idx), false); // occupied leaf
             }
             else
             {
-                var sub = Subdivision[data & VoxelIdMask].FindLeafVoxel(p, false); // guaranteed to be in bounds
+                var sub = Subdivision[data].FindLeafVoxel(p, false); // guaranteed to be in bounds
                 return (EncodeIndex(idx, sub.index), sub.empty);
             }
         }
@@ -135,14 +137,16 @@ public class VoxelMap
                         if ((data & VoxelOccupiedBit) == 0)
                         {
                             yield return (EncodeIndex(idx), true); // empty at this level
+                            continue;
                         }
-                        else if (Level + 1 == Owner.Levels.Length)
+                        data &= VoxelIdMask;
+                        if (data == VoxelIdMask)
                         {
                             yield return(EncodeIndex(idx), false); // occupied leaf
                         }
                         else
                         {
-                            foreach (var sub in Subdivision[data & VoxelIdMask].EnumerateLeafVoxels(bmin, bmax))
+                            foreach (var sub in Subdivision[data].EnumerateLeafVoxels(bmin, bmax))
                                 yield return (EncodeIndex(idx, sub.index), sub.empty);
                         }
                     }
@@ -204,10 +208,11 @@ public class VoxelMap
             var data = tile.Contents[tileIndex];
             if ((data & VoxelOccupiedBit) == 0)
                 return true; // found empty voxel
-            if (tile.Level + 1 == Levels.Length)
+            data &= VoxelIdMask;
+            if (data == VoxelIdMask)
                 return false; // found non-empty leaf
             //Service.Log.Debug($"-> {data:X} (s={tile.Subdivision.Count})");
-            tile = tile.Subdivision[data & VoxelIdMask];
+            tile = tile.Subdivision[data];
         }
     }
 
@@ -226,67 +231,175 @@ public class VoxelMap
             }
 
             var data = tile.Contents[tileIndex];
-            if ((data & VoxelOccupiedBit) == 0 || tile.Level + 1 == Levels.Length)
+            var id = data & VoxelIdMask;
+            if ((data & VoxelOccupiedBit) == 0 || id == VoxelIdMask)
             {
                 var bb = tile.CalculateSubdivisionBounds(Levels[tile.Level].IndexToVoxel(tileIndex));
                 return (bb.min + eps3, bb.max - eps3);
             }
 
-            tile = tile.Subdivision[data & VoxelIdMask];
+            tile = tile.Subdivision[id];
         }
     }
 
-    // TODO: remove, rasterize triangles directly
-    public void AddFromHeightfield(RcHeightfield hf)
+    // TODO: remove and rasterize triangles directly?
+    public void AddFromHeightfield(RcHeightfield hf, int tx, int tz)
     {
-        float x0 = hf.bmin.X + (hf.borderSize + 0.5f) * hf.cs;
-        float z = hf.bmin.Z + (hf.borderSize + 0.5f) * hf.cs;
-        for (int iz = hf.borderSize; iz < hf.height - hf.borderSize; ++iz)
-        {
-            float x = x0;
-            for (int ix = hf.borderSize; ix < hf.width - hf.borderSize; ++ix)
-            {
-                var spanIndex = hf.spans[iz * hf.width + ix];
-                while (spanIndex != 0)
-                {
-                    ref var span = ref hf.Span(spanIndex);
-                    float y0 = hf.bmin.Y + span.smin * hf.ch;
-                    float y1 = hf.bmin.Y + span.smax * hf.ch;
-                    AddFromHeightfieldSpan(RootTile, x, z, y0, y1);
-                    spanIndex = span.next;
-                }
-                x += hf.cs;
-            }
-            z += hf.cs;
-        }
-    }
+        var hfBorderWorld = hf.borderSize * hf.cs;
+        var l0Bounds = RootTile.CalculateSubdivisionBounds((tx, 0, tz));
+        if (l0Bounds.min.X != hf.bmin.X + hfBorderWorld || l0Bounds.max.X != hf.bmax.X - hfBorderWorld || l0Bounds.min.Z != hf.bmin.Z + hfBorderWorld || l0Bounds.max.Z != hf.bmax.Z - hfBorderWorld)
+            throw new Exception($"Border mismatch: expected {l0Bounds}, got {hf.bmin}-{hf.bmax} + {hf.cs}*{hf.borderSize}");
+        if (l0Bounds.min.Y != hf.bmin.Y)
+            throw new Exception($"MinY mismatch: expected {l0Bounds.min.Y}, got {hf.bmin.Y}");
+        if (Levels.Length != 3)
+            throw new Exception($"Unexpected depth: got {Levels.Length}");
 
-    private void AddFromHeightfieldSpan(Tile tile, float x, float z, float y0, float y1)
-    {
-        var ld = tile.LevelDesc;
-        var v0 = tile.WorldToVoxel(new(x, y0, z));
-        if (v0.x >= 0 && v0.x < ld.NumCellsX && v0.z >= 0 && v0.z < ld.NumCellsZ)
+        var l0 = Levels[0];
+        var l1 = Levels[1];
+        var l2 = Levels[2];
+        var dv = l2.CellSize / new Vector3(hf.cs, hf.ch, hf.cs);
+        int dx = (int)dv.X;
+        int dy = (int)dv.Y;
+        int dz = (int)dv.Z;
+        if (dx != dv.X || dy != dv.Y || dz != dv.Z || !BitOperations.IsPow2(dx) || !BitOperations.IsPow2(dy) || !BitOperations.IsPow2(dz))
+            throw new Exception($"Cell size mismatch: {dv}");
+        var shiftY = BitOperations.Log2((uint)dy);
+
+        // downsample to L2
+        var ny1 = l1.NumCellsY * l0.NumCellsY;
+        var nx = l2.NumCellsX * l1.NumCellsX;
+        var ny = l2.NumCellsY * ny1;
+        var nz = l2.NumCellsZ * l1.NumCellsZ;
+        var rawL2 = new BitArray(nx * ny * nz); // this assumes that heightfield corresponds to 1x1xN column; TODO consider swizzle
+        int z = hf.borderSize;
+        for (int iz = 0; iz < nz; ++iz)
         {
-            var vy0 = Math.Max(0, v0.y);
-            var vy1 = Math.Min(ld.NumCellsY, (int)Math.Ceiling((y1 - tile.BoundsMin.Y) * ld.InvCellSize.Y));
-            for (int vy = vy0; vy < vy1; ++vy)
+            for (int jz = 0; jz < dz; ++jz, ++z)
             {
-                ref ushort voxel = ref tile.Contents[ld.VoxelToIndex(v0.x, vy, v0.z)];
-                if (tile.Level + 1 == Levels.Length)
+                int x = hf.borderSize;
+                for (int ix = 0; ix < nx; ++ix)
                 {
-                    // last level, just mark voxel as non-empty
-                    voxel = VoxelOccupiedBit;
-                }
-                else
-                {
-                    // create subdivision if not already done, then rasterize inside it
-                    if (voxel == 0)
+                    for (int jx = 0; jx < dx; ++jx, ++x)
                     {
-                        voxel = (ushort)(VoxelOccupiedBit | tile.Subdivision.Count);
-                        var (bmin, bmax) = tile.CalculateSubdivisionBounds(v0.x, vy, v0.z);
-                        tile.Subdivision.Add(new(this, bmin, bmax, tile.Level + 1));
+                        var offDest = (iz * nx + ix) * ny;
+                        var spanIndex = hf.spans[z * hf.width + x];
+                        while (spanIndex != 0)
+                        {
+                            ref var span = ref hf.Span(spanIndex);
+                            var y0 = span.smin >> shiftY;
+                            var y1 = Math.Min(span.smax >> shiftY, ny - 1);
+                            for (int y = y0; y <= y1; ++y)
+                                rawL2[offDest + y] = true;
+                            spanIndex = span.next;
+                        }
                     }
-                    AddFromHeightfieldSpan(tile.Subdivision[voxel & VoxelIdMask], x, z, y0, y1);
+                }
+            }
+        }
+
+        // downsample to L1
+        Service.Log.Info("downsampling to L1...");
+        var rawL1 = new BitArray(l1.NumCellsX * ny1 * l1.NumCellsZ * 2);
+        var offSrc = 0;
+        for (int iz = 0; iz < l1.NumCellsZ; ++iz)
+        {
+            for (int jz = 0; jz < l2.NumCellsZ; ++jz)
+            {
+                for (int ix = 0; ix < l1.NumCellsX; ++ix)
+                {
+                    for (int jx = 0; jx < l2.NumCellsX; ++jx)
+                    {
+                        var offDest = (iz * l1.NumCellsX + ix) * ny1 * 2;
+                        for (int iy = 0; iy < ny1; ++iy, offDest += 2)
+                        {
+                            for (int jy = 0; jy < l2.NumCellsY; ++jy)
+                            {
+                                //Service.Log.Info($"access: {iz}+{jz}, {ix}+{jx}, {iy}+{jy} == {offSrc} -> {offDest}");
+                                var v = rawL2[offSrc++] ? 1 : 0;
+                                rawL1[offDest + v] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // subdivide L0
+        Service.Log.Info("subdividing L0...");
+        var l0Index = l0.VoxelToIndex(tx, 0, tz);
+        for (int y0 = 0; y0 < l0.NumCellsY; ++y0, ++l0Index)
+        {
+            bool haveEmpty = false, haveSolid = false;
+            offSrc = y0 * l1.NumCellsY * 2;
+            for (int z1 = 0; z1 < l1.NumCellsZ; ++z1)
+            {
+                for (int x1 = 0; x1 < l1.NumCellsX; ++x1)
+                {
+                    for (int y1 = 0; y1 < l1.NumCellsY; ++y1)
+                    {
+                        haveEmpty |= rawL1[offSrc + y1 * 2];
+                        haveSolid |= rawL1[offSrc + y1 * 2 + 1];
+                    }
+                    offSrc += ny1 * 2;
+                }
+            }
+
+            if (!haveSolid)
+                continue; // fully empty
+
+            if (!haveEmpty)
+            {
+                // fully solid
+                RootTile.Contents[l0Index] = VoxelOccupiedBit | VoxelIdMask;
+                continue;
+            }
+
+            // ok, subdivide
+            RootTile.Contents[l0Index] = (ushort)(VoxelOccupiedBit | RootTile.Subdivision.Count);
+            var (l1Min, l1Max) = RootTile.CalculateSubdivisionBounds(tx, y0, tz);
+            var l1Tile = new Tile(this, l1Min, l1Max, 1);
+            RootTile.Subdivision.Add(l1Tile);
+
+            // subdivide L1
+            offSrc = y0 * l1.NumCellsY * 2;
+            for (int z1 = 0; z1 < l1.NumCellsZ; ++z1)
+            {
+                for (int x1 = 0; x1 < l1.NumCellsX; ++x1)
+                {
+                    for (int y1 = 0; y1 < l1.NumCellsY; ++y1)
+                    {
+                        if (!rawL1[offSrc + y1 * 2 + 1])
+                        {
+                            // fully empty
+                        }
+                        else if (!rawL1[offSrc + y1 * 2])
+                        {
+                            // fully solid
+                            l1Tile.Contents[l1.VoxelToIndex(x1, y1, z1)] = VoxelOccupiedBit | VoxelIdMask;
+                        }
+                        else
+                        {
+                            // subdivide
+                            l1Tile.Contents[l1.VoxelToIndex(x1, y1, z1)] = (ushort)(VoxelOccupiedBit | l1Tile.Subdivision.Count);
+                            var (l2Min, l2Max) = l1Tile.CalculateSubdivisionBounds(x1, y1, z1);
+                            var l2Tile = new Tile(this, l2Min, l2Max, 2);
+                            l1Tile.Subdivision.Add(l2Tile);
+
+                            for (int z2 = 0; z2 < l2.NumCellsZ; ++z2)
+                            {
+                                for (int x2 = 0; x2 < l2.NumCellsX; ++x2)
+                                {
+                                    for (int y2 = 0; y2 < l2.NumCellsY; ++y2)
+                                    {
+                                        var index = ((z1 * l2.NumCellsZ + z2) * nx + x1 * l2.NumCellsX + x2) * ny + (y0 * l1.NumCellsY + y1) * l2.NumCellsY + y2;
+                                        if (rawL2[index])
+                                            l2Tile.Contents[l2.VoxelToIndex(x2, y2, z2)] = VoxelOccupiedBit | VoxelIdMask;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    offSrc += ny1 * 2;
                 }
             }
         }

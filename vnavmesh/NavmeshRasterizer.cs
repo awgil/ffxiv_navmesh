@@ -146,26 +146,27 @@ public class NavmeshRasterizer
 
             foreach (var instance in mesh.Instances)
             {
-                if (RasterizeMesh(mesh, instance) && perMeshInteriors)
+                if (RasterizeMesh(mesh, instance, out var minY) && perMeshInteriors)
                 {
                     int z0 = Math.Clamp((int)((instance.WorldBounds.Min.Z - _heightfield.bmin.Z) * _invCellXZ), 0, _heightfield.height - 1);
                     int z1 = Math.Clamp((int)((instance.WorldBounds.Max.Z - _heightfield.bmin.Z) * _invCellXZ), 0, _heightfield.height - 1);
                     int x0 = Math.Clamp((int)((instance.WorldBounds.Min.X - _heightfield.bmin.X) * _invCellXZ), 0, _heightfield.width - 1);
                     int x1 = Math.Clamp((int)((instance.WorldBounds.Max.X - _heightfield.bmin.X) * _invCellXZ), 0, _heightfield.width - 1);
-                    FillInterior(solidBelowNonManifold, z0, z1, x0, x1);
+                    FillInterior(z0, z1, x0, x1, solidBelowNonManifold ? minY : _maxY);
                 }
             }
         }
 
         if (!perMeshInteriors)
         {
-            FillInterior(solidBelowNonManifold, 0, _heightfield.height - 1, 0, _heightfield.width - 1);
+            FillInterior(0, _heightfield.height - 1, 0, _heightfield.width - 1, solidBelowNonManifold ? 0 : _maxY);
         }
     }
 
     // if it returns true, the mesh borders were rasterized, so intersection set could be modified
-    public bool RasterizeMesh(SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance)
+    public bool RasterizeMesh(SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance, out int minimalY)
     {
+        minimalY = _maxY;
         if (instance.WorldBounds.Max.X <= _heightfield.bmin.X || instance.WorldBounds.Max.Z <= _heightfield.bmin.Z || instance.WorldBounds.Min.X >= _heightfield.bmax.X || instance.WorldBounds.Min.Z >= _heightfield.bmax.Z)
             return false;
 
@@ -271,6 +272,7 @@ public class NavmeshRasterizer
 
                         if (realSolid && _iset != null && invDiv != 0)
                         {
+                            minimalY = Math.Min(minimalY, y0);
                             // intersect a ray passing through the middle of the cell vertically with the triangle
                             // A + AB*b + AC*c = P, b >= 0, c >= 0, a + b <= 1
                             //  ==>
@@ -372,7 +374,7 @@ public class NavmeshRasterizer
     }
 
     // TODO: maintain non-empty cells in intersection set?
-    private void FillInterior(bool solidBelowNonManifold, int z0, int z1, int x0, int x1)
+    private void FillInterior(int z0, int z1, int x0, int x1, int yBelowNonManifold)
     {
         if (_iset == null)
             return; // interior filling is disabled
@@ -393,11 +395,11 @@ public class NavmeshRasterizer
                 //        Service.Log.Info($"{name}.{ii} {haveNegNormal} [{i}]: {solidSort[i]:X} {solidVoxel[i]}");
 
                 int idx = 0;
-                if (solidBelowNonManifold && solidVoxel[idx] > 0)
+                if (solidVoxel[idx] > yBelowNonManifold)
                 {
                     // non-manifold mesh, assume everything below is interior - this has problems with some terrain in elpis
                     // TODO: we only really need to bother for voxelmap...
-                    AddSpan(x, z, 0, solidVoxel[idx], 0, true);
+                    AddSpan(x, z, yBelowNonManifold, solidVoxel[idx], 0, true);
                     ++idx;
                 }
 

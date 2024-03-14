@@ -54,7 +54,7 @@ public class NavmeshBuilder
         navmeshParams.maxPolys = 1 << DtNavMesh.DT_POLY_BITS;
 
         var navmesh = new DtNavMesh(navmeshParams, settings.PolyMaxVerts);
-        var volume = flyable ? new VoxelMap(BoundsMin, BoundsMax, settings) : null;
+        var volume = flyable ? new VoxelMap(BoundsMin, BoundsMax, settings.NumTiles) : null;
         Navmesh = new(navmesh, volume);
 
         // calculate derived parameters

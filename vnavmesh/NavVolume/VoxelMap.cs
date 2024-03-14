@@ -204,14 +204,12 @@ public class VoxelMap
             if (tileIndex == IndexLevelMask)
                 return false; // asking for non-leaf => consider non-empty
 
-            //Service.Log.Debug($"testing {tileIndex} (s={tile.Contents.Length})");
             var data = tile.Contents[tileIndex];
             if ((data & VoxelOccupiedBit) == 0)
                 return true; // found empty voxel
             data &= VoxelIdMask;
             if (data == VoxelIdMask)
                 return false; // found non-empty leaf
-            //Service.Log.Debug($"-> {data:X} (s={tile.Subdivision.Count})");
             tile = tile.Subdivision[data];
         }
     }
@@ -298,7 +296,6 @@ public class VoxelMap
         }
 
         // downsample to L1
-        Service.Log.Info("downsampling to L1...");
         var rawL1 = new BitArray(l1.NumCellsX * ny1 * l1.NumCellsZ * 2);
         var offSrc = 0;
         for (int iz = 0; iz < l1.NumCellsZ; ++iz)
@@ -314,7 +311,6 @@ public class VoxelMap
                         {
                             for (int jy = 0; jy < l2.NumCellsY; ++jy)
                             {
-                                //Service.Log.Info($"access: {iz}+{jz}, {ix}+{jx}, {iy}+{jy} == {offSrc} -> {offDest}");
                                 var v = rawL2[offSrc++] ? 1 : 0;
                                 rawL1[offDest + v] = true;
                             }
@@ -325,7 +321,6 @@ public class VoxelMap
         }
 
         // subdivide L0
-        Service.Log.Info("subdividing L0...");
         var l0Index = l0.VoxelToIndex(tx, 0, tz);
         for (int y0 = 0; y0 < l0.NumCellsY; ++y0, ++l0Index)
         {

@@ -194,7 +194,7 @@ public class NavmeshManager : IDisposable
     private unsafe bool GetFlyable()
     {
         var layout = LayoutWorld.Instance()->ActiveLayout;
-        return layout->TerritoryTypeId != 250 && Service.LuminaRow<Lumina.Excel.GeneratedSheets.TerritoryType>(layout->TerritoryTypeId)?.TerritoryIntendedUse is 1 or 49; // exclude wolves' den pier; 1 is normal outdoor, 49 is island
+        return layout->TerritoryTypeId != 250 && Service.LuminaRow<Lumina.Excel.GeneratedSheets.TerritoryType>(layout->TerritoryTypeId)?.TerritoryIntendedUse is 1 or 49 or 47; // exclude wolves' den pier; 1 is normal outdoor, 49 is island, 47 is Diadem
     }
 
     private void ClearState()

@@ -100,7 +100,7 @@ class DebugNavmeshCustom : IDisposable
                             _intermediates.Tiles[x, z] = _builder.BuildTile(x, z);
                         }
                     }
-                    //int x = 11, z = 7;
+                    //int x = 9, z = 15;
                     //_intermediates.Tiles[x, z] = _builder.BuildTile(x, z);
                 }
 
@@ -222,27 +222,27 @@ class DebugNavmeshCustom : IDisposable
                 {
                     for (int x = 0; x < intermediates.NumTilesX; ++x)
                     {
+                        var inter = intermediates.Tiles[x, z];
+                        if (inter == null)
+                            continue;
+
                         using var nt = _tree.Node($"Tile {x}x{z}");
                         if (!nt.Opened)
                             continue;
 
-                        var inter = intermediates.Tiles[x, z];
                         var debug = _debugTiles[x, z] ??= new();
-                        if (inter != null)
+                        debug.DrawSolidHeightfield ??= new(inter.Value.SolidHeightfield, _tree, _dd);
+                        debug.DrawSolidHeightfield.Draw();
+                        debug.DrawCompactHeightfield ??= new(inter.Value.CompactHeightfield, _tree, _dd);
+                        debug.DrawCompactHeightfield.Draw();
+                        debug.DrawContourSet ??= new(inter.Value.ContourSet, _tree, _dd);
+                        debug.DrawContourSet.Draw();
+                        debug.DrawPolyMesh ??= new(inter.Value.PolyMesh, _tree, _dd);
+                        debug.DrawPolyMesh.Draw();
+                        if (inter.Value.DetailMesh != null)
                         {
-                            debug.DrawSolidHeightfield ??= new(inter.Value.SolidHeightfield, _tree, _dd);
-                            debug.DrawSolidHeightfield.Draw();
-                            debug.DrawCompactHeightfield ??= new(inter.Value.CompactHeightfield, _tree, _dd);
-                            debug.DrawCompactHeightfield.Draw();
-                            debug.DrawContourSet ??= new(inter.Value.ContourSet, _tree, _dd);
-                            debug.DrawContourSet.Draw();
-                            debug.DrawPolyMesh ??= new(inter.Value.PolyMesh, _tree, _dd);
-                            debug.DrawPolyMesh.Draw();
-                            if (inter.Value.DetailMesh != null)
-                            {
-                                debug.DrawPolyMeshDetail ??= new(inter.Value.DetailMesh, _tree, _dd);
-                                debug.DrawPolyMeshDetail.Draw();
-                            }
+                            debug.DrawPolyMeshDetail ??= new(inter.Value.DetailMesh, _tree, _dd);
+                            debug.DrawPolyMeshDetail.Draw();
                         }
 
                         using (var nhfc = _tree.Node("HF comparison"))

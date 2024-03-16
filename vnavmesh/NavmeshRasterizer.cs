@@ -397,8 +397,9 @@ public class NavmeshRasterizer
                 int idx = 0;
                 if (solidVoxel[idx] > yBelowNonManifold)
                 {
-                    // non-manifold mesh, assume everything below is interior - this has problems with some terrain in elpis
-                    // TODO: we only really need to bother for voxelmap...
+                    // non-manifold mesh, assume everything below is interior
+                    //while (idx + 1 < cnt && solidVoxel[idx + 1] > yBelowNonManifold)
+                    //    ++idx; // well i dunno, some terrain (eg south thanalan) is really _that_ fucked
                     AddSpan(x, z, yBelowNonManifold, solidVoxel[idx], 0, true);
                     ++idx;
                 }

@@ -307,12 +307,12 @@ public class NavmeshRasterizer
         return true;
     }
 
-    private void AddSpan(int x, int z, int y0, int y1, int areaId, bool includeInVolume)
+    private void AddSpan(int x, int z, int y0, int y1, int areaId, bool includeInVolume, bool mergeBelow = true)
     {
         ref var cellHead = ref _heightfield.spans[z * _heightfield.width + x];
 
         // find insert position for new span: skip any existing spans that end before new span start
-        var prevMaxY = y0 - _minSpanGap - 1; // any spans that have smax >= prevMaxY are merged
+        var prevMaxY = mergeBelow ? y0 - _minSpanGap - 1 : y1; // any spans that have smax >= prevMaxY are merged
         var nextMinY = y1 + _minSpanGap + 1; // any spans that have smin <= nextMinY are merged
         uint prevSpanIndex = 0;
         uint currSpanIndex = cellHead;
@@ -339,7 +339,7 @@ public class NavmeshRasterizer
             var heightDiff = currSpan.smax - y1;
             if (heightDiff > _walkableClimbThreshold || heightDiff >= -_walkableClimbThreshold && currSpan.area > areaId)
                 areaId = currSpan.area;
-            y0 = Math.Min(y0, currSpan.smin);
+            y0 = mergeBelow ? Math.Min(y0, currSpan.smin) : Math.Max(y0, currSpan.smax);
             y1 = Math.Max(y1, currSpan.smax);
 
             // free merged span; note that prev would still point to it, we'll fix it later
@@ -398,9 +398,9 @@ public class NavmeshRasterizer
                 if (solidVoxel[idx] > yBelowNonManifold)
                 {
                     // non-manifold mesh, assume everything below is interior
-                    //while (idx + 1 < cnt && solidVoxel[idx + 1] > yBelowNonManifold)
-                    //    ++idx; // well i dunno, some terrain (eg south thanalan) is really _that_ fucked
-                    AddSpan(x, z, yBelowNonManifold, solidVoxel[idx], 0, true);
+                    while (idx + 1 < cnt && solidVoxel[idx + 1] > yBelowNonManifold)
+                        ++idx; // well i dunno, some terrain (eg south thanalan) is really _that_ fucked
+                    AddSpan(x, z, yBelowNonManifold, solidVoxel[idx], 0, true, false);
                     ++idx;
                 }
 

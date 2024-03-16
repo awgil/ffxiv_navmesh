@@ -1,4 +1,6 @@
 - walk/fly transitions
+- optimizations
+-- use heightmap equivalent for voxelization/downsample
 - better pathfind
 -- use same string-pulling idea for navvolumes
 -- follow/target update

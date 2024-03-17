@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FFXIVClientStructs.FFXIV.Client.Game;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -11,6 +12,7 @@ public class FollowPath : IDisposable
     public bool IgnoreDeltaY = false;
     public float Tolerance = 0.25f;
     public List<Vector3> Waypoints = new();
+    private DateTime NextJump = default;
 
     private NavmeshManager _manager;
     private OverrideCamera _camera = new();
@@ -57,6 +59,13 @@ public class FollowPath : IDisposable
             OverrideAFK.ResetTimers();
             _movement.Enabled = MovementAllowed;
             _movement.DesiredPosition = Waypoints[0];
+            if (_movement.DesiredPosition.Y > player.Position.Y)
+            {
+                if (!Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Mounted])
+                    ExecuteJump(); // Spam jump to take off
+                else if (!Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && !IgnoreDeltaY)
+                    _movement.Enabled = false; // Else if we're not in flight, don't move since the target is above us and we can't reach it
+            }
             _camera.Enabled = AlignCamera;
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
@@ -65,6 +74,15 @@ public class FollowPath : IDisposable
     }
 
     public void Stop() => Waypoints.Clear();
+
+    private unsafe void ExecuteJump()
+    {
+        if (DateTime.Now >= NextJump)
+        {
+            ActionManager.Instance()->UseAction(ActionType.GeneralAction, 2);
+            NextJump = DateTime.Now.AddMilliseconds(100);
+        }
+    }
 
     public void Move(List<Vector3> waypoints, bool ignoreDeltaY)
     {

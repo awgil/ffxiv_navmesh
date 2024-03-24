@@ -54,4 +54,9 @@ public class MainWindow : Window, IDisposable
         }
         _dd.EndFrame();
     }
+
+    public void ToggleIsCmdEnabledCollision()
+    {
+        _debugGameColl.IsCmdEnabledCollision = !_debugGameColl.IsCmdEnabledCollision;
+    }
 }

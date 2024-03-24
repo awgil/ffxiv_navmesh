@@ -62,6 +62,7 @@ public sealed class Plugin : IDalamudPlugin
             /vnavmesh rebuild → rebuild current territory's navmesh from scratch
             /vnavmesh aligncamera → toggle aligning camera to movement direction
             /vnavmesh dtr → toggle dtr status
+            /vnavmesh collider → toggle collision debug visualization
             """,
             ShowInHelp = true,
         });
@@ -148,6 +149,9 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "dtr":
                 _dtrProvider.ShowDtrBar ^= true;
+                break;
+            case "collider":
+                _wndMain.ToggleIsCmdEnabledCollision();
                 break;
         }
     }

@@ -125,8 +125,9 @@ public class NavmeshManager : IDisposable
             scene.FillFromActiveLayout();
             var cacheKey = GetCacheKey(scene);
             var flyable = GetFlyable();
+            var dungeon = GetDungeon();
             _loadTaskProgress = 0;
-            _loadTask = Task.Run(() => BuildNavmesh(scene, flyable, cacheKey, allowLoadFromCache));
+            _loadTask = Task.Run(() => BuildNavmesh(scene, flyable, dungeon, cacheKey, allowLoadFromCache));
         }
         return true;
     }
@@ -197,6 +198,12 @@ public class NavmeshManager : IDisposable
         return layout->TerritoryTypeId != 250 && Service.LuminaRow<Lumina.Excel.GeneratedSheets.TerritoryType>(layout->TerritoryTypeId)?.TerritoryIntendedUse is 1 or 49 or 47; // exclude wolves' den pier; 1 is normal outdoor, 49 is island, 47 is Diadem
     }
 
+    private unsafe bool GetDungeon()
+    {
+        var layout = LayoutWorld.Instance()->ActiveLayout;
+        return layout->TerritoryTypeId != 250 && Service.LuminaRow<Lumina.Excel.GeneratedSheets.TerritoryType>(layout->TerritoryTypeId)?.ContentFinderCondition.Value?.ContentType.Value?.RowId == 2;
+    }
+
     private void ClearState()
     {
         _queryCancelSource?.Cancel();
@@ -210,8 +217,17 @@ public class NavmeshManager : IDisposable
         _navmesh = null;
     }
 
-    private Navmesh BuildNavmesh(SceneDefinition scene, bool flyable, string cacheKey, bool allowLoadFromCache)
+    private Navmesh BuildNavmesh(SceneDefinition scene, bool flyable, bool dungeon, string cacheKey, bool allowLoadFromCache)
     {
+        if (flyable)
+            _settings.Filtering = NavmeshSettings.Filter.LowHangingObstacles | NavmeshSettings.Filter.LedgeSpans | NavmeshSettings.Filter.WalkableLowHeightSpans | NavmeshSettings.Filter.Interiors;
+        else
+            _settings.Filtering = NavmeshSettings.Filter.LowHangingObstacles | NavmeshSettings.Filter.LedgeSpans | NavmeshSettings.Filter.WalkableLowHeightSpans;
+
+        if (dungeon)
+            _settings.Filtering = NavmeshSettings.Filter.LowHangingObstacles | NavmeshSettings.Filter.WalkableLowHeightSpans;
+        else
+            _settings.Filtering = NavmeshSettings.Filter.LowHangingObstacles | NavmeshSettings.Filter.LedgeSpans | NavmeshSettings.Filter.WalkableLowHeightSpans | NavmeshSettings.Filter.Interiors; ;
         // try reading from cache
         var cache = new FileInfo($"{_cacheDir.FullName}/{cacheKey}.navmesh");
         if (allowLoadFromCache && cache.Exists)

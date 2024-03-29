@@ -227,7 +227,8 @@ public class NavmeshManager : IDisposable
         if (dungeon)
             _settings.Filtering = NavmeshSettings.Filter.LowHangingObstacles | NavmeshSettings.Filter.WalkableLowHeightSpans;
         else
-            _settings.Filtering = NavmeshSettings.Filter.LowHangingObstacles | NavmeshSettings.Filter.LedgeSpans | NavmeshSettings.Filter.WalkableLowHeightSpans | NavmeshSettings.Filter.Interiors; ;
+            _settings.Filtering = NavmeshSettings.Filter.LowHangingObstacles | NavmeshSettings.Filter.LedgeSpans | NavmeshSettings.Filter.WalkableLowHeightSpans | NavmeshSettings.Filter.Interiors;
+
         // try reading from cache
         var cache = new FileInfo($"{_cacheDir.FullName}/{cacheKey}.navmesh");
         if (allowLoadFromCache && cache.Exists)

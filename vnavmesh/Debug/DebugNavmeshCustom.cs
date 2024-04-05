@@ -15,6 +15,14 @@ class DebugNavmeshCustom : IDisposable
 {
     private record struct HeightfieldComparison(float DurationOld, float DurationNew, bool Identical);
 
+    public class Customization : NavmeshCustomization
+    {
+        public bool Flyable;
+
+        public override int Version => 1;
+        public override bool IsFlyingSupported(SceneDefinition definition) => Flyable;
+    }
+
     // async navmesh builder
     public class AsyncBuilder : IDisposable
     {
@@ -56,14 +64,14 @@ class DebugNavmeshCustom : IDisposable
             Clear();
         }
 
-        public void Rebuild(NavmeshSettings settings, bool flyable, bool includeTiles)
+        public void Rebuild(Customization settings, bool includeTiles)
         {
             Clear();
             Service.Log.Debug("[navmesh] extract from scene");
             _scene = new();
             _scene.FillFromActiveLayout();
             Service.Log.Debug("[navmesh] schedule async build");
-            _task = Task.Run(() => BuildNavmesh(_scene, flyable, settings, includeTiles));
+            _task = Task.Run(() => BuildNavmesh(_scene, settings, includeTiles));
         }
 
         public void Clear()
@@ -82,12 +90,12 @@ class DebugNavmeshCustom : IDisposable
             //GC.Collect();
         }
 
-        private void BuildNavmesh(SceneDefinition scene, bool flyable, NavmeshSettings settings, bool includeTiles)
+        private void BuildNavmesh(SceneDefinition scene, NavmeshCustomization customization, bool includeTiles)
         {
             try
             {
                 var timer = Timer.Create();
-                _builder = new(scene, flyable, settings);
+                _builder = new(scene, customization);
 
                 // create tile data and add to navmesh
                 _intermediates = new(_builder.NumTilesX, _builder.NumTilesZ);
@@ -135,7 +143,7 @@ class DebugNavmeshCustom : IDisposable
         }
     }
 
-    private NavmeshSettings _settings = new();
+    private Customization _settings = new();
     private AsyncBuilder _navmesh = new();
     private UITree _tree = new();
     private DebugDrawer _dd;
@@ -165,27 +173,26 @@ class DebugNavmeshCustom : IDisposable
     public void Draw()
     {
         using (var nsettings = _tree.Node("Navmesh properties"))
+        {
             if (nsettings.Opened)
-                _settings.Draw();
+            {
+                ImGui.Checkbox("Support flying", ref _settings.Flyable);
+                _settings.Settings.Draw();
+            }
+        }
 
         using (var d = ImRaii.Disabled(_navmesh.CurrentState == AsyncBuilder.State.InProgress))
         {
-            if (ImGui.Button("Rebuild navmesh flyable"))
+            if (ImGui.Button("Rebuild navmesh"))
             {
                 Clear();
-                _navmesh.Rebuild(_settings, true, true);
-            }
-            ImGui.SameLine();
-            if (ImGui.Button("Rebuild navmesh non-flyable"))
-            {
-                Clear();
-                _navmesh.Rebuild(_settings, false, true);
+                _navmesh.Rebuild(_settings, true);
             }
             ImGui.SameLine();
             if (ImGui.Button("Rebuild scene extract only"))
             {
                 Clear();
-                _navmesh.Rebuild(_settings, true, false);
+                _navmesh.Rebuild(_settings, false);
             }
             ImGui.SameLine();
             ImGui.TextUnformatted($"State: {_navmesh.CurrentState}");
@@ -289,16 +296,16 @@ class DebugNavmeshCustom : IDisposable
         var telemetry = new RcContext();
         var boundsMin = new Vector3(-1024);
         var boundsMax = new RcVec3f(1024);
-        var numTilesXZ = _settings.NumTiles[0];
+        var numTilesXZ = _settings.Settings.NumTiles[0];
         var tileWidth = (boundsMax.X - boundsMin.X) / numTilesXZ;
         var tileHeight = (boundsMax.Z - boundsMin.Z) / numTilesXZ;
-        var walkableClimbVoxels = (int)MathF.Floor(_settings.AgentMaxClimb / _settings.CellHeight);
-        var walkableRadiusVoxels = (int)MathF.Ceiling(_settings.AgentRadius / _settings.CellSize);
-        var walkableNormalThreshold = _settings.AgentMaxSlopeDeg.Degrees().Cos();
+        var walkableClimbVoxels = (int)MathF.Floor(_settings.Settings.AgentMaxClimb / _settings.Settings.CellHeight);
+        var walkableRadiusVoxels = (int)MathF.Ceiling(_settings.Settings.AgentRadius / _settings.Settings.CellSize);
+        var walkableNormalThreshold = _settings.Settings.AgentMaxSlopeDeg.Degrees().Cos();
         var borderSizeVoxels = 3 + walkableRadiusVoxels;
-        var borderSizeWorld = borderSizeVoxels * _settings.CellSize;
-        var tileSizeXVoxels = (int)MathF.Ceiling(tileWidth / _settings.CellSize) + 2 * borderSizeVoxels;
-        var tileSizeZVoxels = (int)MathF.Ceiling(tileHeight / _settings.CellSize) + 2 * borderSizeVoxels;
+        var borderSizeWorld = borderSizeVoxels * _settings.Settings.CellSize;
+        var tileSizeXVoxels = (int)MathF.Ceiling(tileWidth / _settings.Settings.CellSize) + 2 * borderSizeVoxels;
+        var tileSizeZVoxels = (int)MathF.Ceiling(tileHeight / _settings.Settings.CellSize) + 2 * borderSizeVoxels;
         var tileBoundsMin = new Vector3(boundsMin.X + tx * tileWidth, boundsMin.Y, boundsMin.Z + tz * tileHeight);
         var tileBoundsMax = new Vector3(tileBoundsMin.X + tileWidth, boundsMax.Y, tileBoundsMin.Z + tileHeight);
         tileBoundsMin.X -= borderSizeWorld;
@@ -307,12 +314,12 @@ class DebugNavmeshCustom : IDisposable
         tileBoundsMax.Z += borderSizeWorld;
 
         var timer = Timer.Create();
-        var shfOld = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.CellSize, _settings.CellHeight, borderSizeVoxels);
+        var shfOld = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.Settings.CellSize, _settings.Settings.CellHeight, borderSizeVoxels);
         var rasterizerOld = new NavmeshRasterizer(shfOld, walkableNormalThreshold, walkableClimbVoxels, 0, false, null, telemetry);
         rasterizerOld.RasterizeOld(scene, SceneExtractor.MeshType.All);
         var dur1 = (float)timer.Value().TotalSeconds;
 
-        var shfNew = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.CellSize, _settings.CellHeight, borderSizeVoxels);
+        var shfNew = new RcHeightfield(tileSizeXVoxels, tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), _settings.Settings.CellSize, _settings.Settings.CellHeight, borderSizeVoxels);
         var rasterizerNew = new NavmeshRasterizer(shfNew, walkableNormalThreshold, walkableClimbVoxels, 0, false, null, telemetry);
         rasterizerNew.Rasterize(scene, SceneExtractor.MeshType.All, false, false);
         var dur2 = (float)timer.Value().TotalSeconds;
@@ -344,7 +351,7 @@ class DebugNavmeshCustom : IDisposable
     {
         float dur1 = 0, dur2 = 0;
         bool identical = true;
-        var numTilesXZ = _settings.NumTiles[0];
+        var numTilesXZ = _settings.Settings.NumTiles[0];
         for (int tz = 0; tz < numTilesXZ; ++tz)
         {
             for (int tx = 0; tx < numTilesXZ; ++tx)

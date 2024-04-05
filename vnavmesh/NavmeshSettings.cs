@@ -22,9 +22,9 @@ public class NavmeshSettings
     public float CellHeight = 0.25f;
     public float AgentHeight = 2.0f;
     public float AgentRadius = 0.5f;
-    public float AgentMaxClimb = 0.75f; // consider web bridges in lost city of amdapor (h)
+    public float AgentMaxClimb = 0.5f;
     public float AgentMaxSlopeDeg = 55f;
-    public Filter Filtering = Filter.LowHangingObstacles | Filter.LedgeSpans | Filter.WalkableLowHeightSpans | Filter.Interiors;
+    public Filter Filtering = Filter.LowHangingObstacles | Filter.LedgeSpans | Filter.WalkableLowHeightSpans;
     public float RegionMinSize = 8;
     public float RegionMergeSize = 20;
     public RcPartition Partitioning = RcPartition.WATERSHED;

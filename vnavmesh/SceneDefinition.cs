@@ -9,6 +9,8 @@ namespace Navmesh;
 // the goal is to fill it quickly on main thread, and then extract real data in background thread
 public class SceneDefinition
 {
+    public uint TerritoryID;
+    public uint CFCID;
     public SortedSet<uint> FestivalLayers = new();
     public List<string> Terrains = new();
     public Dictionary<uint, (Transform transform, Vector3 bbMin, Vector3 bbMax)> AnalyticShapes = new(); // key = crc; used by bgparts
@@ -23,6 +25,8 @@ public class SceneDefinition
         if (layout == null || layout->InitState != 7 || layout->FestivalStatus is > 0 and < 5)
             return;
 
+        TerritoryID = layout->TerritoryTypeId;
+        CFCID = layout->CfcId;
         foreach (var (k, v) in layout->Layers)
         {
             if (v.Value->FestivalId != 0)

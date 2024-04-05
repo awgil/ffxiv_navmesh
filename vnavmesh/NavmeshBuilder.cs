@@ -34,16 +34,19 @@ public class NavmeshBuilder
     private int _voxelizerNumY = 1;
     private int _voxelizerNumZ = 1;
 
-    public NavmeshBuilder(SceneDefinition scene, bool flyable, NavmeshSettings settings)
+    public NavmeshBuilder(SceneDefinition scene, NavmeshCustomization customization)
     {
-        Settings = settings;
+        Settings = customization.Settings;
+        var flyable = customization.IsFlyingSupported(scene);
 
         // load all meshes
         Scene = new(scene);
+        customization.CustomizeScene(Scene);
+
         BoundsMin = new(-1024);
         BoundsMax = new(1024);
-        NumTilesX = NumTilesZ = settings.NumTiles[0];
-        Service.Log.Debug($"starting building {NumTilesX}x{NumTilesZ} navmesh");
+        NumTilesX = NumTilesZ = Settings.NumTiles[0];
+        Service.Log.Debug($"starting building {NumTilesX}x{NumTilesZ} navmesh, customization = {customization.GetType()} v{customization.Version}");
 
         // create empty navmesh
         var navmeshParams = new DtNavMeshParams();
@@ -53,9 +56,9 @@ public class NavmeshBuilder
         navmeshParams.maxTiles = NumTilesX * NumTilesZ;
         navmeshParams.maxPolys = 1 << DtNavMesh.DT_POLY_BITS;
 
-        var navmesh = new DtNavMesh(navmeshParams, settings.PolyMaxVerts);
-        var volume = flyable ? new VoxelMap(BoundsMin, BoundsMax, settings.NumTiles) : null;
-        Navmesh = new(navmesh, volume);
+        var navmesh = new DtNavMesh(navmeshParams, Settings.PolyMaxVerts);
+        var volume = flyable ? new VoxelMap(BoundsMin, BoundsMax, Settings.NumTiles) : null;
+        Navmesh = new(customization.Version, navmesh, volume);
 
         // calculate derived parameters
         _walkableClimbVoxels = (int)MathF.Floor(Settings.AgentMaxClimb / Settings.CellHeight);
@@ -68,10 +71,10 @@ public class NavmeshBuilder
         _tileSizeZVoxels = (int)MathF.Ceiling(navmeshParams.tileHeight / Settings.CellSize) + 2 * _borderSizeVoxels;
         if (volume != null)
         {
-            _voxelizerNumY = settings.NumTiles[0];
-            for (int i = 1; i < settings.NumTiles.Length; ++i)
+            _voxelizerNumY = Settings.NumTiles[0];
+            for (int i = 1; i < Settings.NumTiles.Length; ++i)
             {
-                var n = settings.NumTiles[i];
+                var n = Settings.NumTiles[i];
                 _voxelizerNumX *= n;
                 _voxelizerNumY *= n;
                 _voxelizerNumZ *= n;

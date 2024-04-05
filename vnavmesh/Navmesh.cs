@@ -8,29 +8,33 @@ using System.Numerics;
 namespace Navmesh;
 
 // full set of data needed for navigation in the zone
-public record class Navmesh(DtNavMesh Mesh, VoxelMap? Volume)
+public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
-    public static readonly uint Version = 12;
+    public static readonly uint Version = 13;
 
     // throws an exception on failure
-    public static Navmesh Deserialize(BinaryReader reader, NavmeshSettings settings)
+    public static Navmesh Deserialize(BinaryReader reader, int expectedCustomizationVersion)
     {
         var magic = reader.ReadUInt32();
         var version = reader.ReadUInt32();
         if (magic != Magic || version != Version)
             throw new Exception("Incorrect header");
+        var customizationVersion = reader.ReadInt32();
+        if (customizationVersion != expectedCustomizationVersion)
+            throw new Exception("Outdated customization version");
 
         using var compressedReader = new BinaryReader(new BrotliStream(reader.BaseStream, CompressionMode.Decompress, true));
         var mesh = DeserializeMesh(reader);
         var volume = DeserializeVolume(reader);
-        return new(mesh, volume);
+        return new(customizationVersion, mesh, volume);
     }
 
     public void Serialize(BinaryWriter writer)
     {
         writer.Write(Magic);
         writer.Write(Version);
+        writer.Write(CustomizationVersion);
 
         using var compressedWriter = new BinaryWriter(new BrotliStream(writer.BaseStream, CompressionLevel.Optimal, true));
         SerializeMesh(writer, Mesh);

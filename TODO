@@ -1,11 +1,13 @@
 - walk/fly transitions
 - optimizations
 -- use heightmap equivalent for voxelization/downsample
+-- use 1 bit per voxel for last level (16x memory save)
 - better pathfind
 -- use same string-pulling idea for navvolumes
 -- follow/target update
 - intersectionset dirty roots?
-- per-zone custom markup (tighter borders? shapes to ignore?)
+- per-zone custom markup
+-- tighter borders / set of regions to ignore geometry outside
 - volume nav - consider building equivalent of navmesh
 -- do we even need any compact representation? connectivity sounds hard for 3d spans...
 -- watershed-like partitioning - should be easy

@@ -51,6 +51,8 @@ public class UITree
         ImGui.PopStyleColor();
         if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
             _selectedId = id;
+        if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
+            ImGui.SetClipboardText(text);
         return new(id == _selectedId, open && !leaf, ImGui.IsItemHovered(), open);
     }
 

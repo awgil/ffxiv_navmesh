@@ -59,10 +59,7 @@ public class NavmeshQuery
             var straightPath = new List<DtStraightPath>();
             var success = MeshQuery.FindStraightPath(from.SystemToRecast(), endPos, polysPath, ref straightPath, 1024, 0);
             if (success.Failed())
-            {
                 Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find straight path ({success.Value:X})");
-                return new();
-            }
             var res = straightPath.Select(p => p.pos.RecastToSystem()).ToList();
             res.Add(endPos.RecastToSystem());
             return res;

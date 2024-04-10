@@ -137,7 +137,6 @@ public class DebugExtractedCollision : IDisposable
 
             if (nm.Opened)
             {
-
                 using (var np = _tree.Node($"Parts ({mesh.Parts.Count})###parts", mesh.Parts.Count == 0))
                 {
                     if (np.Opened)

@@ -18,17 +18,7 @@ public class NavmeshCustomization
     public virtual bool IsFlyingSupported(SceneDefinition definition) => Service.LuminaRow<Lumina.Excel.GeneratedSheets.TerritoryType>(definition.TerritoryID)?.TerritoryIntendedUse is 1 or 49 or 47; // 1 is normal outdoor, 49 is island, 47 is Diadem
 
     // this is a customization point to add or remove colliders in the scene
-    public virtual void CustomizeScene(SceneExtractor scene) 
-    {
-        /* remove entire mesh and all instances
-         * if (scene.Meshes.TryGetValue("bg/ffxiv/wil_w1/dun/w1d1/collision/w1d1_a2_wall1.pcb", out var _))
-         *     scene.Meshes.Remove("bg/ffxiv/wil_w1/dun/w1d1/collision/w1d1_a2_wall1.pcb");
-         *     
-         * remove instance of mesh
-         * if (scene.Meshes.TryGetValue("bg/ffxiv/wil_w1/dun/w1d1/collision/w1d1_a2_wall1.pcb", out var mesh))
-         *     mesh.Instances.RemoveAt(0);
-        */
-    }
+    public virtual void CustomizeScene(SceneExtractor scene) { }
 }
 
 // attribute that defines which territories particular customization applies to

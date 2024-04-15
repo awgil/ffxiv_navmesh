@@ -16,5 +16,6 @@ class Z0363TheLostCityofAmdapor : NavmeshCustomization
     
     public Z0363TheLostCityofAmdapor()
     {
+        Settings.Partitioning = DotRecast.Recast.RcPartition.MONOTONE;
     }
 }

@@ -266,7 +266,7 @@ public class NavmeshRasterizer
                         if (y1 < 0 || y0 >= _maxY)
                             continue;
                         y0 = Math.Clamp(y0, 0, _maxY - 1);
-                        y1 = Math.Clamp(y1, y0 + 1, _maxY - 1);
+                        y1 = Math.Clamp(y1, y0, _maxY - 1);
 
                         AddSpan(x, z, y0, y1, areaId, realSolid);
 

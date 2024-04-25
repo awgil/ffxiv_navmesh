@@ -25,8 +25,10 @@ public class SceneDefinition
         if (layout == null || layout->InitState != 7 || layout->FestivalStatus is > 0 and < 5)
             return;
 
-        TerritoryID = layout->TerritoryTypeId;
-        CFCID = layout->CfcId;
+        var filter = LayoutUtils.FindFilter(layout);
+        TerritoryID = filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId;
+        CFCID = filter != null ? filter->CfcId : layout->CfcId;
+
         foreach (var (k, v) in layout->Layers)
         {
             if (v.Value->FestivalId != 0)

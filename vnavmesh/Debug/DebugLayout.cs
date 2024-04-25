@@ -473,15 +473,18 @@ public unsafe class DebugLayout : IDisposable
 
     private void DrawComparison(LayoutManager* layout)
     {
-        var terr = Service.LuminaRow<TerritoryType>(layout->TerritoryTypeId);
+        var activeFilter = LayoutUtils.FindFilter(layout);
+        var terrId = activeFilter != null ? activeFilter->TerritoryTypeId : layout->TerritoryTypeId;
+        var cfcId = activeFilter != null ? activeFilter->CfcId : layout->CfcId;
+
+        var terr = Service.LuminaRow<TerritoryType>(terrId);
         if (terr == null || layout == null)
             return;
 
-        using var n = _tree.Node($"Comparison: Territory {layout->TerritoryTypeId}/{layout->CfcId} '{terr.Bg}'###comparison");
+        using var n = _tree.Node($"Comparison: Territory {terrId}/{cfcId} '{terr.Bg}'###comparison");
         if (!n.Opened)
             return;
 
-        var activeFilter = LayoutUtils.FindFilter(layout);
         var lvb = Service.DataManager.GetFile($"bg/{terr.Bg}.lvb");
         if (lvb != null)
             fixed (byte* lvbData = &lvb.Data[0])

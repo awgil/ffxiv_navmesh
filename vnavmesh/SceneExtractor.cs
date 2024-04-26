@@ -36,20 +36,27 @@ public class SceneExtractor
 
     public class MeshPart
     {
-        public List<Vector3> Vertices = new();
-        public List<Primitive> Primitives = new();
+        public List<Vector3> Vertices = [];
+        public List<Primitive> Primitives = [];
     }
 
-    public record class MeshInstance(ulong Id, Matrix4x3 WorldTransform, AABB WorldBounds, PrimitiveFlags ForceSetPrimFlags, PrimitiveFlags ForceClearPrimFlags);
+    public class MeshInstance(ulong id, Matrix4x3 worldTransform, AABB worldBounds, PrimitiveFlags forceSetPrimFlags, PrimitiveFlags forceClearPrimFlags)
+    {
+        public ulong Id = id;
+        public Matrix4x3 WorldTransform = worldTransform;
+        public AABB WorldBounds = worldBounds;
+        public PrimitiveFlags ForceSetPrimFlags = forceSetPrimFlags;
+        public PrimitiveFlags ForceClearPrimFlags = forceClearPrimFlags;
+    }
 
     public class Mesh
     {
-        public List<MeshPart> Parts = new();
-        public List<MeshInstance> Instances = new();
+        public List<MeshPart> Parts = [];
+        public List<MeshInstance> Instances = [];
         public MeshType MeshType;
     }
 
-    public Dictionary<string, Mesh> Meshes { get; private set; } = new();
+    public Dictionary<string, Mesh> Meshes { get; private set; } = [];
 
     private const string _keyAnalyticBox = "<box>";
     private const string _keyAnalyticSphere = "<sphere>";

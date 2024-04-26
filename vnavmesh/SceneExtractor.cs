@@ -194,38 +194,6 @@ public class SceneExtractor
         return mesh;
     }
 
-    internal Mesh UnwalkableMesh(Mesh mesh)
-    {
-        var newMesh = new Mesh();
-        var newParts = new List<MeshPart>();
-
-        foreach (var part in mesh.Parts)
-        {
-            var newPart = new MeshPart();
-            var newPrimitives = new List<Primitive>();
-
-            foreach (var primitive in part.Primitives)
-            {
-                var newPrim = new Primitive();
-                var primFlags = primitive.Flags | PrimitiveFlags.ForceUnwalkable;
-                newPrim.V1 = primitive.V1;
-                newPrim.V2 = primitive.V2;
-                newPrim.V3 = primitive.V3;
-                newPrim.Flags = primFlags;
-                newPrimitives.Add(newPrim);
-            }
-            newPart.Vertices = part.Vertices;
-            newPart.Primitives = newPrimitives;
-            newParts.Add(newPart);
-        }
-
-        newMesh.Instances = mesh.Instances;
-        newMesh.MeshType = mesh.MeshType;
-        newMesh.Parts = newParts;
-
-        return newMesh;
-    }
-
     private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId, ulong matMask)
     {
         var instance = new MeshInstance(id, worldTransform, worldBounds, ExtractMaterialFlags(matMask & matId), ExtractMaterialFlags(matMask & ~matId));

@@ -12,11 +12,11 @@ public class FollowPath : IDisposable
     public bool IgnoreDeltaY = false;
     public float Tolerance = 0.25f;
     public List<Vector3> Waypoints = new();
-    private DateTime NextJump = default;
 
     private NavmeshManager _manager;
     private OverrideCamera _camera = new();
     private OverrideMovement _movement = new();
+    private DateTime _nextJump;
 
     public FollowPath(NavmeshManager manager)
     {
@@ -59,11 +59,12 @@ public class FollowPath : IDisposable
             OverrideAFK.ResetTimers();
             _movement.Enabled = MovementAllowed;
             _movement.DesiredPosition = Waypoints[0];
-            if (_movement.DesiredPosition.Y > player.Position.Y)
+            if (_movement.DesiredPosition.Y > player.Position.Y && !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight])
             {
-                if (!Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Mounted])
+                // walk->fly transition (TODO: reconsider?)
+                if (Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Mounted])
                     ExecuteJump(); // Spam jump to take off
-                else if (!Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && !IgnoreDeltaY)
+                else if (!IgnoreDeltaY)
                     _movement.Enabled = false; // Else if we're not in flight, don't move since the target is above us and we can't reach it
             }
             _camera.Enabled = AlignCamera;
@@ -77,10 +78,10 @@ public class FollowPath : IDisposable
 
     private unsafe void ExecuteJump()
     {
-        if (DateTime.Now >= NextJump)
+        if (DateTime.Now >= _nextJump)
         {
             ActionManager.Instance()->UseAction(ActionType.GeneralAction, 2);
-            NextJump = DateTime.Now.AddMilliseconds(100);
+            _nextJump = DateTime.Now.AddMilliseconds(100);
         }
     }
 

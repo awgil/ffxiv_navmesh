@@ -1,4 +1,3 @@
-- walk/fly transitions
 - optimizations
 -- use heightmap equivalent for voxelization/downsample
 -- use 1 bit per voxel for last level (16x memory save)

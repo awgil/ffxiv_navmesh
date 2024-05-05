@@ -31,6 +31,7 @@ namespace Navmesh
             RegisterAction("Path.Stop", followPath.Stop);
             RegisterFunc("Path.IsRunning", () => followPath.Waypoints.Count > 0);
             RegisterFunc("Path.NumWaypoints", () => followPath.Waypoints.Count);
+            RegisterFunc("Path.ListWaypoints", () => followPath.Waypoints);
             RegisterFunc("Path.GetMovementAllowed", () => followPath.MovementAllowed);
             RegisterAction("Path.SetMovementAllowed", (bool v) => followPath.MovementAllowed = v);
             RegisterFunc("Path.GetAlignCamera", () => followPath.AlignCamera);

@@ -151,7 +151,7 @@ public sealed class Plugin : IDalamudPlugin
                 _dtrProvider.ShowDtrBar ^= true;
                 break;
             case "collider":
-                _wndMain.ToggleIsCmdEnabledCollision();
+                _wndMain.ToggleForceShowGameCollision();
                 break;
         }
     }

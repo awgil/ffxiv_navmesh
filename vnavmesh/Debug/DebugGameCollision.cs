@@ -12,13 +12,14 @@ using ImGuiNET;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
-using System.Reflection.Metadata.Ecma335;
 using Vector4 = System.Numerics.Vector4;
 
 namespace Navmesh.Debug;
 
 public unsafe class DebugGameCollision : IDisposable
 {
+    public bool ForceShowVisualization;
+
     private UITree _tree = new();
     private DebugDrawer _dd;
     private BitMask _shownLayers = new(1);
@@ -37,12 +38,11 @@ public unsafe class DebugGameCollision : IDisposable
 
     private delegate bool RaycastDelegate(SceneWrapper* self, RaycastHit* result, ulong layerMask, RaycastParams* param);
     private Hook<RaycastDelegate>? _raycastHook;
-    public bool IsCmdEnabledCollision { get; set; } = false;
 
-    public DebugGameCollision(DebugDrawer dd, int bufferSize = 4096)
+    public DebugGameCollision(DebugDrawer dd)
     {
         _dd = dd;
-        _meshDynamicData = new(dd.RenderContext, 1024 * bufferSize, 1024 * bufferSize, 128 * bufferSize, true);
+        _meshDynamicData = new(dd.RenderContext, 4 * 1024 * 1024, 4 * 1024 * 1024, 512 * 1024, true);
 
         foreach (var s in Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
         {
@@ -216,7 +216,7 @@ public unsafe class DebugGameCollision : IDisposable
     private void DrawSceneColliders(Scene* s, int index)
     {
         using var n = _tree.Node($"Scene {index}: {s->NumColliders} colliders, {s->NumLoading} loading, streaming={SphereStr(s->StreamingSphere)}###scene_{index}");
-        if (n.SelectedOrHovered || IsCmdEnabledCollision)
+        if (n.SelectedOrHovered || ForceShowVisualization)
             foreach (var coll in s->Colliders)
                 if (FilterCollider(coll))
                     VisualizeCollider(coll, _materialId, _materialMask);

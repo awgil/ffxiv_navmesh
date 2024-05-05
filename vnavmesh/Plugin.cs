@@ -1,4 +1,5 @@
 ﻿using Dalamud.Common;
+using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -32,6 +33,8 @@ public sealed class Plugin : IDalamudPlugin
         FFXIVClientStructs.Interop.Resolver.GetInstance.Resolve();
 
         dalamud.Create<Service>();
+        Service.Config.Load(dalamud.ConfigFile);
+        Service.Config.Modified += () => Service.Config.Save(dalamud.ConfigFile);
 
         _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
         _followPath = new(_navmeshManager);
@@ -43,29 +46,37 @@ public sealed class Plugin : IDalamudPlugin
         WindowSystem.AddWindow(_wndMain);
         //_wndMain.IsOpen = true;
 
-        dalamud.UiBuilder.Draw += WindowSystem.Draw;
+        dalamud.UiBuilder.Draw += () =>
+        {
+            _wndMain.StartFrame();
+            WindowSystem.Draw();
+            _wndMain.EndFrame();
+        };
         dalamud.UiBuilder.OpenConfigUi += () => _wndMain.IsOpen = true;
-        Service.CommandManager.AddHandler("/vnavmesh", new(OnCommand)
+
+        var cmd = new CommandInfo(OnCommand)
         {
             HelpMessage = """
             Opens the debug menu.
-            /vnavmesh moveto <X> <Y> <Z> → move to raw coordinates
-            /vnavmesh movedir <X> <Y> <Z> → move this many units over (relative to player facing)
-            /vnavmesh movetarget → move to target's position
-            /vnavmesh moveflag → move to flag position
-            /vnavmesh flyto <X> <Y> <Z> → fly to raw coordinates
-            /vnavmesh flydir <X> <Y> <Z> → fly this many units over (relative to player facing)
-            /vnavmesh flytarget → fly to target's position
-            /vnavmesh flyflag → fly to flag position
-            /vnavmesh stop → stop all movement
-            /vnavmesh reload → reload current territory's navmesh from cache
-            /vnavmesh rebuild → rebuild current territory's navmesh from scratch
-            /vnavmesh aligncamera → toggle aligning camera to movement direction
-            /vnavmesh dtr → toggle dtr status
-            /vnavmesh collider → toggle collision debug visualization
+            /vnav moveto <X> <Y> <Z> → move to raw coordinates
+            /vnav movedir <X> <Y> <Z> → move this many units over (relative to player facing)
+            /vnav movetarget → move to target's position
+            /vnav moveflag → move to flag position
+            /vnav flyto <X> <Y> <Z> → fly to raw coordinates
+            /vnav flydir <X> <Y> <Z> → fly this many units over (relative to player facing)
+            /vnav flytarget → fly to target's position
+            /vnav flyflag → fly to flag position
+            /vnav stop → stop all movement
+            /vnav reload → reload current territory's navmesh from cache
+            /vnav rebuild → rebuild current territory's navmesh from scratch
+            /vnav aligncamera → toggle aligning camera to movement direction
+            /vnav dtr → toggle dtr status
+            /vnav collider → toggle collision debug visualization
             """,
             ShowInHelp = true,
-        });
+        };
+        Service.CommandManager.AddHandler("/vnav", cmd);
+        Service.CommandManager.AddHandler("/vnavmesh", cmd); // legacy
 
         Service.Framework.Update += OnUpdate;
     }
@@ -74,6 +85,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         Service.Framework.Update -= OnUpdate;
 
+        Service.CommandManager.RemoveHandler("/vnav");
         Service.CommandManager.RemoveHandler("/vnavmesh");
         WindowSystem.RemoveAllWindows();
 
@@ -145,13 +157,16 @@ public sealed class Plugin : IDalamudPlugin
                 _followPath.Stop();
                 break;
             case "aligncamera":
-                _followPath.AlignCamera ^= true;
+                Service.Config.AlignCameraToMovement ^= true;
+                Service.Config.NotifyModified();
                 break;
             case "dtr":
-                _dtrProvider.ShowDtrBar ^= true;
+                Service.Config.EnableDTR ^= true;
+                Service.Config.NotifyModified();
                 break;
             case "collider":
-                _wndMain.ToggleForceShowGameCollision();
+                Service.Config.ForceShowGameCollision ^= true;
+                Service.Config.NotifyModified();
                 break;
         }
     }

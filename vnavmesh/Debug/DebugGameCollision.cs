@@ -18,8 +18,6 @@ namespace Navmesh.Debug;
 
 public unsafe class DebugGameCollision : IDisposable
 {
-    public bool ForceShowVisualization;
-
     private UITree _tree = new();
     private DebugDrawer _dd;
     private BitMask _shownLayers = new(1);
@@ -86,8 +84,6 @@ public unsafe class DebugGameCollision : IDisposable
             DrawSceneRaycasts(s, i);
             ++i;
         }
-
-        DrawVisualizers();
     }
 
     public void DrawVisualizers()
@@ -216,7 +212,7 @@ public unsafe class DebugGameCollision : IDisposable
     private void DrawSceneColliders(Scene* s, int index)
     {
         using var n = _tree.Node($"Scene {index}: {s->NumColliders} colliders, {s->NumLoading} loading, streaming={SphereStr(s->StreamingSphere)}###scene_{index}");
-        if (n.SelectedOrHovered || ForceShowVisualization)
+        if (n.SelectedOrHovered || Service.Config.ForceShowGameCollision)
             foreach (var coll in s->Colliders)
                 if (FilterCollider(coll))
                     VisualizeCollider(coll, _materialId, _materialMask);

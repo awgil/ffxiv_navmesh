@@ -75,10 +75,7 @@ class DebugNavmeshManager : IDisposable
         ImGui.SameLine();
         ImGui.TextUnformatted($"Current target: {_target}");
 
-        ImGui.Checkbox("Show mesh status in DTR Bar", ref _dtr.ShowDtrBar);
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
-        ImGui.Checkbox("Align camera to movement direction", ref _path.AlignCamera);
-        ImGui.Checkbox("Auto load mesh when changing zone", ref _manager.AutoLoad);
         ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
         ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);
         if (ImGui.Button("Pathfind to target using navmesh"))
@@ -86,20 +83,6 @@ class DebugNavmeshManager : IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Pathfind to target using volume"))
             _asyncMove.MoveTo(_target, true);
-
-        // draw current path
-        if (player != null)
-        {
-            var from = playerPos;
-            var color = 0xff00ff00;
-            foreach (var to in _path.Waypoints)
-            {
-                _dd.DrawWorldLine(from, to, color);
-                _dd.DrawWorldPointFilled(to, 3, 0xff0000ff);
-                from = to;
-                color = 0xff00ffff;
-            }
-        }
 
         DrawPosition("Player", playerPos);
         DrawPosition("Target", _target);

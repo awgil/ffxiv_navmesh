@@ -12,7 +12,6 @@ namespace Navmesh;
 // manager that loads navmesh matching current zone and performs async pathfinding queries
 public class NavmeshManager : IDisposable
 {
-    public bool AutoLoad = true; // whether we load/build mesh automatically when changing zone
     public bool UseRaycasts = true;
     public bool UseStringPulling = true;
     public event Action<Navmesh?, NavmeshQuery?>? OnNavmeshChanged;
@@ -78,7 +77,7 @@ public class NavmeshManager : IDisposable
         if (curKey != _lastKey)
         {
             // navmesh needs to be reloaded
-            if (!AutoLoad)
+            if (!Service.Config.AutoLoadNavmesh)
             {
                 if (_lastKey.Length == 0)
                     return; // nothing is loaded, and auto-load is forbidden

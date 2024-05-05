@@ -8,7 +8,6 @@ namespace Navmesh.Movement;
 public class FollowPath : IDisposable
 {
     public bool MovementAllowed = true;
-    public bool AlignCamera = false;
     public bool IgnoreDeltaY = false;
     public float Tolerance = 0.25f;
     public List<Vector3> Waypoints = new();
@@ -67,7 +66,7 @@ public class FollowPath : IDisposable
                 else if (!IgnoreDeltaY)
                     _movement.Enabled = false; // Else if we're not in flight, don't move since the target is above us and we can't reach it
             }
-            _camera.Enabled = AlignCamera;
+            _camera.Enabled = Service.Config.AlignCameraToMovement;
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
             _camera.DesiredAltitude = -30.Degrees();

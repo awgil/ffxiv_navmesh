@@ -5,8 +5,6 @@ namespace Navmesh;
 
 public class DTRProvider : IDisposable
 {
-    public bool ShowDtrBar = true;
-
     private NavmeshManager _manager;
     private DtrBarEntry _dtrBarEntry;
 
@@ -23,7 +21,7 @@ public class DTRProvider : IDisposable
 
     public void Update()
     {
-        _dtrBarEntry.Shown = ShowDtrBar;
+        _dtrBarEntry.Shown = Service.Config.EnableDTR;
         if (_dtrBarEntry.Shown)
         {
             var loadProgress = _manager.LoadTaskProgress;

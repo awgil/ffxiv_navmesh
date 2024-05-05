@@ -8,6 +8,7 @@ namespace Navmesh;
 
 public class MainWindow : Window, IDisposable
 {
+    private FollowPath _path;
     private DebugDrawer _dd = new();
     private DebugGameCollision _debugGameColl;
     private DebugNavmeshManager _debugNavmeshManager;
@@ -16,6 +17,7 @@ public class MainWindow : Window, IDisposable
 
     public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr) : base("Navmesh")
     {
+        _path = path;
         _debugGameColl = new(_dd);
         _debugNavmeshManager = new(_dd, _debugGameColl, manager, path, move, dtr);
         _debugNavmeshCustom = new(_dd, _debugGameColl);
@@ -31,13 +33,42 @@ public class MainWindow : Window, IDisposable
         _dd.Dispose();
     }
 
-    public override void Draw()
+    public void StartFrame()
     {
         _dd.StartFrame();
+    }
+
+    public void EndFrame()
+    {
+        _debugGameColl.DrawVisualizers();
+        if (Service.Config.ShowWaypoints)
+        {
+            var player = Service.ClientState.LocalPlayer;
+            if (player != null)
+            {
+                var from = player.Position;
+                var color = 0xff00ff00;
+                foreach (var to in _path.Waypoints)
+                {
+                    _dd.DrawWorldLine(from, to, color);
+                    _dd.DrawWorldPointFilled(to, 3, 0xff0000ff);
+                    from = to;
+                    color = 0xff00ffff;
+                }
+            }
+        }
+        _dd.EndFrame();
+    }
+
+    public override void Draw()
+    {
         using (var tabs = ImRaii.TabBar("Tabs"))
         {
             if (tabs)
             {
+                using (var tab = ImRaii.TabItem("Config"))
+                    if (tab)
+                        Service.Config.Draw();
                 using (var tab = ImRaii.TabItem("Layout"))
                     if (tab)
                         _debugLayout.Draw();
@@ -52,9 +83,5 @@ public class MainWindow : Window, IDisposable
                         _debugNavmeshCustom.Draw();
             }
         }
-        _dd.EndFrame();
     }
-
-    // TODO: reconsider...
-    public void ToggleForceShowGameCollision() => _debugGameColl.ForceShowVisualization ^= true;
 }

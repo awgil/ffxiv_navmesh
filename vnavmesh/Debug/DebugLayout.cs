@@ -49,7 +49,6 @@ public unsafe class DebugLayout : IDisposable
         if (terr != null)
             DrawFile($"Territory {Service.ClientState.TerritoryType}", $"bg/{terr.Bg}.lvb");
         DrawComparison(LayoutWorld.Instance()->ActiveLayout);
-        _coll.DrawVisualizers();
         _insts.Clear();
     }
 

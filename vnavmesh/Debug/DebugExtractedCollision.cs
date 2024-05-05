@@ -36,7 +36,6 @@ public class DebugExtractedCollision : IDisposable
     {
         DrawDefinition();
         DrawExtractor();
-        _coll.DrawVisualizers();
     }
 
     private unsafe void DrawDefinition()

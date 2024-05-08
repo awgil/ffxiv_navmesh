@@ -58,14 +58,18 @@ public class FollowPath : IDisposable
             OverrideAFK.ResetTimers();
             _movement.Enabled = MovementAllowed;
             _movement.DesiredPosition = Waypoints[0];
-            if (_movement.DesiredPosition.Y > player.Position.Y && !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight])
+            if (_movement.DesiredPosition.Y > player.Position.Y && !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && !IgnoreDeltaY) //Only do this bit if on a flying path
             {
                 // walk->fly transition (TODO: reconsider?)
                 if (Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Mounted])
                     ExecuteJump(); // Spam jump to take off
-                else if (!IgnoreDeltaY)
-                    _movement.Enabled = false; // Else if we're not in flight, don't move since the target is above us and we can't reach it
+                else
+                {
+                    _movement.Enabled = false; // Don't move, since it'll just run on the spot
+                    return;
+                }
             }
+
             _camera.Enabled = Service.Config.AlignCameraToMovement;
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();

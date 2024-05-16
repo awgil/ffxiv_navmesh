@@ -76,7 +76,7 @@ public sealed class Plugin : IDalamudPlugin
             ShowInHelp = true,
         };
         Service.CommandManager.AddHandler("/vnav", cmd);
-        Service.CommandManager.AddHandler("/vnavmesh", cmd); // legacy
+        Service.CommandManager.AddHandler("/vnavmesh", new CommandInfo(OnCommand) { HelpMessage = cmd.HelpMessage, ShowInHelp = false }); // legacy
 
         Service.Framework.Update += OnUpdate;
     }
@@ -155,6 +155,7 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "stop":
                 _followPath.Stop();
+                _navmeshManager.CancelAllQueries();
                 break;
             case "aligncamera":
                 Service.Config.AlignCameraToMovement ^= true;

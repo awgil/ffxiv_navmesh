@@ -94,7 +94,7 @@ public class DebugExtractedCollision : IDisposable
             {
                 foreach (var c in _scene.Colliders)
                 {
-                    var coll = FindCollider(InstanceType.ColliderGeneric, c.key);
+                    var coll = FindCollider(InstanceType.CollisionBox, c.key);
                     var n = _tree.Node($"[{c.key:X}] {c.type}{(c.type == FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Mesh ? $" '{_scene.MeshPaths[c.crc]}'" : "")} at {c.transform.Translation} ({c.crc:X}) (coll={(nint)coll:X})###{c.key:X}");
                     if (n.SelectedOrHovered)
                     {

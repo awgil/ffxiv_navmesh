@@ -1,4 +1,5 @@
-﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+﻿using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
@@ -78,7 +79,7 @@ public unsafe class DebugLayout : IDisposable
                         {
                             if (k == instBgPart->CollisionMeshPathCrc)
                             {
-                                tree.LeafNode($"Collider path: {LayoutUtils.ReadString(v.Value->Data)}");
+                                tree.LeafNode($"Collider path: {v.Value->DataString}");
                                 break;
                             }
                         }
@@ -97,17 +98,17 @@ public unsafe class DebugLayout : IDisposable
                     tree.LeafNode($"Collision material: {instBgPart->CollisionMaterialIdHigh:X8}{instBgPart->CollisionMaterialIdLow:X8} / {instBgPart->CollisionMaterialMaskHigh:X8}{instBgPart->CollisionMaterialMaskLow:X8}");
                     //tree.LeafNode($"unks: {instBgPart->u58} {instBgPart->u5C:X}");
                     break;
-                case InstanceType.Prefab:
-                case InstanceType.Prefab2:
-                    var instPrefab = (PrefabLayoutInstance*)inst;
+                case InstanceType.SharedGroup:
+                case InstanceType.HelperObject:
+                    var instPrefab = (SharedGroupLayoutInstance*)inst;
                     tree.LeafNode($"Resource: {(instPrefab->ResourceHandle != null ? instPrefab->ResourceHandle->FileName : "<null>")}");
-                    tree.LeafNode($"Flags: {instPrefab->Flags1:X8} {instPrefab->Flags2:X8}");
-                    using (var nc = tree.Node($"Instances ({instPrefab->Instances.Instances.Size()})###instances", instPrefab->Instances.Instances.Size() == 0))
+                    tree.LeafNode($"Flags: {instPrefab->PrefabFlags1:X8} {instPrefab->PrefabFlags2:X8}");
+                    using (var nc = tree.Node($"Instances ({instPrefab->Instances.Instances.Count})###instances", instPrefab->Instances.Instances.Count == 0))
                     {
                         if (nc.Opened)
                         {
                             int index = 0;
-                            foreach (var part in instPrefab->Instances.Instances.Span)
+                            foreach (var part in instPrefab->Instances.Instances)
                             {
                                 DrawInstance(tree, $"[{index++}]", layout, part.Value->Instance);
                             }
@@ -125,13 +126,13 @@ public unsafe class DebugLayout : IDisposable
                     //    }
                     //}
                     break;
-                case InstanceType.ColliderGeneric:
-                    var instCollGeneric = (ColliderGenericLayoutInstance*)inst;
+                case InstanceType.CollisionBox:
+                    var instCollGeneric = (CollisionBoxLayoutInstance*)inst;
                     var pcbPath = instCollGeneric->PcbPathCrc != 0 ? LayoutUtils.FindPtr(ref layout->CrcToPath, instCollGeneric->PcbPathCrc) : null;
-                    tree.LeafNode($"Type: {instCollGeneric->ColliderLayoutInstance.Type} (pcb={instCollGeneric->PcbPathCrc:X} '{LayoutUtils.ReadString(pcbPath != null ? pcbPath->Data : null)}')");
-                    tree.LeafNode($"Layer: {instCollGeneric->ColliderLayoutInstance.GetLayerMask():X} (is-43h={instCollGeneric->LayerMaskIs43h})");
+                    tree.LeafNode($"Type: {instCollGeneric->TriggerBoxLayoutInstance.Type} (pcb={instCollGeneric->PcbPathCrc:X} '{(pcbPath != null ? pcbPath->DataString : "")}')");
+                    tree.LeafNode($"Layer: {instCollGeneric->GetLayerMask():X} (is-43h={instCollGeneric->LayerMaskIs43h})");
                     tree.LeafNode($"Material: {instCollGeneric->MaterialIdHigh:X8}{instCollGeneric->MaterialIdLow:X8}/{instCollGeneric->MaterialMaskHigh:X8}{instCollGeneric->MaterialMaskLow:X8}");
-                    tree.LeafNode($"Misc: active-by-default={instCollGeneric->ColliderLayoutInstance.ActiveByDefault}");
+                    tree.LeafNode($"Misc: active-by-default={instCollGeneric->TriggerBoxLayoutInstance.ActiveByDefault}");
                     //tree.LeafNode($"Unk: {instCollGeneric->ColliderLayoutInstance.u70}");
                     break;
             }
@@ -183,7 +184,7 @@ public unsafe class DebugLayout : IDisposable
 
         _tree.LeafNode($"Init state: {manager->InitState}");
         _tree.LeafNode($"Init args: type={manager->Type}, terrType={manager->TerritoryTypeId}, cfc={manager->CfcId}, filter-key={manager->LayerFilterKey:X}");
-        _tree.LeafNode($"Festivals: status={manager->FestivalStatus} [{manager->ActiveFestivals[0]}, {manager->ActiveFestivals[1]}, {manager->ActiveFestivals[2]}, {manager->ActiveFestivals[3]}]");
+        _tree.LeafNode($"Festivals: status={manager->FestivalStatus} [{LayoutUtils.FestivalsString(manager->ActiveFestivals)}]");
         _tree.LeafNode($"Streaming mgr: {(nint)manager->StreamingManager:X}");
         _tree.LeafNode($"Env mgr: {(nint)manager->Environment:X}");
         _tree.LeafNode($"OBSet mgr: {(nint)manager->OBSetManager:X}");
@@ -201,7 +202,7 @@ public unsafe class DebugLayout : IDisposable
                 DrawResourceHandle("LCB", manager->LcbResourceHandle);
                 DrawResourceHandle("UWB", manager->UwbResourceHandle);
                 int i = 0;
-                foreach (var rsrc in manager->LayerGroupResourceHandles.Span)
+                foreach (var rsrc in manager->LayerGroupResourceHandles)
                     DrawResourceHandle($"LGB {i++}", rsrc.Value);
             }
         }
@@ -212,7 +213,7 @@ public unsafe class DebugLayout : IDisposable
             {
                 foreach (var (k, v) in manager->Terrains)
                 {
-                    var nterr = _tree.LeafNode($"{k:X8} = {(nint)v.Value:X}, path={LayoutUtils.ReadString(v.Value->Path)}, coll={(nint)v.Value->Collider:X}");
+                    var nterr = _tree.LeafNode($"{k:X8} = {(nint)v.Value:X}, path={v.Value->PathString}, coll={(nint)v.Value->Collider:X}");
                     if (nterr.SelectedOrHovered && v.Value->Collider != null)
                         _coll.VisualizeCollider(&v.Value->Collider->Collider, default, default);
                 }
@@ -252,7 +253,7 @@ public unsafe class DebugLayout : IDisposable
             {
                 foreach (var (k, v) in manager->CrcToPath)
                 {
-                    _tree.LeafNode($"{k:X8} = [{v.Value->NumRefs}] {LayoutUtils.ReadString(v.Value->Data)}");
+                    _tree.LeafNode($"{k:X8} = [{v.Value->NumRefs}] {v.Value->DataString}");
                 }
             }
         }
@@ -306,11 +307,11 @@ public unsafe class DebugLayout : IDisposable
 
     private void DrawStringTable(ref StringTable strings)
     {
-        using var n = _tree.Node($"Strings ({strings.Strings.Size()}, {strings.NumNulls} nulls)###strings", strings.Strings.Size() == 0);
+        using var n = _tree.Node($"Strings ({strings.Strings.Count}, {strings.NumNulls} nulls)###strings", strings.Strings.Count == 0);
         if (!n.Opened)
             return;
-        foreach (var str in strings.Strings.Span)
-            _tree.LeafNode($"[{str.Value->NumRefs}] {LayoutUtils.ReadString(str.Value->Data)}");
+        foreach (var str in strings.Strings)
+            _tree.LeafNode($"[{str.Value->NumRefs}] {str.Value->DataString}");
     }
 
     private void DrawResourceHandle(string tag, ResourceHandle* rsrc)
@@ -405,7 +406,7 @@ public unsafe class DebugLayout : IDisposable
 
     private bool DrawFileSectionLayerGroup(string tag, FileLayerGroupHeader* header)
     {
-        using var n = _tree.Node($"{tag}: {header->Id} '{LayoutUtils.ReadString(header->LayerName)}', {header->NumLayers} layers at +{header->OffsetLayers}", header->NumLayers == 0);
+        using var n = _tree.Node($"{tag}: {header->Id} '{LayoutUtils.ReadString(header->LayerGroupName)}', {header->NumLayers} layers at +{header->OffsetLayers}", header->NumLayers == 0);
         if (!n.Opened)
             return false;
         foreach (var layerOffset in header->LayerOffsets)
@@ -416,14 +417,14 @@ public unsafe class DebugLayout : IDisposable
             var filterString = filter != null ? $"{filter->Operation} [{string.Join(',', Enumerable.Range(0, filter->NumListEntries).Select(j => $"{filter->Entries[j]:X}"))}]" : "<none>";
 
             var layerUnks = "";// $", u20={layer->u20}, u1C={layer->u1C}, u10={layer->u10}, u11={layer->u11}";
-            using var nl = _tree.Node($"[{layer->Key:X4}]: festival={layer->FestivalId}/{layer->FestivalSubId}, filter={filterString}, {layer->NumInstances} instances at +{layer->OffsetInstances}{layerUnks}, offset=+{header->OffsetLayers}+{layerOffset}", layer->NumInstances == 0/*, layer->u20 != 0 || layer->u1C != 0 ? 0xff0000ff : 0xffffffff*/);
+            using var nl = _tree.Node($"[{layer->Key:X4}] '{LayoutUtils.ReadString(layer->LayerName)}': festival={layer->Festival.Id}/{layer->Festival.Phase}, filter={filterString}, {layer->NumInstances} instances at +{layer->OffsetInstances}{layerUnks}, offset=+{header->OffsetLayers}+{layerOffset}", layer->NumInstances == 0/*, layer->u20 != 0 || layer->u1C != 0 ? 0xff0000ff : 0xffffffff*/);
             if (nl.Opened)
             {
                 foreach (var instOffset in layer->InstanceOffsets)
                 {
                     var instance = layer->Instance(instOffset);
                     var instUnk = "";// $", u8={instance->u8}";
-                    using var ni = _tree.Node($"[{instance->Key:X}]: type={instance->Type}{instUnk}, trans={instance->Transform.Translation}, rot={instance->Transform.Rotation}, scale={instance->Transform.Scale}, offset=+{layer->OffsetInstances}+{instOffset}");
+                    using var ni = _tree.Node($"[{instance->Key:X}] '{LayoutUtils.ReadString(instance->Name)}': type={instance->Type}{instUnk}, trans={instance->Transform.Translation}, rot={instance->Transform.Rotation}, scale={instance->Transform.Scale}, offset=+{layer->OffsetInstances}+{instOffset}");
                     if (ni.Opened)
                     {
                         switch (instance->Type)
@@ -448,18 +449,18 @@ public unsafe class DebugLayout : IDisposable
                                     }
                                 }
                                 break;
-                            case InstanceType.Prefab:
-                            case InstanceType.Prefab2:
-                                var instancePrefab = (FileLayerGroupInstancePrefab*)instance;
+                            case InstanceType.SharedGroup:
+                            case InstanceType.HelperObject:
+                                var instancePrefab = (FileLayerGroupInstanceSharedGroup*)instance;
                                 DrawFile("Path", LayoutUtils.ReadString(instancePrefab->Path));
                                 //_tree.LeafNode($"Unks: types={instancePrefab->u34} {instancePrefab->u40}, other={instancePrefab->u38} {instancePrefab->u3C}");
                                 break;
-                            case InstanceType.ColliderGeneric:
-                                var instanceCollGen = (FileLayerGroupInstanceColliderGeneric*)instance;
-                                _tree.LeafNode($"Type: {instanceCollGen->FileLayerGroupInstanceCollider.Type}");
+                            case InstanceType.CollisionBox:
+                                var instanceCollGen = (FileLayerGroupInstanceCollisionBox*)instance;
+                                _tree.LeafNode($"Type: {instanceCollGen->ColliderType}");
                                 _tree.LeafNode($"Material: {instanceCollGen->MaterialIdHigh:X8}{instanceCollGen->MaterialIdLow:X8}/{instanceCollGen->MaterialMaskHigh:X8}{instanceCollGen->MaterialMaskLow:X8}");
-                                _tree.LeafNode($"Misc: active={instanceCollGen->FileLayerGroupInstanceCollider.ActiveByDefault}, layer43h={instanceCollGen->Layer43h}");
-                                //_tree.LeafNode($"Unks: u34={instanceCollGen->FileLayerGroupInstanceCollider.u34}");
+                                _tree.LeafNode($"Misc: active={instanceCollGen->ActiveByDefault}, layer43h={instanceCollGen->Layer43h}");
+                                //_tree.LeafNode($"Unks: u34={instanceCollGen->u34}");
                                 _tree.LeafNode($"Pcb: {LayoutUtils.ReadString(instanceCollGen->Path)}");
                                 break;
                         }
@@ -487,7 +488,7 @@ public unsafe class DebugLayout : IDisposable
         var lvb = Service.DataManager.GetFile($"bg/{terr.Bg}.lvb");
         if (lvb != null)
             fixed (byte* lvbData = &lvb.Data[0])
-                FillInstancesFromFileScene(FindSection<FileSceneHeader>((FileHeader*)lvbData, 0x314E4353), activeFilter != null ? activeFilter->Key : 0, new(layout->ActiveFestivals, 4));
+                FillInstancesFromFileScene(FindSection<FileSceneHeader>((FileHeader*)lvbData, 0x314E4353), activeFilter != null ? activeFilter->Key : 0, layout->ActiveFestivals);
 
         FillInstancesFromGame(layout);
 
@@ -505,7 +506,7 @@ public unsafe class DebugLayout : IDisposable
         return null;
     }
 
-    private void FillInstancesFromFileScene(FileSceneHeader* scene, uint filterId, Span<uint> festivals)
+    private void FillInstancesFromFileScene(FileSceneHeader* scene, uint filterId, Span<GameMain.Festival> festivals)
     {
         if (scene == null)
             return;
@@ -523,7 +524,7 @@ public unsafe class DebugLayout : IDisposable
         }
     }
 
-    private void FillInstancesFromFileLayerGroup(FileLayerGroupHeader* lg, uint filterId, Span<uint> festivals)
+    private void FillInstancesFromFileLayerGroup(FileLayerGroupHeader* lg, uint filterId, Span<GameMain.Festival> festivals)
     {
         if (lg == null)
             return;
@@ -569,9 +570,9 @@ public unsafe class DebugLayout : IDisposable
             }
             _insts.Add(key, new() { LayerGroupId = layerGroupId, LayerId = layerId, InstanceId = (uint)(key >> 32), SubId = (uint)key, Type = inst->Type, InFile = true, ExpectedToBeInGame = expectedInGame });
 
-            if (inst->Type is InstanceType.Prefab or InstanceType.Prefab2)
+            if (inst->Type is InstanceType.SharedGroup or InstanceType.HelperObject)
             {
-                var instPrefab = (FileLayerGroupInstancePrefab*)inst;
+                var instPrefab = (FileLayerGroupInstanceSharedGroup*)inst;
                 var sgb = Service.DataManager.GetFile(LayoutUtils.ReadString(instPrefab->Path));
                 if (sgb != null)
                     fixed (byte* sgbData = &sgb.Data[0])

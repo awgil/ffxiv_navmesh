@@ -44,7 +44,7 @@ public class SceneDefinition
 
         foreach (var (k, v) in layout->Terrains)
         {
-            Terrains.Add($"{LayoutUtils.ReadString(v.Value->Path)}/collision");
+            Terrains.Add($"{v.Value->PathString}/collision");
         }
 
         var bgParts = LayoutUtils.FindPtr(ref layout->InstancesByType, InstanceType.BgPart);
@@ -66,15 +66,15 @@ public class SceneDefinition
             }
         }
 
-        var colliders = LayoutUtils.FindPtr(ref layout->InstancesByType, InstanceType.ColliderGeneric);
+        var colliders = LayoutUtils.FindPtr(ref layout->InstancesByType, InstanceType.CollisionBox);
         if (colliders != null)
         {
             foreach (var (k, v) in *colliders)
             {
-                var cast = (ColliderGenericLayoutInstance*)v.Value;
+                var cast = (CollisionBoxLayoutInstance*)v.Value;
                 if (cast->PcbPathCrc != 0 && !MeshPaths.ContainsKey(cast->PcbPathCrc))
                     MeshPaths[cast->PcbPathCrc] = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref layout->CrcToPath, cast->PcbPathCrc));
-                Colliders.Add((k, cast->ColliderLayoutInstance.Transform, cast->PcbPathCrc, ((ulong)cast->MaterialIdHigh << 32) | cast->MaterialIdLow, ((ulong)cast->MaterialMaskHigh << 32) | cast->MaterialMaskLow, cast->ColliderLayoutInstance.Type));
+                Colliders.Add((k, cast->Transform, cast->PcbPathCrc, ((ulong)cast->MaterialIdHigh << 32) | cast->MaterialIdLow, ((ulong)cast->MaterialMaskHigh << 32) | cast->MaterialMaskLow, cast->TriggerBoxLayoutInstance.Type));
             }
         }
     }

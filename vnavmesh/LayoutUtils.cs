@@ -1,4 +1,5 @@
 ﻿using Dalamud.Memory;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.Interop;
 using FFXIVClientStructs.STD;
@@ -9,33 +10,11 @@ namespace Navmesh;
 public unsafe static class LayoutUtils
 {
     public static string ReadString(byte* data) => data != null ? MemoryHelper.ReadStringNullTerminated((nint)data) : "";
-    public static string ReadString(RefCountedString* data) => data != null ? ReadString(data->Data) : "";
-
-    public static V* Find<K, V>(ref this StdMap<K, V> map, K key) where K : unmanaged, IComparable where V : unmanaged
-    {
-        var result = map.Head;
-        var trynode = map.Head->Parent;
-        while (!trynode->IsNil)
-        {
-            if (trynode->KeyValuePair.Item1.CompareTo(key) < 0)
-            {
-                trynode = trynode->Right;
-            }
-            else
-            {
-                result = trynode;
-                trynode = trynode->Left;
-            }
-        }
-        if (result->IsNil || key.CompareTo(result->KeyValuePair.Item1) < 0)
-            result = map.Head;
-        return result != map.Head ? &result->KeyValuePair.Item2 : null;
-    }
+    public static string ReadString(RefCountedString* data) => data != null ? data->DataString : "";
 
     public static V* FindPtr<K, V>(ref this StdMap<K, Pointer<V>> map, K key) where K : unmanaged, IComparable where V : unmanaged
     {
-        var res = Find(ref map, key);
-        return res != null ? res->Value : null;
+        return map.TryGetValuePointer(key, out var ptr) && ptr != null ? ptr->Value : null;
     }
 
     public static ILayoutInstance* FindInstance(LayoutManager* layout, ulong key)
@@ -62,19 +41,22 @@ public unsafe static class LayoutUtils
         return layout->TerritoryTypeId == 0 ? FindPtr(ref layout->Filters, layout->LayerFilterKey) : null;
     }
 
-    public static bool LayerActiveFestival(FileLayerGroupLayer* layer, Span<uint> festivals)
+    public static bool LayerActiveFestival(FileLayerGroupLayer* layer, Span<GameMain.Festival> festivals)
     {
-        if (layer->FestivalId == 0)
+        if (layer->Festival.Id == 0)
             return true; // non-festival, always active
 
-        if (layer->FestivalSubId != 0)
+        if (layer->Festival.Phase != 0)
         {
-            return festivals.Contains((uint)((layer->FestivalSubId << 16) | layer->FestivalId));
+            foreach (var f in festivals)
+                if (f.Id == layer->Festival.Id && f.Phase == layer->Festival.Phase)
+                    return true;
+            return false;
         }
         else
         {
             foreach (var f in festivals)
-                if ((ushort)f == layer->FestivalId)
+                if (f.Id == layer->Festival.Id)
                     return true;
             return false;
         }
@@ -90,4 +72,7 @@ public unsafe static class LayoutUtils
             _ => true
         };
     }
+
+    public static string FestivalString(GameMain.Festival f) => $"{(uint)(f.Phase << 16) | f.Id:X}";
+    public static string FestivalsString(ReadOnlySpan<GameMain.Festival> f) => $"{FestivalString(f[0])}.{FestivalString(f[1])}.{FestivalString(f[2])}.{FestivalString(f[3])}";
 }

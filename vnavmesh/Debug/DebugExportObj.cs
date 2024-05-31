@@ -45,7 +45,7 @@ public class DebugExportObj
                 var cast = (ColliderStreamed*)coll;
                 if (cast->Header == null || cast->Elements == null)
                     continue;
-                var basePath = MemoryHelper.ReadStringNullTerminated((nint)cast->PathBase);
+                var basePath = cast->PathBaseString;
                 var elements = new Span<ColliderStreamed.Element>(cast->Elements, cast->Header->NumMeshes);
                 foreach (ref var e in elements)
                 {

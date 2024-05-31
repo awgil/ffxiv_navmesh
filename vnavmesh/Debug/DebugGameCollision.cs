@@ -12,6 +12,7 @@ using ImGuiNET;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
+using System.Text;
 using Vector4 = System.Numerics.Vector4;
 
 namespace Navmesh.Debug;
@@ -44,7 +45,7 @@ public unsafe class DebugGameCollision : IDisposable
 
         foreach (var s in Framework.Instance()->BGCollisionModule->SceneManager->Scenes)
         {
-            _raycastHook = Service.Hook.HookFromAddress<RaycastDelegate>((nint)s->VTable->Raycast, RaycastDetour);
+            _raycastHook = Service.Hook.HookFromAddress<RaycastDelegate>((nint)s->VirtualTable->Raycast, RaycastDetour);
             break;
         }
     }
@@ -316,7 +317,7 @@ public unsafe class DebugGameCollision : IDisposable
 
         var type = coll->GetColliderType();
         var layoutInstance = LayoutUtils.FindInstance(LayoutWorld.Instance()->ActiveLayout, (coll->LayoutObjectId << 32) | (coll->LayoutObjectId >> 32));
-        var color = layoutInstance == null || layoutInstance->Id.Type is not InstanceType.BgPart and not InstanceType.ColliderGeneric ? 0xff00ffff : 0xffffffff;
+        var color = layoutInstance == null || layoutInstance->Id.Type is not InstanceType.BgPart and not InstanceType.CollisionBox ? 0xff00ffff : 0xffffffff;
         if (type == ColliderType.Mesh)
         {
             var collMesh = (ColliderMesh*)coll;
@@ -343,8 +344,8 @@ public unsafe class DebugGameCollision : IDisposable
                 {
                     var cast = (ColliderStreamed*)coll;
                     DrawResource(cast->Resource);
-                    var path = MemoryHelper.ReadStringNullTerminated((nint)cast->PathBase);
-                    _tree.LeafNode($"Path: {path}/{MemoryHelper.ReadStringNullTerminated((nint)cast->PathBase + path.Length + 1)}");
+                    var path = cast->PathBaseString;
+                    _tree.LeafNode($"Path: {path}/{Encoding.UTF8.GetString(cast->PathBase[(path.Length + 1)..])}");
                     _tree.LeafNode($"Streamed: [{cast->StreamedMinX:f3}x{cast->StreamedMinZ:f3}] - [{cast->StreamedMaxX:f3}x{cast->StreamedMaxZ:f3}]");
                     _tree.LeafNode($"Loaded: {cast->Loaded} ({cast->NumMeshesLoading} meshes load in progress)");
                     if (cast->Header != null && cast->Entries != null && cast->Elements != null)
@@ -483,7 +484,7 @@ public unsafe class DebugGameCollision : IDisposable
     {
         if (res != null)
         {
-            _tree.LeafNode($"Resource: {(nint)res:X} '{MemoryHelper.ReadStringNullTerminated((nint)res->Path)}'");
+            _tree.LeafNode($"Resource: {(nint)res:X} '{res->PathString}'");
         }
         else
         {

@@ -1,5 +1,6 @@
 ﻿using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
@@ -281,7 +282,7 @@ public unsafe class DebugLayout : IDisposable
         }
     }
 
-    private void DrawLayer(string tag, LayoutManager* layout, LayoutLayer* layer)
+    private void DrawLayer(string tag, LayoutManager* layout, LayerManager* layer)
     {
         var unks = ""; // $", u1F={layer->u1F}, u20={layer->u20:X4}";
         using var nl = _tree.Node($"[{tag}] LG{layer->LayerGroupId}, festival={layer->FestivalId}/{layer->FestivalSubId}, flags={layer->Flags:X}{unks}, {layer->Instances.Count} instances == {(nint)layer:X}", layer->Instances.Count == 0);

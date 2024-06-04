@@ -71,9 +71,12 @@ public sealed class Plugin : IDalamudPlugin
             /vnav reload → reload current territory's navmesh from cache
             /vnav rebuild → rebuild current territory's navmesh from scratch
             /vnav aligncamera → toggle aligning camera to movement direction
+            /vnav aligncamera true|yes|enable → enable aligning camera to movement direction
+            /vnav aligncamera false|no|disable → disable aligning camera to movement direction
             /vnav dtr → toggle dtr status
             /vnav collider → toggle collision debug visualization
             """,
+            
             ShowInHelp = true,
         };
         Service.CommandManager.AddHandler("/vnav", cmd);
@@ -159,7 +162,10 @@ public sealed class Plugin : IDalamudPlugin
                 _navmeshManager.CancelAllQueries();
                 break;
             case "aligncamera":
-                Service.Config.AlignCameraToMovement ^= true;
+                if (args.Length == 1)
+                    Service.Config.AlignCameraToMovement ^= true;
+                else 
+                    AlignCameraCommand(args[1]);
                 Service.Config.NotifyModified();
                 break;
             case "dtr":
@@ -192,5 +198,15 @@ public sealed class Plugin : IDalamudPlugin
         if (pt == null)
             return;
         _asyncMove.MoveTo(pt.Value, fly);
+    }
+
+    private void AlignCameraCommand(string arg)
+    {
+        arg = arg.ToLower();
+        if (arg == "true" || arg == "yes" || arg == "enable")
+            Service.Config.AlignCameraToMovement = true;
+        else if (arg == "false" || arg == "no" || arg == "disable")
+            Service.Config.AlignCameraToMovement = false;
+        return;
     }
 }

@@ -4,12 +4,12 @@
 class Z1044ThePraetorium : NavmeshCustomization
 {
     public override int Version => 1;
-    
-    public override void CustomizeScene(SceneExtractor scene) 
+
+    public override void CustomizeScene(SceneExtractor scene)
     {
         Service.Log.Info("Customize Scene");
     }
-    
+
     public Z1044ThePraetorium()
     {
         Settings.Filtering -= NavmeshSettings.Filter.LedgeSpans; // this allows mesh to go down the ramp from the magitek armor

@@ -1,9 +1,7 @@
 ﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
-using Lumina.Models.Models;
 using Navmesh.Render;
 using System;
-using System.IO;
 using System.Linq;
 using System.Numerics;
 

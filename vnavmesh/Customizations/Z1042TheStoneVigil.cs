@@ -4,8 +4,8 @@
 class Z1042TheStoneVigil : NavmeshCustomization
 {
     public override int Version => 1;
-    
-    public override void CustomizeScene(SceneExtractor scene) 
+
+    public override void CustomizeScene(SceneExtractor scene)
     {
         //Force all instances of Mesh as unwalkable
         if (scene.Meshes.TryGetValue("bg/ffxiv/roc_r1/dun/r1d1/collision/r1d1_b1_sas03.pcb", out var mesh))
@@ -16,7 +16,7 @@ class Z1042TheStoneVigil : NavmeshCustomization
             }
         }
     }
-    
+
     public Z1042TheStoneVigil()
     {
     }

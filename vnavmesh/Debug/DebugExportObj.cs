@@ -1,5 +1,4 @@
-﻿using Dalamud.Memory;
-using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+﻿using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using System;
 using System.Collections.Generic;

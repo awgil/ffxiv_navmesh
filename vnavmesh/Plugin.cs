@@ -21,7 +21,7 @@ public sealed class Plugin : IDalamudPlugin
     private MainWindow _wndMain;
     private IPCProvider _ipcProvider;
 
-    public Plugin(DalamudPluginInterface dalamud)
+    public Plugin(IDalamudPluginInterface dalamud)
     {
         if (!dalamud.ConfigDirectory.Exists)
             dalamud.ConfigDirectory.Create();

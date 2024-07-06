@@ -6,7 +6,7 @@ namespace Navmesh;
 public class DTRProvider : IDisposable
 {
     private NavmeshManager _manager;
-    private DtrBarEntry _dtrBarEntry;
+    private IDtrBarEntry _dtrBarEntry;
 
     public DTRProvider(NavmeshManager manager)
     {
@@ -16,7 +16,7 @@ public class DTRProvider : IDisposable
 
     public void Dispose()
     {
-        _dtrBarEntry.Dispose();
+        _dtrBarEntry.Remove();
     }
 
     public void Update()

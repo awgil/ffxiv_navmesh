@@ -17,6 +17,8 @@ public class FollowPath : IDisposable
     private OverrideMovement _movement = new();
     private DateTime _nextJump;
 
+    private Vector3? posPreviousFrame;
+
     public FollowPath(NavmeshManager manager)
     {
         _manager = manager;
@@ -39,13 +41,24 @@ public class FollowPath : IDisposable
 
         while (Waypoints.Count > 0)
         {
-            var toNext = Waypoints[0] - player.Position;
+            var a = Waypoints[0];
+            var b = player.Position;
+            var c = posPreviousFrame ?? b;
+
             if (IgnoreDeltaY)
-                toNext.Y = 0;
-            if (toNext.LengthSquared() > Tolerance * Tolerance)
+            {
+                a.Y = 0;
+                b.Y = 0;
+                c.Y = 0;
+            }
+
+            if (DistanceToLineSegment(a, b, c) > Tolerance)
                 break;
+
             Waypoints.RemoveAt(0);
         }
+
+        posPreviousFrame = player.Position;
 
         if (Waypoints.Count == 0)
         {
@@ -75,6 +88,21 @@ public class FollowPath : IDisposable
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
             _camera.DesiredAltitude = -30.Degrees();
         }
+    }
+
+    private static float DistanceToLineSegment(Vector3 v, Vector3 a, Vector3 b)
+    {
+        var ab = b - a;
+        var av = v - a;
+
+        if (ab.Length() == 0 || Vector3.Dot(av, ab) <= 0)
+            return av.Length();
+
+        var bv = v - b;
+        if (Vector3.Dot(bv, ab) >= 0)
+            return bv.Length();
+
+        return Vector3.Cross(ab, av).Length() / ab.Length();
     }
 
     public void Stop() => Waypoints.Clear();

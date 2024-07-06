@@ -7,8 +7,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "vnavmesh", "vnavmesh\vnavme
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FFXIVClientStructs", "FFXIVClientStructs\FFXIVClientStructs\FFXIVClientStructs.csproj", "{DF5A2C89-611A-4617-9E60-D0DF76020E3D}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FFXIVClientStructs.InteropSourceGenerators", "FFXIVClientStructs\FFXIVClientStructs.InteropSourceGenerators\FFXIVClientStructs.InteropSourceGenerators.csproj", "{DB2261C2-8EE0-4EDB-BB26-74E1326CE49E}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DotRecast.Core", "DotRecast\src\DotRecast.Core\DotRecast.Core.csproj", "{34BBFC6C-C3AC-4848-98C9-E6DEEF2BC26A}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DotRecast.Recast", "DotRecast\src\DotRecast.Recast\DotRecast.Recast.csproj", "{2FFA240D-4F85-467D-BA78-3A98204D3AF9}"
@@ -18,6 +16,8 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "InteropGenerator", "FFXIVClientStructs\InteropGenerator\InteropGenerator.csproj", "{C2D564D6-7026-41A4-95A5-E66A67DD6690}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "InteropGenerator.Runtime", "FFXIVClientStructs\InteropGenerator.Runtime\InteropGenerator.Runtime.csproj", "{BDA26E8A-F9B8-4A72-8DAE-3050BE5D3AFA}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FFXIVClientStructs.Generators", "FFXIVClientStructs\FFXIVClientStructs.Generators\FFXIVClientStructs.Generators.csproj", "{7A5349FA-A2CE-40A5-804B-DFA52D13336A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -43,14 +43,6 @@ Global
 		{DF5A2C89-611A-4617-9E60-D0DF76020E3D}.Release|Any CPU.Build.0 = Release|Any CPU
 		{DF5A2C89-611A-4617-9E60-D0DF76020E3D}.Release|x64.ActiveCfg = Release|Any CPU
 		{DF5A2C89-611A-4617-9E60-D0DF76020E3D}.Release|x64.Build.0 = Release|Any CPU
-		{DB2261C2-8EE0-4EDB-BB26-74E1326CE49E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DB2261C2-8EE0-4EDB-BB26-74E1326CE49E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{DB2261C2-8EE0-4EDB-BB26-74E1326CE49E}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{DB2261C2-8EE0-4EDB-BB26-74E1326CE49E}.Debug|x64.Build.0 = Debug|Any CPU
-		{DB2261C2-8EE0-4EDB-BB26-74E1326CE49E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{DB2261C2-8EE0-4EDB-BB26-74E1326CE49E}.Release|Any CPU.Build.0 = Release|Any CPU
-		{DB2261C2-8EE0-4EDB-BB26-74E1326CE49E}.Release|x64.ActiveCfg = Release|Any CPU
-		{DB2261C2-8EE0-4EDB-BB26-74E1326CE49E}.Release|x64.Build.0 = Release|Any CPU
 		{34BBFC6C-C3AC-4848-98C9-E6DEEF2BC26A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{34BBFC6C-C3AC-4848-98C9-E6DEEF2BC26A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{34BBFC6C-C3AC-4848-98C9-E6DEEF2BC26A}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -91,6 +83,14 @@ Global
 		{BDA26E8A-F9B8-4A72-8DAE-3050BE5D3AFA}.Release|Any CPU.Build.0 = Release|Any CPU
 		{BDA26E8A-F9B8-4A72-8DAE-3050BE5D3AFA}.Release|x64.ActiveCfg = Release|Any CPU
 		{BDA26E8A-F9B8-4A72-8DAE-3050BE5D3AFA}.Release|x64.Build.0 = Release|Any CPU
+		{7A5349FA-A2CE-40A5-804B-DFA52D13336A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7A5349FA-A2CE-40A5-804B-DFA52D13336A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7A5349FA-A2CE-40A5-804B-DFA52D13336A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7A5349FA-A2CE-40A5-804B-DFA52D13336A}.Debug|x64.Build.0 = Debug|Any CPU
+		{7A5349FA-A2CE-40A5-804B-DFA52D13336A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7A5349FA-A2CE-40A5-804B-DFA52D13336A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7A5349FA-A2CE-40A5-804B-DFA52D13336A}.Release|x64.ActiveCfg = Release|Any CPU
+		{7A5349FA-A2CE-40A5-804B-DFA52D13336A}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

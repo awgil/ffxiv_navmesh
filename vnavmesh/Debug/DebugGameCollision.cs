@@ -1,18 +1,18 @@
 ﻿using Dalamud.Hooking;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
-using Dalamud.Memory;
 using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
-using FFXIVClientStructs.FFXIV.Common.Math;
 using ImGuiNET;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Matrix4x4 = System.Numerics.Matrix4x4;
+using Vector3 = System.Numerics.Vector3;
 using Vector4 = System.Numerics.Vector4;
 
 namespace Navmesh.Debug;
@@ -276,26 +276,27 @@ public unsafe class DebugGameCollision : IDisposable
             return;
         }
 
-        var clipPos = new SharpDX.Vector3(2 * screenPos.X / _dd.ViewportSize.X - 1, 1 - 2 * screenPos.Y / _dd.ViewportSize.Y, 1);
-        var invViewProj = SharpDX.Matrix.Invert(_dd.ViewProj);
-        var cameraWorldPos = _dd.CameraWorld.Row4.ToSystem();
-        var cameraPosAtPlane = SharpDX.Vector3.TransformCoordinate(clipPos, invViewProj).ToSystem();
-        var dir = System.Numerics.Vector3.Normalize(cameraPosAtPlane - new System.Numerics.Vector3(cameraWorldPos.X, cameraWorldPos.Y, cameraWorldPos.Z));
+        var clipPos = new Vector3(2 * screenPos.X / _dd.ViewportSize.X - 1, 1 - 2 * screenPos.Y / _dd.ViewportSize.Y, 1);
+        Matrix4x4.Invert(_dd.ViewProj, out var invViewProj);
+        var cameraPosAtPlaneP = Vector4.Transform(clipPos, invViewProj);
+        var cameraPosAtPlane = new Vector3(cameraPosAtPlaneP.X / cameraPosAtPlaneP.W, cameraPosAtPlaneP.Y / cameraPosAtPlaneP.W, cameraPosAtPlaneP.Z / cameraPosAtPlaneP.W);
+        var dir = Vector3.Normalize(cameraPosAtPlane - _dd.Origin);
         _tree.LeafNode($"Mouse pos: screen={screenPos}, clip={clipPos}, dir={dir}");
         float maxDist = 100000;
         var filter = new RaycastMaterialFilter() { Mask = _materialMask.Raw, Value = _materialId.Raw };
         var res = new RaycastHit();
-        var arg = new RaycastParams() { Origin = &cameraWorldPos, Direction = &dir, MaxDistance = &maxDist, MaterialFilter = &filter };
+        var sphere = new Vector4(_dd.Origin, 1);
+        var arg = new RaycastParams() { Origin = &sphere, Direction = &dir, MaxDistance = &maxDist, MaterialFilter = &filter };
         if (s->Raycast(&res, _shownLayers.Raw, &arg))
         {
-            _tree.LeafNode($"Raycast: {cameraWorldPos} + {res.Distance} = {res.Point}");
+            _tree.LeafNode($"Raycast: {_dd.Origin} + {res.Distance} = {res.Point}");
             var ab = res.V2 - res.V1;
             var ac = res.V3 - res.V1;
-            var normal = Vector3.Cross(ab, ac).Normalized;
+            var normal = Vector3.Normalize(Vector3.Cross(ab, ac));
             _tree.LeafNode($"Normal: {normal} (slope={Angle.Acos(normal.Y)})");
             _tree.LeafNode($"Material: {res.Material:X}");
-            DrawCollider((Collider*)res.Object);
-            VisualizeCollider((Collider*)res.Object, _materialId, _materialMask);
+            DrawCollider(res.Object);
+            VisualizeCollider(res.Object, _materialId, _materialMask);
             _dd.DrawWorldLine(res.V1, res.V2, 0xff0000ff, 2);
             _dd.DrawWorldLine(res.V2, res.V3, 0xff0000ff, 2);
             _dd.DrawWorldLine(res.V3, res.V1, 0xff0000ff, 2);

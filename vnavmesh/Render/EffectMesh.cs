@@ -1,5 +1,4 @@
 ﻿using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
-using SharpDX;
 using SharpDX.D3DCompiler;
 using SharpDX.Direct3D;
 using SharpDX.Direct3D11;
@@ -8,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using Matrix4x4 = System.Numerics.Matrix4x4;
 using Vector3 = System.Numerics.Vector3;
 using Vector4 = System.Numerics.Vector4;
 
@@ -20,7 +20,7 @@ public class EffectMesh : IDisposable
     [StructLayout(LayoutKind.Sequential)]
     public struct Constants
     {
-        public Matrix ViewProj;
+        public Matrix4x4 ViewProj;
         public Vector3 CameraPos;
         public float LightingWorldYThreshold; // to match recast demo, this should be equal to cos of max walkable angle
     }
@@ -260,7 +260,7 @@ public class EffectMesh : IDisposable
 
     public void UpdateConstants(RenderContext ctx, Constants consts)
     {
-        consts.ViewProj.Transpose();
+        consts.ViewProj = Matrix4x4.Transpose(consts.ViewProj);
         ctx.Context.UpdateSubresource(ref consts, _constantBuffer);
     }
 

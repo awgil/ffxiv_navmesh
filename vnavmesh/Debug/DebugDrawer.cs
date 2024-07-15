@@ -16,18 +16,14 @@ public unsafe class DebugDrawer : IDisposable
     public RenderTarget? RenderTarget { get; private set; }
     public EffectMesh? EffectMesh { get; init; }
 
-    public SharpDX.Matrix ViewProj { get; private set; }
-    public SharpDX.Matrix Proj { get; private set; }
-    public SharpDX.Matrix View { get; private set; }
-    public SharpDX.Matrix CameraWorld { get; private set; }
-    public float CameraAzimuth { get; private set; } // facing north = 0, facing west = pi/4, facing south = +-pi/2, facing east = -pi/4
-    public float CameraAltitude { get; private set; } // facing horizontally = 0, facing down = pi/4, facing up = -pi/4
-    public SharpDX.Vector2 ViewportSize { get; private set; }
-
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate nint GetEngineCoreSingletonDelegate();
-
-    private nint _engineCoreSingleton;
+    public Vector3 Origin;
+    public Matrix4x4 View;
+    public Matrix4x4 Proj;
+    public Matrix4x4 ViewProj;
+    public Vector4 NearPlane;
+    public float CameraAzimuth; // facing north = 0, facing west = pi/4, facing south = +-pi/2, facing east = -pi/4
+    public float CameraAltitude; // facing horizontally = 0, facing down = pi/4, facing up = -pi/4
+    public Vector2 ViewportSize;
 
     private List<(Vector2 from, Vector2 to, uint col, int thickness)> _viewportLines = new();
     private List<(Vector2 center, float radius, uint color)> _viewportCircles = new();
@@ -42,7 +38,6 @@ public unsafe class DebugDrawer : IDisposable
         {
             Service.Log.Error($"Failed to set up renderer; some debug visualization will be unavailable: {ex}");
         }
-        _engineCoreSingleton = Marshal.GetDelegateForFunctionPointer<GetEngineCoreSingletonDelegate>(Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 48 8D 4C 24 ?? 48 89 4C 24 ?? 4C 8D 4D ?? 4C 8D 44 24 ??"))();
     }
 
     public void Dispose()
@@ -54,15 +49,30 @@ public unsafe class DebugDrawer : IDisposable
 
     public void StartFrame()
     {
-        ViewProj = ReadMatrix(_engineCoreSingleton + 0x1B4);
-        Proj = ReadMatrix(_engineCoreSingleton + 0x174);
-        View = ViewProj * SharpDX.Matrix.Invert(Proj);
-        CameraWorld = SharpDX.Matrix.Invert(View);
-        CameraAzimuth = MathF.Atan2(View.Column3.X, View.Column3.Z);
-        CameraAltitude = MathF.Asin(View.Column3.Y);
-        ViewportSize = ReadVec2(_engineCoreSingleton + 0x1F4);
+        var controlCamera = FFXIVClientStructs.FFXIV.Client.Game.Control.CameraManager.Instance()->GetActiveCamera();
+        var renderCamera = controlCamera != null ? controlCamera->SceneCamera.RenderCamera : null;
+        if (renderCamera != null)
+        {
+            Origin = renderCamera->Origin;
+            View = renderCamera->ViewMatrix;
+            View.M44 = 1; // for whatever reason, game doesn't initialize it...
+            Proj = renderCamera->ProjectionMatrix;
+            ViewProj = View * Proj;
 
-        EffectMesh?.UpdateConstants(RenderContext, new() { ViewProj = ViewProj, CameraPos = new(CameraWorld.M41, CameraWorld.M42, CameraWorld.M43), LightingWorldYThreshold = 55.Degrees().Cos() });
+            // note that game uses reverse-z by default, so we can't just get full plane equation by reading column 3 of vp matrix
+            // so just calculate it manually: column 3 of view matrix is plane equation for a plane equation going through origin
+            // proof:
+            // plane equation p is such that p.dot(Q, 1) = 0 if Q lines on the plane => pw = -Q.dot(n); for view matrix, V43 is -origin.dot(forward)
+            // plane equation for near plane has Q.dot(n) = O.dot(n) - near => pw = V43 + near
+            NearPlane = new(View.M13, View.M23, View.M33, View.M43 + renderCamera->NearPlane);
+
+            CameraAzimuth = MathF.Atan2(View.M13, View.M33);
+            CameraAltitude = MathF.Asin(View.M23);
+            var device = FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Device.Instance();
+            ViewportSize = new(device->Width, device->Height);
+        }
+
+        EffectMesh?.UpdateConstants(RenderContext, new() { ViewProj = ViewProj, CameraPos = Origin, LightingWorldYThreshold = 55.Degrees().Cos() });
 
         if (RenderTarget == null || RenderTarget.Size != ViewportSize)
         {
@@ -101,10 +111,8 @@ public unsafe class DebugDrawer : IDisposable
 
     public void DrawWorldLine(Vector3 start, Vector3 end, uint color, int thickness = 1)
     {
-        var p1 = start.ToSharpDX();
-        var p2 = end.ToSharpDX();
-        if (ClipLineToNearPlane(ref p1, ref p2))
-            _viewportLines.Add((WorldToScreen(p1), WorldToScreen(p2), color, thickness));
+        if (ClipLineToNearPlane(ref start, ref end))
+            _viewportLines.Add((WorldToScreen(start), WorldToScreen(end), color, thickness));
     }
 
     public void DrawWorldPolygon(IEnumerable<Vector3> points, uint color, int thickness = 1)
@@ -170,37 +178,30 @@ public unsafe class DebugDrawer : IDisposable
 
     public void DrawWorldPoint(Vector3 p, float radius, uint color, int thickness = 1)
     {
-        var pw = p.ToSharpDX();
-        var nearPlane = ViewProj.Column3;
-        if (SharpDX.Vector4.Dot(new(pw, 1), nearPlane) <= 0)
+        if (Vector4.Dot(new(p, 1), NearPlane) >= 0)
             return;
 
-        var ps = WorldToScreen(pw);
+        var ps = WorldToScreen(p);
         foreach (var (from, to) in AdjacentPairs(CurveApprox.Circle(ps, radius, 1)))
             _viewportLines.Add((from, to, color, thickness));
     }
 
     public void DrawWorldPointFilled(Vector3 p, float radius, uint color)
     {
-        var pw = p.ToSharpDX();
-        var nearPlane = ViewProj.Column3;
-        if (SharpDX.Vector4.Dot(new(pw, 1), nearPlane) <= 0)
+        if (Vector4.Dot(new(p, 1), NearPlane) >= 0)
             return;
-        _viewportCircles.Add((WorldToScreen(pw), radius, color));
+        _viewportCircles.Add((WorldToScreen(p), radius, color));
     }
 
     // arrow with pointer at p coming from the direction of q
     public void DrawWorldArrowPoint(Vector3 p, Vector3 q, float l, uint color, int thickness = 1)
     {
-        var pw = p.ToSharpDX();
-        var nearPlane = ViewProj.Column3;
-        if (SharpDX.Vector4.Dot(new(pw, 1), nearPlane) <= 0)
+        if (Vector4.Dot(new(p, 1), NearPlane) >= 0)
             return;
 
-        var qw = q.ToSharpDX();
-        ClipLineToNearPlane(ref pw, ref qw);
-        var ps = WorldToScreen(pw);
-        var qs = WorldToScreen(qw);
+        ClipLineToNearPlane(ref p, ref q);
+        var ps = WorldToScreen(p);
+        var qs = WorldToScreen(q);
         var d = Vector2.Normalize(qs - ps) * l;
         var n = new Vector2(-d.Y, d.X) * 0.5f;
         _viewportLines.Add((ps, ps + d + n, color, thickness));
@@ -254,31 +255,32 @@ public unsafe class DebugDrawer : IDisposable
         return new(p[0], p[1]);
     }
 
-    private bool ClipLineToNearPlane(ref SharpDX.Vector3 a, ref SharpDX.Vector3 b)
+    private bool ClipLineToNearPlane(ref Vector3 a, ref Vector3 b)
     {
-        var n = ViewProj.Column3; // near plane
-        var an = SharpDX.Vector4.Dot(new(a, 1), n);
-        var bn = SharpDX.Vector4.Dot(new(b, 1), n);
-        if (an <= 0 && bn <= 0)
-            return false;
+        var an = Vector4.Dot(new(a, 1), NearPlane);
+        var bn = Vector4.Dot(new(b, 1), NearPlane);
+        if (an >= 0 && bn >= 0)
+            return false; // line fully behind near plane
 
-        if (an < 0 || bn < 0)
+        if (an > 0 || bn > 0)
         {
             var ab = b - a;
-            var abn = SharpDX.Vector3.Dot(ab, new(n.X, n.Y, n.Z));
+            var abn = Vector3.Dot(ab, new(NearPlane.X, NearPlane.Y, NearPlane.Z));
             var t = -an / abn;
-            if (an < 0)
-                a = a + t * ab;
+            var p = a + t * ab;
+            if (an > 0)
+                a = p;
             else
-                b = a + t * ab;
+                b = p;
         }
         return true;
     }
 
-    private Vector2 WorldToScreen(SharpDX.Vector3 w)
+    private Vector2 WorldToScreen(Vector3 w)
     {
-        var p = SharpDX.Vector3.TransformCoordinate(w, ViewProj);
-        return new Vector2(0.5f * ViewportSize.X * (1 + p.X), 0.5f * ViewportSize.Y * (1 - p.Y)) + ImGuiHelpers.MainViewport.Pos;
+        var pp = Vector4.Transform(w, ViewProj);
+        var iw = 1 / pp.W;
+        return new Vector2(0.5f * ViewportSize.X * (1 + pp.X * iw), 0.5f * ViewportSize.Y * (1 - pp.Y * iw)) + ImGuiHelpers.MainViewport.Pos;
     }
 
     private static IEnumerable<(T, T)> AdjacentPairs<T>(IEnumerable<T> v) where T : struct

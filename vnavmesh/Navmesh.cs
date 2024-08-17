@@ -11,7 +11,7 @@ namespace Navmesh;
 public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
-    public static readonly uint Version = 13;
+    public static readonly uint Version = 14;
 
     // throws an exception on failure
     public static Navmesh Deserialize(BinaryReader reader, int expectedCustomizationVersion)
@@ -24,9 +24,17 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         if (customizationVersion != expectedCustomizationVersion)
             throw new Exception("Outdated customization version");
 
-        using var compressedReader = new BinaryReader(new BrotliStream(reader.BaseStream, CompressionMode.Decompress, true));
-        var mesh = DeserializeMesh(reader);
-        var volume = DeserializeVolume(reader);
+        var compressedDataLength = reader.ReadInt32();
+        //Service.Log.Debug($"[Deserialize] Header, Magic {magic:X} , Version {version}, cv {customizationVersion}, length {compressedDataLength}");
+        byte[] compressedData = reader.ReadBytes(compressedDataLength);
+
+        using var compressedStream = new MemoryStream(compressedData);
+        using var decompressedStream = new BrotliStream(compressedStream, CompressionMode.Decompress, true);
+        using var decompressedReader = new BinaryReader(decompressedStream);
+
+        var mesh = DeserializeMesh(decompressedReader);
+        var volume = DeserializeVolume(decompressedReader);
+
         return new(customizationVersion, mesh, volume);
     }
 
@@ -36,9 +44,20 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         writer.Write(Version);
         writer.Write(CustomizationVersion);
 
-        using var compressedWriter = new BinaryWriter(new BrotliStream(writer.BaseStream, CompressionLevel.Optimal, true));
-        SerializeMesh(writer, Mesh);
-        SerializeVolume(writer, Volume);
+        using (var memoryStream = new MemoryStream()) {
+            using (var compressedStream = new BrotliStream(memoryStream, CompressionLevel.Optimal, true)) {
+                using (var bufferWriter = new BinaryWriter(compressedStream)) {
+                    // Serialize data into the BrotliStream
+                    SerializeMesh(bufferWriter, Mesh);
+                    SerializeVolume(bufferWriter, Volume);
+                }
+            }
+
+            byte[] compressedData = memoryStream.ToArray();
+            //Service.Log.Debug($"[Serialize] Header, Magic {Magic:X} , Version {Version}, cv {CustomizationVersion}, length {compressedData.Length}");
+            writer.Write(compressedData.Length);
+            writer.Write(compressedData); // Write the compressed data itself
+        }
     }
 
     private static DtNavMesh DeserializeMesh(BinaryReader reader)

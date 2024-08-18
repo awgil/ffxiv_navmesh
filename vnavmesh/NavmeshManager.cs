@@ -235,7 +235,7 @@ public class NavmeshManager : IDisposable
         // write results to cache
         {
             Service.Log.Debug($"Writing cache: {cache.FullName}");
-            using var stream = cache.OpenWrite();
+            using var stream = new FileStream(cache.FullName, FileMode.Create, FileAccess.Write);
             using var writer = new BinaryWriter(stream);
             builder.Navmesh.Serialize(writer);
         }

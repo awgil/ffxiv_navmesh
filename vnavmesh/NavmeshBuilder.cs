@@ -85,7 +85,7 @@ public class NavmeshBuilder
     // this can be called concurrently; returns intermediate data that can be discarded if not used
     public Intermediates BuildTile(int x, int z)
     {
-        var timer = Timer.Create();
+        //var timer = Timer.Create();
 
         // 0. calculate tile bounds
         // we expand the heighfield bounding box by border size to find the extents of geometry we need to build this tile
@@ -230,7 +230,7 @@ public class NavmeshBuilder
             }
         }
 
-        Service.Log.Debug($"built navmesh tile {x}x{z} in {timer.Value().TotalMilliseconds}ms");
+        //Service.Log.Debug($"built navmesh tile {x}x{z} in {timer.Value().TotalMilliseconds}ms");
         return new(shf, chf, cset, pmesh, dmesh);
     }
 }

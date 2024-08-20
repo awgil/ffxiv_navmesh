@@ -221,16 +221,40 @@ public class NavmeshManager : IDisposable
 
         // cache doesn't exist or can't be used for whatever reason - build navmesh from scratch
         // TODO: we can build multiple tiles concurrently
+        var timer = Timer.Create();
         var builder = new NavmeshBuilder(scene, customization);
+        var tasks = new List<Task>();
         var deltaProgress = 1.0f / (builder.NumTilesX * builder.NumTilesZ);
+        var maxConcurrentTasks = Environment.ProcessorCount * 3 / 4; // Set the limit for concurrent tasks
+        var semaphore = new SemaphoreSlim(maxConcurrentTasks);
         for (int z = 0; z < builder.NumTilesZ; ++z)
         {
             for (int x = 0; x < builder.NumTilesX; ++x)
             {
-                builder.BuildTile(x, z);
-                _loadTaskProgress += deltaProgress;
+                var pos = (x, z);
+                semaphore.Wait();
+                tasks.Add(Task.Run(() =>
+                {
+                    try
+                    {
+                        builder.BuildTile(pos.x, pos.z);
+                        _loadTaskProgress += deltaProgress;
+                    }
+                    catch (Exception ex)
+                    {
+                        Service.Log.Error($"Error building tile ({x}, {z}): {ex}");
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                }));
             }
         }
+
+        Task.WaitAll(tasks.ToArray());
+
+        Service.Log.Debug($"built navmesh in {timer.Value().Seconds}s");
 
         // write results to cache
         {

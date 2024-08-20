@@ -62,12 +62,14 @@ public class NavmeshQuery
                 Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find straight path ({success.Value:X})");
             var res = straightPath.Select(p => p.pos.RecastToSystem()).ToList();
             res.Add(endPos.RecastToSystem());
+            res.RemoveAt(0);
             return res;
         }
         else
         {
             var res = polysPath.Select(r => MeshQuery.GetAttachedNavMesh().GetPolyCenter(r).RecastToSystem()).ToList();
             res.Add(endPos.RecastToSystem());
+            res.RemoveAt(0);
             return res;
         }
     }
@@ -101,6 +103,7 @@ public class NavmeshQuery
         // TODO: string-pulling support
         var res = voxelPath.Select(r => r.p).ToList();
         res.Add(to);
+        res.RemoveAt(0);
         return res;
     }
 

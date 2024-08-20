@@ -39,7 +39,7 @@ public class AsyncMoveRequest : IDisposable
             Service.Log.Information($"Pathfinding complete");
             try
             {
-                _follow.Move(_pendingTask.Result, !_pendingFly);
+                _follow.Move(_pendingTask.Result, _pendingFly);
             }
             catch (Exception ex)
             {

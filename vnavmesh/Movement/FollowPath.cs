@@ -1,23 +1,38 @@
 ﻿using FFXIVClientStructs.FFXIV.Client.Game;
+using IPlayerCharacter = Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
+using System.Text;
 
 namespace Navmesh.Movement;
 
 public class FollowPath : IDisposable
 {
     public bool MovementAllowed = true;
-    public bool IgnoreDeltaY = false;
-    public float Tolerance = 0.25f;
-    public List<Vector3> Waypoints = new();
+    public bool Fly = false;                    //  is a FlyTo command
+    public float Tolerance = 0.25f;             //  waypoint threshold, distance < Tolerance means player reached node
+    public List<Vector3> Waypoints = new();     //  nodes to follow
 
     private NavmeshManager _manager;
+    private AsyncMoveRequest _asyncmove { get; set; }
     private OverrideCamera _camera = new();
     private OverrideMovement _movement = new();
     private DateTime _nextJump;
+    private IPlayerCharacter? _player;
+    private Vector3 _playerPos;
 
     private Vector3? posPreviousFrame;
+    private FixedSizeDeque<float> _previousDistancesSquared = new(5);
+    private DateTime _lastMoveToRequestTime = DateTime.MinValue;
+    private const int moveRequestTimeoutMs = 500;
+    private bool _bMoveRequestAllowed => !Fly && DateTime.Now - _lastMoveToRequestTime > TimeSpan.FromMilliseconds(moveRequestTimeoutMs);
+
+    public void SetAsyncMove(AsyncMoveRequest asyncmove)
+    {
+        _asyncmove = asyncmove;
+    }
 
     public FollowPath(NavmeshManager manager)
     {
@@ -35,77 +50,163 @@ public class FollowPath : IDisposable
 
     public unsafe void Update()
     {
-        var player = Service.ClientState.LocalPlayer;
-        if (player == null)
+        if (Service.ClientState.LocalPlayer is not { } player)
             return;
+        _player = player;
 
-        while (Waypoints.Count > 0)
+        if (Waypoints.Count > 0)
         {
-            var a = Waypoints[0];
-            var b = player.Position;
-            var c = posPreviousFrame ?? b;
+            var node = Waypoints[0];
 
-            if (IgnoreDeltaY)
+            var nodeDistSq = (node - player.Position).LengthSquared();
+
+            HandlePlayerMovingAway(nodeDistSq);
+            HandleAntistuck();
+            _previousDistancesSquared.AddBack(nodeDistSq);
+
+            //  Debug - add to Debug window instead
+            //Service.Log.Debug($"{_previousDistancesSquared.ToString()}");
+
+            if (nodeDistSq <= Tolerance)
             {
-                a.Y = 0;
-                b.Y = 0;
-                c.Y = 0;
+                Waypoints.RemoveAt(0);
             }
 
-            if (DistanceToLineSegment(a, b, c) > Tolerance)
-                break;
-
-            Waypoints.RemoveAt(0);
+            if (Waypoints.Count > 1)
+            {
+                HandleNodeStaleness();
+            }
         }
 
-        posPreviousFrame = player.Position;
+        UpdateMovementState();
+    }
 
+    private void HandlePlayerMovingAway(float nodeDistSq)
+    {
+        if (_previousDistancesSquared.IsEmpty) return;
+
+        var lastDistSquared = _previousDistancesSquared.PeekBack();
+
+        if (!_manager.PathfindInProgress &&
+            nodeDistSq > lastDistSquared &&
+            _bMoveRequestAllowed
+            )
+        {
+            Service.Log.Debug($"[FollowPath] Detected Player moving away from Node requesting moveTo Fly:{Fly}");
+            _asyncmove.MoveTo(Waypoints[Waypoints.Count - 1], Fly); // seems good but need 1 more check for ETA
+            _lastMoveToRequestTime = DateTime.Now; // Update the time of the last move request
+        }
+    }
+
+    private void HandleAntistuck()
+    {
+        if (_movement.Enabled &&
+            _previousDistancesSquared.Count > 4 &&
+            _bMoveRequestAllowed
+            )
+        {
+            float minDistance = _previousDistancesSquared.Min;
+            float maxDistance = _previousDistancesSquared.Max;
+            float deltaDistance = maxDistance - minDistance;
+
+            if (deltaDistance < 5)
+            {
+                Service.Log.Debug($"[FollowPath] Detected Player Stuck requesting moveTo Fly:{Fly} deltaDistance: {deltaDistance}");
+                _asyncmove.MoveTo(Waypoints[Waypoints.Count - 1], Fly);
+                _lastMoveToRequestTime = DateTime.Now;
+            }
+        }
+    }
+
+    private void HandleNodeStaleness()
+    {
+        var node = Waypoints[0];
+        var nextNode = Waypoints[1];
+        bool removeNode = false;
+
+        var playerPos = _player.Position;
+
+        if (!Fly)
+        {
+            node.Y = 0;
+            playerPos.Y = 0;
+            nextNode.Y = 0;
+        }
+
+        removeNode = NodeIsStale(playerPos, node, nextNode);
+
+        if (removeNode)
+        {
+            Waypoints.RemoveAt(0);
+            if (_bMoveRequestAllowed)
+            {
+                Service.Log.Debug($"[FollowPath] Detected & removed stale node, requesting moveTo Fly:{Fly}");
+                _asyncmove.MoveTo(Waypoints[Waypoints.Count - 1], Fly);
+            }
+            _lastMoveToRequestTime = DateTime.Now;
+        }
+    }
+
+
+    private void UpdateMovementState()
+    {
         if (Waypoints.Count == 0)
         {
             _movement.Enabled = _camera.Enabled = false;
             _camera.SpeedH = _camera.SpeedV = default;
-            _movement.DesiredPosition = player.Position;
+            _movement.DesiredPosition = _player.Position;
         }
         else
         {
             OverrideAFK.ResetTimers();
             _movement.Enabled = MovementAllowed;
             _movement.DesiredPosition = Waypoints[0];
-            if (_movement.DesiredPosition.Y > player.Position.Y && !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && !IgnoreDeltaY) //Only do this bit if on a flying path
+
+            if (Fly &&
+                _movement.DesiredPosition.Y > _player.Position.Y &&
+                !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight])
             {
-                // walk->fly transition (TODO: reconsider?)
                 if (Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Mounted])
-                    ExecuteJump(); // Spam jump to take off
+                {
+                    ExecuteJump();
+                }
                 else
                 {
-                    _movement.Enabled = false; // Don't move, since it'll just run on the spot
+                    _movement.Enabled = false;
                     return;
                 }
             }
 
             _camera.Enabled = Service.Config.AlignCameraToMovement;
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
-            _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
+            _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - _player.Position) + 180.Degrees();
             _camera.DesiredAltitude = -30.Degrees();
         }
     }
 
-    private static float DistanceToLineSegment(Vector3 v, Vector3 a, Vector3 b)
+
+    private static bool NodeIsStale(Vector3 point, Vector3 currentNode, Vector3 nextNode)
     {
-        var ab = b - a;
-        var av = v - a;
+        // Calculate the vector along the line segment and the vector from startPoint to the point
+        Vector3 segment = nextNode - currentNode;
+        Vector3 toPoint = point - currentNode;
 
-        if (ab.Length() == 0 || Vector3.Dot(av, ab) <= 0)
-            return av.Length();
+        // Project the point onto the line defined by the segment, https://mathinsight.org/dot_product#:~:text=applet
+        //          <=0: projection falls before or at start of segment, the closest point is currentNode
+        //           >0: projection falls on the segment, 0.15 == 15% of the way
+        //           >1: projection falls after the end of the segment, the closest point is nextNode
 
-        var bv = v - b;
-        if (Vector3.Dot(bv, ab) >= 0)
-            return bv.Length();
-
-        return Vector3.Cross(ab, av).Length() / ab.Length();
+        //  currentNode/nextNode are the same ? consider first node stale : stale if point is past currentNode
+        return (segment.LengthSquared() == 0) ? true : Vector3.Dot(toPoint, segment) / segment.LengthSquared() > 0.15;
     }
 
-    public void Stop() => Waypoints.Clear();
+
+    public void Stop()
+    {
+        Waypoints.Clear();
+        _previousDistancesSquared.Clear();
+    }
+
 
     private unsafe void ExecuteJump()
     {
@@ -116,14 +217,138 @@ public class FollowPath : IDisposable
         }
     }
 
-    public void Move(List<Vector3> waypoints, bool ignoreDeltaY)
+    public void Move(List<Vector3> waypoints, bool fly)
     {
+        Stop();
         Waypoints = waypoints;
-        IgnoreDeltaY = ignoreDeltaY;
+        Fly = fly;
     }
 
     private void OnNavmeshChanged(Navmesh? navmesh, NavmeshQuery? query)
     {
-        Waypoints.Clear();
+        Stop();
+    }
+
+    private struct FixedSizeDeque<T>
+    {
+        private readonly T[] _array;
+        private int _front;
+        private int _back;
+        private int _count;
+
+        public FixedSizeDeque(int capacity)
+        {
+            if (capacity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be greater than zero.");
+
+            _array = new T[capacity];
+            _front = 0;
+            _back = 0;
+            _count = 0;
+        }
+
+        public void AddFront(T item)
+        {
+            if (_count == _array.Length)
+                RemoveBack();
+
+            _front = (_front - 1 + _array.Length) % _array.Length;
+            _array[_front] = item;
+            _count++;
+        }
+
+        public void AddBack(T item)
+        {
+            if (_count == _array.Length)
+                RemoveFront();
+
+            _array[_back] = item;
+            _back = (_back + 1) % _array.Length;
+            _count++;
+        }
+
+        public T RemoveFront()
+        {
+            if (_count == 0)
+                throw new InvalidOperationException("Deque is empty.");
+
+            var value = _array[_front];
+            _front = (_front + 1) % _array.Length;
+            _count--;
+            return value;
+        }
+
+        public T RemoveBack()
+        {
+            if (_count == 0)
+                throw new InvalidOperationException("Deque is empty.");
+
+            _back = (_back - 1 + _array.Length) % _array.Length;
+            var value = _array[_back];
+            _count--;
+            return value;
+        }
+
+        public T PeekBack()
+        {
+            if (_count == 0)
+                throw new InvalidOperationException("Deque is empty.");
+
+            var index = (_back - 1 + _array.Length) % _array.Length;
+            return _array[index];
+        }
+
+        public T Peek(int index)
+        {
+            if (index < 0 || index >= _count)
+                throw new ArgumentOutOfRangeException(nameof(index), "Index is out of range.");
+
+            return _array[(_front + index) % _array.Length];
+        }
+
+        public void Clear()
+        {
+            _front = 0;
+            _back = 0;
+            _count = 0;
+        }
+
+        public bool IsEmpty => _count == 0;
+
+        public int Count => _count;
+
+        public T Max
+        {
+            get
+            {
+                if (IsEmpty) throw new InvalidOperationException("Deque is empty.");
+                return _array.Take(_count).Max();
+            }
+        }
+
+        public T Min
+        {
+            get
+            {
+                if (IsEmpty) throw new InvalidOperationException("Deque is empty.");
+                return _array.Take(_count).Min();
+            }
+        }
+
+        public override string ToString()
+        {
+            var builder = new StringBuilder();
+            for (int i = 0; i < _count; i++)
+            {
+                builder.Append($"{Peek(i)}, ");
+            }
+
+            if (builder.Length > 0)
+            {
+                builder.Length -= 2;
+            }
+
+            return builder.ToString();
+        }
     }
 }

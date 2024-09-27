@@ -10,17 +10,20 @@ namespace Navmesh.Render;
 public class RenderTarget : IDisposable
 {
     public Vector2 Size { get; private set; }
+    private bool _inverseZ;
     private Texture2D _rt;
     private RenderTargetView _rtRTV;
     private ShaderResourceView _rtSRV;
     private Texture2D _depth;
     private DepthStencilView _depthDSV;
+    private DepthStencilState _dss;
 
     public nint ImguiHandle => _rtSRV.NativePointer;
 
-    public RenderTarget(RenderContext ctx, int width, int height)
+    public RenderTarget(RenderContext ctx, int width, int height, bool inverseZ = true)
     {
         Size = new(width, height);
+        _inverseZ = inverseZ;
 
         _rt = new(ctx.Device, new()
         {
@@ -74,6 +77,10 @@ public class RenderTarget : IDisposable
             Dimension = DepthStencilViewDimension.Texture2D,
             Texture2D = new() { }
         });
+
+        var dssDesc = DepthStencilStateDescription.Default();
+        dssDesc.DepthComparison = _inverseZ ? Comparison.GreaterEqual : Comparison.Less;
+        _dss = new(ctx.Device, dssDesc);
     }
 
     public void Dispose()
@@ -83,13 +90,15 @@ public class RenderTarget : IDisposable
         _rtSRV.Dispose();
         _depth.Dispose();
         _depthDSV.Dispose();
+        _dss.Dispose();
     }
 
     public void Bind(RenderContext ctx)
     {
         ctx.Context.ClearRenderTargetView(_rtRTV, new());
-        ctx.Context.ClearDepthStencilView(_depthDSV, DepthStencilClearFlags.Depth, 1, 0);
+        ctx.Context.ClearDepthStencilView(_depthDSV, DepthStencilClearFlags.Depth, _inverseZ ? 0 : 1, 0);
         ctx.Context.Rasterizer.SetViewport(0, 0, Size.X, Size.Y);
+        ctx.Context.OutputMerger.SetDepthStencilState(_dss);
         ctx.Context.OutputMerger.SetTargets(_depthDSV, _rtRTV);
     }
 }

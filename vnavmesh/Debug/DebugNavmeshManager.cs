@@ -2,6 +2,7 @@
 using Navmesh.Movement;
 using Navmesh.NavVolume;
 using System;
+using System.IO;
 using System.Numerics;
 
 namespace Navmesh.Debug;
@@ -16,6 +17,7 @@ class DebugNavmeshManager : IDisposable
     private DebugDrawer _dd;
     private DebugGameCollision _coll;
     private Vector3 _target;
+    private Vector2 _bitmapBounds = new(-1024, 1024);
 
     private DebugDetourNavmesh? _drawNavmesh;
     private DebugVoxelMap? _debugVoxelMap;
@@ -75,6 +77,11 @@ class DebugNavmeshManager : IDisposable
         ImGui.SameLine();
         ImGui.TextUnformatted($"Current target: {_target}");
 
+        ImGui.DragFloatRange2("Vertical bounds", ref _bitmapBounds.X, ref _bitmapBounds.Y, 0.1f, -1024, 1024);
+        ImGui.SameLine();
+        if (ImGui.Button("Export bitmap"))
+            ExportBitmap(_manager.Navmesh);
+
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
         ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
         ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);
@@ -105,6 +112,26 @@ class DebugNavmeshManager : IDisposable
         var voxel = _manager.Query.FindNearestVolumeVoxel(position);
         if (_tree.LeafNode($"{tag} voxel: {voxel:X}###{tag}voxel").SelectedOrHovered && voxel != VoxelMap.InvalidVoxel)
             _debugVoxelMap?.VisualizeVoxel(voxel);
+    }
+
+    private void ExportBitmap(Navmesh navmesh)
+    {
+        var bitmap = new NavmeshBitmap(navmesh, new(-1024, _bitmapBounds.X, -1024), new(1024, _bitmapBounds.Y, 1024), 0.5f);
+        //var bitmap = new NavmeshBitmap(navmesh, new(-128, 10, -128), new(0, 30, 0), 0.5f);
+        using var fs = new FileStream("D:\\navmesh.bmp", FileMode.Create, FileAccess.Write);
+        using var wr = new BinaryWriter(fs);
+        wr.Write((ushort)0x4D42); // 'BM' (word)
+        wr.Write(14 + 12 + 8 + bitmap.Data.Length); // file size (dword)
+        wr.Write(0); // reserved (2x word)
+        wr.Write(14 + 12 + 8); // pixel data offset (dword)
+        wr.Write(12); // BITMAPCOREHEADER size (dword)
+        wr.Write((ushort)bitmap.Width); // width in pixels (word)
+        wr.Write((ushort)bitmap.Height); // height in pixels (word)
+        wr.Write((ushort)1); // num color planes (word)
+        wr.Write((ushort)1); // bits per pixel (word)
+        wr.Write(0x00ffff00); // color 0
+        wr.Write(0x00000000); // color 1
+        wr.Write(bitmap.Data); // pixel data
     }
 
     private void OnNavmeshChanged(Navmesh? navmesh, NavmeshQuery? query)

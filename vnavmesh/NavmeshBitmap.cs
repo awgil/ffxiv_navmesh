@@ -14,29 +14,25 @@ public class NavmeshBitmap
     public int Height;
     public byte[] Data; // 1 if walkable
 
-    private Vector3 GetVertex(DtMeshTile tile, int i) => new(tile.data.verts[i * 3], tile.data.verts[i * 3 + 1], tile.data.verts[i * 3 + 2]);
-
-    private static float Cross(Vector2 a, Vector2 b) => a.X * b.Y - a.Y * b.X;
-
-    private static bool PointInPolygon(ReadOnlySpan<Vector2> verts, ReadOnlySpan<Vector2> edges, Vector2 p)
+    public NavmeshBitmap(Vector3 min, Vector3 max, float resolution)
     {
-        var orient = Cross(p - verts[0], edges[0]);
-        //Service.Log.Debug($"base {p} x {verts[0]} x {verts[^1]} = {orient}");
-        if (orient == 0)
-            return true;
-        for (int i = 1; i < verts.Length; ++i)
-        {
-            var cur = Cross(p - verts[i], edges[i]);
-            //Service.Log.Debug($"oth {p} x {verts[i]} x {verts[i - 1]} = {cur}");
-            if (cur == 0)
-                return true;
-            if (cur * orient < 1)
-                return false;
-        }
-        return true;
+        MinBounds = min;
+        MaxBounds = max;
+        Resolution = resolution;
+        InvResolution = 1 / resolution;
+        Width = (int)MathF.Ceiling((max.X - min.X) * InvResolution);
+        Width = (Width + 31) & ~31; // round up to multiple of 32
+        Height = (int)MathF.Ceiling((max.Z - min.Z) * InvResolution);
+        Data = new byte[Width * Height >> 3];
     }
 
-    private void RasterizePolygon(DtMeshTile tile, DtPoly poly)
+    public void RasterizePolygon(DtNavMesh mesh, long poly)
+    {
+        mesh.GetTileAndPolyByRefUnsafe(poly, out var t, out var p);
+        RasterizePolygon(t, p);
+    }
+
+    public void RasterizePolygon(DtMeshTile tile, DtPoly poly)
     {
         Vector3 min = new(float.MaxValue), max = new(float.MinValue);
         Span<Vector2> verts = stackalloc Vector2[poly.vertCount];
@@ -59,7 +55,7 @@ public class NavmeshBitmap
         int z0 = Math.Clamp((int)MathF.Floor((min.Z - MinBounds.Z) * InvResolution), 0, Height - 1);
         int x1 = Math.Clamp((int)MathF.Ceiling((max.X - MinBounds.X) * InvResolution), 0, Width - 1);
         int z1 = Math.Clamp((int)MathF.Ceiling((max.Z - MinBounds.Z) * InvResolution), 0, Height - 1);
-        //Service.Log.Debug($"{x0},{z0} - {x1},{z1}");
+        //Service.Log.Debug($"{x0},{z0} - {x1},{z1} ({min}-{max} vs {MinBounds}-{MaxBounds})");
         //for (int i = 0; i < poly.vertCount; ++i)
         //    Service.Log.Debug($"[{i}] {verts[i]} ({edges[i]})");
         Vector2 cz = new(MinBounds.X + (x0 + 0.5f) * Resolution, MinBounds.Z + (z0 + 0.5f) * Resolution);
@@ -73,7 +69,7 @@ public class NavmeshBitmap
                 var inside = PointInPolygon(verts, edges, cx);
                 //Service.Log.Debug($"test {x},{z} ({cx}) = {inside}");
                 if (inside)
-                    Data[ix >> 3] |= (byte)(1 << (ix & 7));
+                    Data[ix >> 3] |= (byte)(0x80 >> (ix & 7));
                 ++ix;
                 cx.X += Resolution;
             }
@@ -82,34 +78,22 @@ public class NavmeshBitmap
         }
     }
 
-    public NavmeshBitmap(Navmesh mesh, Vector3 min, Vector3 max, float resolution)
-    {
-        MinBounds = min;
-        MaxBounds = max;
-        Resolution = resolution;
-        InvResolution = 1 / resolution;
-        Width = (int)MathF.Ceiling((max.X - min.X) * InvResolution);
-        Width = (Width + 31) & ~31; // round up to multiple of 32
-        Height = (int)MathF.Ceiling((max.Z - min.Z) * InvResolution);
-        Data = new byte[Width * Height >> 3];
-        for (int i = 0, numTiles = mesh.Mesh.GetParams().maxTiles; i < numTiles; ++i)
-        {
-            //if (i != 9)
-            //    continue;
-            var tile = mesh.Mesh.GetTile(i);
-            if (tile.data == null)
-                continue;
+    public static Vector3 GetVertex(DtMeshTile tile, int i) => new(tile.data.verts[i * 3], tile.data.verts[i * 3 + 1], tile.data.verts[i * 3 + 2]);
 
-            for (int j = 0; j < tile.data.header.polyCount; ++j)
-            {
-                //if (j != 583)
-                //    continue;
-                var p = tile.data.polys[j];
-                if (p.GetPolyType() != DtPolyTypes.DT_POLYTYPE_OFFMESH_CONNECTION && p.vertCount >= 3)
-                {
-                    RasterizePolygon(tile, p);
-                }
-            }
+    private static float Cross(Vector2 a, Vector2 b) => a.X * b.Y - a.Y * b.X;
+
+    private static bool PointInPolygon(ReadOnlySpan<Vector2> verts, ReadOnlySpan<Vector2> edges, Vector2 p)
+    {
+        float orient = 0;
+        for (int i = 0; i < verts.Length; ++i)
+        {
+            var cur = Cross(p - verts[i], edges[i]);
+            //Service.Log.Debug($"> {p} x {verts[i]} x {edges[i]} = {cur}");
+            if (orient == 0)
+                orient = cur;
+            else if ((cur > 0 && orient < 0) || (cur < 0 && orient > 0))
+                return false;
         }
+        return true;
     }
 }

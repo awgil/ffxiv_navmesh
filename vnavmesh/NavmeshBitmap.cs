@@ -1,29 +1,80 @@
 ﻿using DotRecast.Detour;
+using SharpDX.Win32;
 using System;
+using System.IO;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace Navmesh;
 
-public class NavmeshBitmap
+// this is all stolen from vbm - utility for working with 2d 1bpp bitmaps
+// some notes:
+// - supports only BITMAPINFOHEADER (could've been BITMAPCOREHEADER, but bottom-up bitmaps don't make sense with FF coordinate system)
+// - supports only 1bpp bitmaps without compression; per bitmap spec, first pixel is highest bit, etc.
+// - supports only top-down bitmaps (with negative height)
+// - horizontal/vertical resolution is equal and is 'pixels per 1024 world units'
+// - per bitmap spec, rows are padded to 4 byte alignment
+public sealed class NavmeshBitmap
 {
-    public Vector3 MinBounds;
-    public Vector3 MaxBounds;
-    public float Resolution;
-    public float InvResolution;
-    public int Width;
-    public int Height;
-    public byte[] Data; // 1 if walkable
-
-    public NavmeshBitmap(Vector3 min, Vector3 max, float resolution)
+    [StructLayout(LayoutKind.Explicit, Size = 14)]
+    public struct FileHeader
     {
-        MinBounds = min;
-        MaxBounds = max;
-        Resolution = resolution;
-        InvResolution = 1 / resolution;
-        Width = (int)MathF.Ceiling((max.X - min.X) * InvResolution);
-        Width = (Width + 31) & ~31; // round up to multiple of 32
-        Height = (int)MathF.Ceiling((max.Z - min.Z) * InvResolution);
-        Data = new byte[Width * Height >> 3];
+        [FieldOffset(0)] public ushort Type; // 0x4D42 'BM'
+        [FieldOffset(2)] public int Size; // size of the file in bytes
+        [FieldOffset(6)] public uint Reserved;
+        [FieldOffset(10)] public int OffBits; // offset from this to pixel data
+    }
+    public const ushort Magic = 0x4D42;
+
+    public readonly float PixelSize;
+    public readonly float Resolution;
+    public readonly Vector3 MinBounds;
+    public readonly Vector3 MaxBounds;
+    public readonly int Width;
+    public readonly int Height;
+    public readonly int BytesPerRow;
+    public readonly byte[] Pixels; // 1 if unwalkable
+
+    public int CoordToIndex(int x, int y) => y * BytesPerRow + (x >> 3);
+    public byte CoordToMask(int x) => (byte)(0x80u >> (x & 7));
+    public ref byte ByteAt(int x, int y) => ref Pixels[CoordToIndex(x, y)];
+
+    public bool this[int x, int y]
+    {
+        get => (ByteAt(x, y) & CoordToMask(x)) != 0;
+        set
+        {
+            if (value)
+                ByteAt(x, y) |= CoordToMask(x);
+            else
+                ByteAt(x, y) &= (byte)~CoordToMask(x);
+        }
+    }
+
+    // note: pixelSize should be power-of-2
+    public NavmeshBitmap(Vector3 min, Vector3 max, float pixelSize)
+    {
+        PixelSize = pixelSize;
+        Resolution = 1.0f / pixelSize;
+        MinBounds = (min * Resolution).Floor() * PixelSize;
+        MaxBounds = (max * Resolution).Ceiling() * PixelSize;
+        Width = (int)((max.X - min.X) * Resolution);
+        Height = (int)((max.Z - min.Z) * Resolution);
+        BytesPerRow = (Width + 31) >> 5 << 2;
+        Pixels = new byte[Height * BytesPerRow];
+        Array.Fill(Pixels, (byte)0xFF);
+    }
+
+    public void Save(string filename)
+    {
+        var intRes = (int)(1024 * Resolution);
+        using var fstream = new FileStream(filename, FileMode.Create, FileAccess.Write, FileShare.Read);
+        var headerSize = Marshal.SizeOf<FileHeader>() + Marshal.SizeOf<BitmapInfoHeader>() + 2 * Marshal.SizeOf<uint>();
+        WriteStruct(fstream, new FileHeader() { Type = Magic, Size = headerSize + Pixels.Length, OffBits = headerSize });
+        WriteStruct(fstream, new BitmapInfoHeader() { SizeInBytes = Marshal.SizeOf<BitmapInfoHeader>(), Width = Width, Height = -Height, PlaneCount = 1, BitCount = 1, XPixelsPerMeter = intRes, YPixelsPerMeter = intRes });
+        WriteStruct(fstream, 0u);
+        WriteStruct(fstream, 0xffff7f00u);
+        fstream.Write(Pixels);
     }
 
     public void RasterizePolygon(DtNavMesh mesh, long poly)
@@ -51,30 +102,26 @@ public class NavmeshBitmap
         for (int i = 1; i < poly.vertCount; ++i)
             edges[i] = verts[i - 1] - verts[i];
 
-        int x0 = Math.Clamp((int)MathF.Floor((min.X - MinBounds.X) * InvResolution), 0, Width - 1);
-        int z0 = Math.Clamp((int)MathF.Floor((min.Z - MinBounds.Z) * InvResolution), 0, Height - 1);
-        int x1 = Math.Clamp((int)MathF.Ceiling((max.X - MinBounds.X) * InvResolution), 0, Width - 1);
-        int z1 = Math.Clamp((int)MathF.Ceiling((max.Z - MinBounds.Z) * InvResolution), 0, Height - 1);
+        int x0 = Math.Clamp((int)MathF.Floor((min.X - MinBounds.X) * Resolution), 0, Width - 1);
+        int z0 = Math.Clamp((int)MathF.Floor((min.Z - MinBounds.Z) * Resolution), 0, Height - 1);
+        int x1 = Math.Clamp((int)MathF.Ceiling((max.X - MinBounds.X) * Resolution), 0, Width - 1);
+        int z1 = Math.Clamp((int)MathF.Ceiling((max.Z - MinBounds.Z) * Resolution), 0, Height - 1);
         //Service.Log.Debug($"{x0},{z0} - {x1},{z1} ({min}-{max} vs {MinBounds}-{MaxBounds})");
         //for (int i = 0; i < poly.vertCount; ++i)
         //    Service.Log.Debug($"[{i}] {verts[i]} ({edges[i]})");
-        Vector2 cz = new(MinBounds.X + (x0 + 0.5f) * Resolution, MinBounds.Z + (z0 + 0.5f) * Resolution);
-        var iz = (Height - 1 - z0) * Width + x0; // TODO: z0 * Width to remove z inversion
+        Vector2 cz = new(MinBounds.X + (x0 + 0.5f) * PixelSize, MinBounds.Z + (z0 + 0.5f) * PixelSize);
         for (int z = z0; z <= z1; ++z)
         {
             var cx = cz;
-            var ix = iz;
             for (int x = x0; x <= x1; ++x)
             {
                 var inside = PointInPolygon(verts, edges, cx);
                 //Service.Log.Debug($"test {x},{z} ({cx}) = {inside}");
                 if (inside)
-                    Data[ix >> 3] |= (byte)(0x80 >> (ix & 7));
-                ++ix;
-                cx.X += Resolution;
+                    this[x, z] = false;
+                cx.X += PixelSize;
             }
-            iz -= Width; // TODO += to remove z inversion
-            cz.Y += Resolution;
+            cz.Y += PixelSize;
         }
     }
 
@@ -95,5 +142,18 @@ public class NavmeshBitmap
                 return false;
         }
         return true;
+    }
+
+    public static unsafe T ReadStruct<T>(Stream stream) where T : unmanaged
+    {
+        T res = default;
+        stream.Read(new(&res, sizeof(T)));
+        return res;
+    }
+
+    public static unsafe void WriteStruct<T>(Stream stream, in T value) where T : unmanaged
+    {
+        fixed (T* ptr = &value)
+            stream.Write(new(ptr, sizeof(T)));
     }
 }

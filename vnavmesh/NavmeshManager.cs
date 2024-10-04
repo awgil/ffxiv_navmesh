@@ -162,6 +162,39 @@ public class NavmeshManager : IDisposable
         _queryCancelSource = new(); // create new token source for future tasks
     }
 
+    // note: pixelSize should be power-of-2
+    public (Vector3 min, Vector3 max) BuildBitmap(Vector3 startingPos, string filename, float pixelSize)
+    {
+        if (Navmesh == null || Query == null)
+            throw new InvalidOperationException($"Can't build bitmap - navmesh creation is in progress");
+
+        var startPoly = Query.FindNearestMeshPoly(startingPos);
+        var reachablePolys = Query.FindReachableMeshPolys(startPoly);
+
+        Vector3 min = new(1024), max = new(-1024);
+        foreach (var p in reachablePolys)
+        {
+            Navmesh.Mesh.GetTileAndPolyByRefUnsafe(p, out var tile, out var poly);
+            for (int i = 0; i < poly.vertCount; ++i)
+            {
+                var v = NavmeshBitmap.GetVertex(tile, poly.verts[i]);
+                min = Vector3.Min(min, v);
+                max = Vector3.Max(max, v);
+                //Service.Log.Debug($"{p:X}.{i}= {v}");
+            }
+        }
+        //Service.Log.Debug($"bounds: {min}-{max}");
+
+        var bitmap = new NavmeshBitmap(min, max, pixelSize);
+        foreach (var p in reachablePolys)
+        {
+            bitmap.RasterizePolygon(Navmesh.Mesh, p);
+        }
+        bitmap.Save(filename);
+        Service.Log.Debug($"Generated nav bitmap '{filename}' @ {startingPos}: {bitmap.MinBounds}-{bitmap.MaxBounds}");
+        return (bitmap.MinBounds, bitmap.MaxBounds);
+    }
+
     // if non-empty string is returned, active layout is ready
     private unsafe string GetCurrentKey()
     {

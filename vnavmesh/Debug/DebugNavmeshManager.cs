@@ -75,6 +75,9 @@ class DebugNavmeshManager : IDisposable
         ImGui.SameLine();
         ImGui.TextUnformatted($"Current target: {_target}");
 
+        if (ImGui.Button("Export bitmap"))
+            ExportBitmap(_manager.Navmesh, _manager.Query, playerPos);
+
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
         ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
         ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);
@@ -105,6 +108,11 @@ class DebugNavmeshManager : IDisposable
         var voxel = _manager.Query.FindNearestVolumeVoxel(position);
         if (_tree.LeafNode($"{tag} voxel: {voxel:X}###{tag}voxel").SelectedOrHovered && voxel != VoxelMap.InvalidVoxel)
             _debugVoxelMap?.VisualizeVoxel(voxel);
+    }
+
+    private void ExportBitmap(Navmesh navmesh, NavmeshQuery query, Vector3 startingPos)
+    {
+        _manager.BuildBitmap(startingPos, "D:\\navmesh.bmp", 0.5f);
     }
 
     private void OnNavmeshChanged(Navmesh? navmesh, NavmeshQuery? query)

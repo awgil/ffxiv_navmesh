@@ -131,4 +131,32 @@ public class NavmeshQuery
 
     // returns VoxelMap.InvalidVoxel if not found, otherwise voxel index
     public ulong FindNearestVolumeVoxel(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5) => VolumeQuery != null ? VoxelSearch.FindNearestEmptyVoxel(VolumeQuery.Volume, p, new(halfExtentXZ, halfExtentY, halfExtentXZ)) : VoxelMap.InvalidVoxel;
+
+    // collect all mesh polygons reachable from specified polygon
+    public HashSet<long> FindReachableMeshPolys(long starting)
+    {
+        HashSet<long> result = [];
+        if (starting == 0)
+            return result;
+
+        List<long> queue = [starting];
+        while (queue.Count > 0)
+        {
+            var next = queue[^1];
+            queue.RemoveAt(queue.Count - 1);
+
+            if (!result.Add(next))
+                continue; // already visited
+
+            MeshQuery.GetAttachedNavMesh().GetTileAndPolyByRefUnsafe(next, out var nextTile, out var nextPoly);
+            for (int i = nextTile.polyLinks[nextPoly.index]; i != DtNavMesh.DT_NULL_LINK; i = nextTile.links[i].next)
+            {
+                long neighbourRef = nextTile.links[i].refs;
+                if (neighbourRef != 0)
+                    queue.Add(neighbourRef);
+            }
+        }
+
+        return result;
+    }
 }

@@ -109,6 +109,10 @@ public class FollowPath : IDisposable
 
     private unsafe void ExecuteJump()
     {
+        // Unable to jump while diving, prevents spamming error messages.
+        if (Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Diving])
+	        return;
+        
         if (DateTime.Now >= _nextJump)
         {
             ActionManager.Instance()->UseAction(ActionType.GeneralAction, 2);

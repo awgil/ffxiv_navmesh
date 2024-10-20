@@ -58,8 +58,8 @@ public sealed class NavmeshBitmap
         Resolution = 1.0f / pixelSize;
         MinBounds = (min * Resolution).Floor() * PixelSize;
         MaxBounds = (max * Resolution).Ceiling() * PixelSize;
-        Width = (int)((max.X - min.X) * Resolution);
-        Height = (int)((max.Z - min.Z) * Resolution);
+        Width = (int)((MaxBounds.X - MinBounds.X) * Resolution);
+        Height = (int)((MaxBounds.Z - MinBounds.Z) * Resolution);
         BytesPerRow = (Width + 31) >> 5 << 2;
         Pixels = new byte[Height * BytesPerRow];
         Array.Fill(Pixels, (byte)0xFF);

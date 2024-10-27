@@ -47,12 +47,7 @@ public sealed class Plugin : IDalamudPlugin
         WindowSystem.AddWindow(_wndMain);
         //_wndMain.IsOpen = true;
 
-        dalamud.UiBuilder.Draw += () =>
-        {
-            _wndMain.StartFrame();
-            WindowSystem.Draw();
-            _wndMain.EndFrame();
-        };
+        dalamud.UiBuilder.Draw += Draw;
         dalamud.UiBuilder.OpenConfigUi += () => _wndMain.IsOpen = true;
 
         var cmd = new CommandInfo(OnCommand)
@@ -91,6 +86,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Service.CommandManager.RemoveHandler("/vnav");
         Service.CommandManager.RemoveHandler("/vnavmesh");
+        Service.PluginInterface.UiBuilder.Draw -= Draw;
         WindowSystem.RemoveAllWindows();
 
         _ipcProvider.Dispose();
@@ -107,6 +103,13 @@ public sealed class Plugin : IDalamudPlugin
         _followPath.Update();
         _asyncMove.Update();
         _dtrProvider.Update();
+    }
+
+    private void Draw()
+    {
+        _wndMain.StartFrame();
+        WindowSystem.Draw();
+        _wndMain.EndFrame();
     }
 
     private void OnCommand(string command, string arguments)
@@ -159,7 +162,7 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "stop":
                 _followPath.Stop();
-                _navmeshManager.CancelAllQueries();
+                //_navmeshManager.CancelAllQueries();
                 break;
             case "aligncamera":
                 if (args.Length == 1)

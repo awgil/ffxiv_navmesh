@@ -6,7 +6,6 @@ using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.Interop;
 using ImGuiNET;
-using Lumina.Excel.GeneratedSheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -47,9 +46,9 @@ public unsafe class DebugLayout : IDisposable
     public void Draw()
     {
         DrawWorld(LayoutWorld.Instance());
-        var terr = Service.LuminaRow<TerritoryType>(Service.ClientState.TerritoryType);
+        var terr = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(Service.ClientState.TerritoryType);
         if (terr != null)
-            DrawFile($"Territory {Service.ClientState.TerritoryType}", $"bg/{terr.Bg}.lvb");
+            DrawFile($"Territory {Service.ClientState.TerritoryType}", $"bg/{terr.Value.Bg}.lvb");
         DrawComparison(LayoutWorld.Instance()->ActiveLayout);
         _insts.Clear();
     }
@@ -478,15 +477,15 @@ public unsafe class DebugLayout : IDisposable
         var terrId = activeFilter != null ? activeFilter->TerritoryTypeId : layout->TerritoryTypeId;
         var cfcId = activeFilter != null ? activeFilter->CfcId : layout->CfcId;
 
-        var terr = Service.LuminaRow<TerritoryType>(terrId);
+        var terr = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(terrId);
         if (terr == null || layout == null)
             return;
 
-        using var n = _tree.Node($"Comparison: Territory {terrId}/{cfcId} '{terr.Bg}'###comparison");
+        using var n = _tree.Node($"Comparison: Territory {terrId}/{cfcId} '{terr.Value.Bg}'###comparison");
         if (!n.Opened)
             return;
 
-        var lvb = Service.DataManager.GetFile($"bg/{terr.Bg}.lvb");
+        var lvb = Service.DataManager.GetFile($"bg/{terr.Value.Bg}.lvb");
         if (lvb != null)
             fixed (byte* lvbData = &lvb.Data[0])
                 FillInstancesFromFileScene(FindSection<FileSceneHeader>((FileHeader*)lvbData, 0x314E4353), activeFilter != null ? activeFilter->Key : 0, layout->ActiveFestivals);

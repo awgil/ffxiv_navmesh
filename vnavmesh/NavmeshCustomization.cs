@@ -15,7 +15,7 @@ public class NavmeshCustomization
 
     public NavmeshSettings Settings = new();
 
-    public virtual bool IsFlyingSupported(SceneDefinition definition) => Service.LuminaRow<Lumina.Excel.GeneratedSheets.TerritoryType>(definition.TerritoryID)?.TerritoryIntendedUse is 1 or 49 or 47; // 1 is normal outdoor, 49 is island, 47 is Diadem
+    public virtual bool IsFlyingSupported(SceneDefinition definition) => Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(definition.TerritoryID)?.TerritoryIntendedUse.RowId is 1 or 49 or 47; // 1 is normal outdoor, 49 is island, 47 is Diadem
 
     // this is a customization point to add or remove colliders in the scene
     public virtual void CustomizeScene(SceneExtractor scene) { }

@@ -1,10 +1,6 @@
 ﻿using DotRecast.Recast;
-using Lumina.Models.Models;
-using Newtonsoft.Json.Linq;
-using System;
 using System.Linq;
 using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace Navmesh.Debug;
 

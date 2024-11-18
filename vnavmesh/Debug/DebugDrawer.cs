@@ -1,12 +1,10 @@
 ﻿using Dalamud.Interface.Utility;
-using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using ImGuiNET;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace Navmesh.Debug;
 

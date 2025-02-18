@@ -5,5 +5,6 @@
   "Description": "Utility to automatically move the character around in the world, skilfully avoiding any obstacles.",
   "InternalName": "vnavmesh",
   "ApplicableVersion": "any",
+  "LoadPriority": 5,
   "IconUrl": "https://raw.githubusercontent.com/awgil/ffxiv_navmesh/8dab2e675e51a03b1827d94e77616a8144892a72/icon2.png"
 }

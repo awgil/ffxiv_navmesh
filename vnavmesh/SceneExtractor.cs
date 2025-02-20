@@ -115,8 +115,10 @@ public class SceneExtractor
 
         foreach (var coll in scene.Colliders)
         {
-            if ((coll.matId & 0x400) != 0)
-                continue; // TODO: reconsider... (this aims to filter out doors that are opened when you get near them, not sure whether it's the right condition)
+            // seems to be used specifically by all doors that automatically open when you approach
+            // tested limsa, tailfeather (dravania), kugane, tuliyollal
+            if (coll.matId == 0x7400)
+                continue;
 
             var info = ExtractColliderInfo(scene, coll.key, coll.transform, coll.crc, coll.type);
             if (info.path.Length > 0)

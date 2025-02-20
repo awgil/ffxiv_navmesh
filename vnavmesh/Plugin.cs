@@ -38,7 +38,7 @@ public sealed class Plugin : IDalamudPlugin
         Service.Config.Modified += () => Service.Config.Save(dalamud.ConfigFile);
 
         _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
-        _followPath = new(_navmeshManager);
+        _followPath = new(dalamud, _navmeshManager);
         _asyncMove = new(_navmeshManager, _followPath);
         _dtrProvider = new(_navmeshManager);
         _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider);
@@ -71,7 +71,7 @@ public sealed class Plugin : IDalamudPlugin
             /vnav dtr → toggle dtr status
             /vnav collider → toggle collision debug visualization
             """,
-            
+
             ShowInHelp = true,
         };
         Service.CommandManager.AddHandler("/vnav", cmd);
@@ -167,7 +167,7 @@ public sealed class Plugin : IDalamudPlugin
             case "aligncamera":
                 if (args.Length == 1)
                     Service.Config.AlignCameraToMovement ^= true;
-                else 
+                else
                     AlignCameraCommand(args[1]);
                 Service.Config.NotifyModified();
                 break;

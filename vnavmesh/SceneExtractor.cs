@@ -115,9 +115,11 @@ public class SceneExtractor
 
         foreach (var coll in scene.Colliders)
         {
-            // seems to be used specifically by all doors that automatically open when you approach
-            // tested limsa, tailfeather (dravania), kugane, tuliyollal
-            if (coll.matId == 0x7400)
+            // try to filter out all colliders that become inactive under normal conditions
+            // auto-opening doors seem to all have material type 0x7400
+            // the transparent purple wall that surrounds the party before "duty commenced" in an instance has material type 0x6400
+            // however, invisible walls that surround a lot of overworld zones (like southern thanalan) have material type 0x202411, so we can't test just for 0x400
+            if ((coll.matId & 0x6400) == 0x6400)
                 continue;
 
             var info = ExtractColliderInfo(scene, coll.key, coll.transform, coll.crc, coll.type);

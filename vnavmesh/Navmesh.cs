@@ -11,7 +11,7 @@ namespace Navmesh;
 public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
-    public static readonly uint Version = 14;
+    public static readonly uint Version = 15;
 
     // throws an exception on failure
     public static Navmesh Deserialize(BinaryReader reader, int expectedCustomizationVersion)
@@ -71,7 +71,8 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         }
     }
 
-    private static DtNavMeshParams DeserializeMeshParams(BinaryReader reader) => new() {
+    private static DtNavMeshParams DeserializeMeshParams(BinaryReader reader) => new()
+    {
         orig = DeserializeVector3(reader).SystemToRecast(),
         tileWidth = reader.ReadSingle(),
         tileHeight = reader.ReadSingle(),

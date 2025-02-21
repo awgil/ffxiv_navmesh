@@ -12,6 +12,7 @@ class Z1044ThePraetorium : NavmeshCustomization
         // two colliders block a gate on the second floor (that used to be unblocked maybe? before prae rework?)
         // the content director doesn't activate them until the cutscene ends, so automatic mesh rebuild will ignore them, which then breaks pathfinding on that floor
         // to fix, we add another copy of those colliders manually
+        // TODO this solution sucks ass
         scene.Meshes["<box>"].Instances.Add(new(0xbaadf00d00000001ul, new Matrix4x3
         {
             Row0 = new(-5.985012f, 0, 10.366346f),

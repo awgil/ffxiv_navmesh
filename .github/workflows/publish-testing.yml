@@ -1,0 +1,49 @@
+name: Publish testing release to Dynamis
+
+on:
+  push:
+    tags:
+      - "t*.*.*.*"
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+    env:
+        DALAMUD_HOME: /tmp/dalamud
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Get short rev
+        run: echo "tag=$(echo ${{ github.ref }} | sed 's/refs\/tags\/t//')" >> $GITHUB_ENV
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 8.0.x
+          
+      - name: Download Dalamud Latest
+        run: |
+          wget https://goatcorp.github.io/dalamud-distrib/stg/latest.zip -O ${{ env.DALAMUD_HOME }}.zip
+          unzip ${{ env.DALAMUD_HOME }}.zip -d ${{ env.DALAMUD_HOME }}
+
+      - name: Restore Project
+        run: dotnet restore
+
+      - name: Build Project
+        run: dotnet build --configuration Release vnavmesh/vnavmesh.csproj -p:AssemblyVersion=${{ env.tag }}
+
+      - name: Publish Version
+        uses: PunishXIV/dynamis-action@v1
+        id: dynamis
+        with:
+          plugin_id: 48
+          internal_name: "vnavmesh"
+          version_number: ${{ env.tag }}
+          path: "vnavmesh/bin/Release/vnavmesh/latest.zip"
+          type: "testing"
+          dalamud_version: "11"
+        env:
+          PUBLISHER_KEY: ${{ secrets.PUBLISHER_KEY }}

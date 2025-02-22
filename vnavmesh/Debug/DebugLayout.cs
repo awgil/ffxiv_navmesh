@@ -33,6 +33,7 @@ public unsafe class DebugLayout : IDisposable
     private bool _groupByLayerGroup = true;
     private bool _groupByLayer = true;
     private bool _groupByInstanceType = true;
+    private bool _groupByMaterial = false;
 
     public DebugLayout(DebugGameCollision coll)
     {
@@ -141,6 +142,24 @@ public unsafe class DebugLayout : IDisposable
     }
 
     private UITree.NodeRaii DrawManagerBase(string tag, IManagerBase* manager, string extra) => _tree.Node($"{tag} {(nint)manager:X}{(manager != null ? $" (owner={(nint)manager->Owner:X}, id={manager->Id:X})" : "")} {extra}###{tag}_{(nint)manager:X}", manager == null);
+
+    private static string GetMaterial(ILayoutInstance* inst)
+    {
+        if (inst == null)
+            return "N/A";
+
+        switch (inst->Id.Type)
+        {
+            case InstanceType.BgPart:
+                var instBgPart = (BgPartsLayoutInstance*)inst;
+                return $"{instBgPart->CollisionMaterialIdHigh:X8}{instBgPart->CollisionMaterialIdLow:X8}/{instBgPart->CollisionMaterialMaskHigh:X8}{instBgPart->CollisionMaterialMaskLow:X8}";
+            case InstanceType.CollisionBox:
+                var instCollGeneric = (CollisionBoxLayoutInstance*)inst;
+                return $"{instCollGeneric->MaterialIdHigh:X8}{instCollGeneric->MaterialIdLow:X8}/{instCollGeneric->MaterialMaskHigh:X8}{instCollGeneric->MaterialMaskLow:X8}";
+            default:
+                return "N/A";
+        }
+    }
 
     private void DrawWorld(LayoutWorld* w)
     {
@@ -495,6 +514,7 @@ public unsafe class DebugLayout : IDisposable
         ImGui.Checkbox("Group by layer group", ref _groupByLayerGroup);
         ImGui.Checkbox("Group by layer", ref _groupByLayer);
         ImGui.Checkbox("Group by instance type", ref _groupByInstanceType);
+        ImGui.Checkbox("Group by material", ref _groupByMaterial);
         DrawInstancesByLayerGroup(_insts.Values);
     }
 
@@ -643,8 +663,25 @@ public unsafe class DebugLayout : IDisposable
                 using var n = _tree.Node($"Type {g.Key}");
                 if (n.Opened)
                 {
-                    DrawInstances(g);
+                    DrawInstancesByMaterial(g);
                 }
+            }
+        }
+        else
+        {
+            DrawInstancesByMaterial(insts);
+        }
+    }
+
+    private void DrawInstancesByMaterial(IEnumerable<InstanceData> insts)
+    {
+        if (_groupByMaterial)
+        {
+            foreach (var m in insts.GroupBy(i => GetMaterial(i.Instance)))
+            {
+                using var n = _tree.Node($"Material {m.Key}");
+                if (n.Opened)
+                    DrawInstances(m);
             }
         }
         else

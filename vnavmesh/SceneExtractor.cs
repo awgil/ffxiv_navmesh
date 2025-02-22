@@ -274,6 +274,8 @@ public class SceneExtractor
         var res = PrimitiveFlags.None;
         if ((mat & 0x200000) != 0)
             res |= PrimitiveFlags.Unlandable;
+        if ((mat & 0x2011) == 0x2011)
+            res |= PrimitiveFlags.Unlandable;
         if ((mat & 0x100000) != 0)
             res |= PrimitiveFlags.FlyThrough;
         return res;

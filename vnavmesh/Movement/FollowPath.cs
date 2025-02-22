@@ -85,7 +85,7 @@ public class FollowPath : IDisposable
             OverrideAFK.ResetTimers();
             _movement.Enabled = MovementAllowed;
             _movement.DesiredPosition = Waypoints[0];
-            if (_movement.DesiredPosition.Y > player.Position.Y && !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && !IgnoreDeltaY) //Only do this bit if on a flying path
+            if (_movement.DesiredPosition.Y > player.Position.Y && !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Diving] && !IgnoreDeltaY) //Only do this bit if on a flying path
             {
                 // walk->fly transition (TODO: reconsider?)
                 if (Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Mounted])

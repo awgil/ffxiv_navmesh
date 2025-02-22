@@ -6,7 +6,7 @@ namespace Navmesh.Customizations;
 [CustomizationTerritory(155)]
 class Z0155CoerthasCentralHighlands : NavmeshCustomization
 {
-    public override int Version => 2;
+    public override int Version => 3;
 
     public override void CustomizeScene(SceneExtractor scene)
     {
@@ -19,5 +19,10 @@ class Z0155CoerthasCentralHighlands : NavmeshCustomization
         transform.Row3 = new(-417.5f, 220.85f, -288.85f);
         var aabb = new AABB() { Min = transform.Row3 - scale, Max = transform.Row3 + scale };
         scene.Meshes["<box>"].Instances.Add(new(0xbaadf00d00000001ul, transform, aabb, default, default));
+
+        // set the doorstep of Monument Tower as walkable, though you can't land on it
+        if (scene.Meshes.TryGetValue("bg/ffxiv/roc_r1/fld/r1f1/collision/r1f1_b7_astr1.pcb", out var tower))
+            foreach (var inst in tower.Instances)
+                inst.ForceSetPrimFlags |= SceneExtractor.PrimitiveFlags.ForceWalkable;
     }
 }

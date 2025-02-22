@@ -30,6 +30,7 @@ public class SceneExtractor
         ForceUnwalkable = 1 << 0, // this primitive can't be walked on, even if normal is fine
         FlyThrough = 1 << 1, // this primitive should not be present in voxel map
         Unlandable = 1 << 2, // this primitive can't be landed on (fly->walk transition)
+        ForceWalkable = 1 << 3, // this primitive can be walked on, even though it isn't landable
     }
 
     public record struct Primitive(int V1, int V2, int V3, PrimitiveFlags Flags);

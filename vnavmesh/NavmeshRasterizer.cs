@@ -195,10 +195,12 @@ public class NavmeshRasterizer
                 var normal = Vector3.Normalize(v12cross13);
                 var invDiv = _iset != null && v12cross13.Y != 0 ? -1.0f / v12cross13.Y : 0; // see below
 
-                // for flyable scenes, assume unlandable == unwalkable
                 var flags = (p.Flags & ~instance.ForceClearPrimFlags) | instance.ForceSetPrimFlags;
                 bool realSolid = !flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough);
-                bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable) || normal.Y < _walkableNormalThreshold || _voxelizer != null && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable);
+                bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable)
+                    || normal.Y < _walkableNormalThreshold
+                    // for flyable scenes, assume unlandable == unwalkable, unless explicitly set
+                    || _voxelizer != null && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable) && !flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceWalkable);
                 var areaId = unwalkable ? 0 : RcConstants.RC_WALKABLE_AREA;
 
                 // prepare for clipping: while iterating over z, we'll keep the 'remaining polygon' in clipRemainingZ

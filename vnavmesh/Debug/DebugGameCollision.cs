@@ -641,7 +641,12 @@ public unsafe class DebugGameCollision : IDisposable
 
     private void VisualizeSphere(Vector4 sphere, uint color) => _dd.DrawWorldSphere(new(sphere.X, sphere.Y, sphere.Z), sphere.W, color);
 
-    private void VisualizeVertex(Vector3 worldPos, uint color) => _dd.DrawWorldSphere(worldPos, 0.1f, color);
+    private void VisualizeVertex(Vector3 worldPos, uint color)
+    {
+        _dd.DrawWorldSphere(worldPos, 0.1f, color);
+        if (Service.ClientState.LocalPlayer is { } p)
+            _dd.DrawWorldLine(p.Position, worldPos, color);
+    }
 
     private void VisualizeTriangle(MeshPCB.FileNode* node, ref Mesh.Primitive prim, ref Matrix4x3 world, uint color)
     {

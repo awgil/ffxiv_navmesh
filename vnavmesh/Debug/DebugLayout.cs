@@ -143,21 +143,36 @@ public unsafe class DebugLayout : IDisposable
 
     private UITree.NodeRaii DrawManagerBase(string tag, IManagerBase* manager, string extra) => _tree.Node($"{tag} {(nint)manager:X}{(manager != null ? $" (owner={(nint)manager->Owner:X}, id={manager->Id:X})" : "")} {extra}###{tag}_{(nint)manager:X}", manager == null);
 
-    private static string GetMaterial(ILayoutInstance* inst)
+    private static (ulong mat, ulong mask) GetMaterial(ILayoutInstance* inst)
     {
         if (inst == null)
-            return "N/A";
+            return (0, 0);
 
         switch (inst->Id.Type)
         {
             case InstanceType.BgPart:
                 var instBgPart = (BgPartsLayoutInstance*)inst;
-                return $"{instBgPart->CollisionMaterialIdHigh:X8}{instBgPart->CollisionMaterialIdLow:X8}/{instBgPart->CollisionMaterialMaskHigh:X8}{instBgPart->CollisionMaterialMaskLow:X8}";
+                return ((instBgPart->CollisionMaterialIdHigh << 32) | instBgPart->CollisionMaterialIdLow, (instBgPart->CollisionMaterialMaskHigh << 32) | instBgPart->CollisionMaterialMaskLow);
             case InstanceType.CollisionBox:
                 var instCollGeneric = (CollisionBoxLayoutInstance*)inst;
-                return $"{instCollGeneric->MaterialIdHigh:X8}{instCollGeneric->MaterialIdLow:X8}/{instCollGeneric->MaterialMaskHigh:X8}{instCollGeneric->MaterialMaskLow:X8}";
+                return ((instCollGeneric->MaterialIdHigh << 32) | instCollGeneric->MaterialIdLow, (instCollGeneric->MaterialMaskHigh << 32) | instCollGeneric->MaterialMaskLow);
+            case InstanceType.SharedGroup:
+                ulong mat = 0;
+                ulong mask = 0;
+                SumMaterials((SharedGroupLayoutInstance*)inst, ref mat, ref mask);
+                return (mat, mask);
             default:
-                return "N/A";
+                return (0, 0);
+        }
+    }
+
+    private static void SumMaterials(SharedGroupLayoutInstance* inst, ref ulong mat, ref ulong mask)
+    {
+        foreach (var part in inst->Instances.Instances)
+        {
+            var (mat1, mask1) = GetMaterial(part.Value->Instance);
+            mat |= mat1;
+            mask |= mask1;
         }
     }
 
@@ -677,7 +692,11 @@ public unsafe class DebugLayout : IDisposable
     {
         if (_groupByMaterial)
         {
-            foreach (var m in insts.GroupBy(i => GetMaterial(i.Instance)))
+            foreach (var m in insts.GroupBy(i =>
+            {
+                var (m1, m2) = GetMaterial(i.Instance);
+                return $"{m1:X}/{m2:X}";
+            }))
             {
                 using var n = _tree.Node($"Material {m.Key}");
                 if (n.Opened)

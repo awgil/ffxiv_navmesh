@@ -116,8 +116,8 @@ public class SceneExtractor
 
         foreach (var coll in scene.Colliders)
         {
-            // try to filter out all colliders that become inactive under normal conditions
-            // this is basically every material with 0x400 set, except for the invisible walls that surround most overworld zones, which are 0x202411
+            // try to filter out all colliders that become inactive under normal conditions (0x400)
+            // excluding the invisible walls surrounding overworld zones, which additionally have bit 0x10 set
             if ((coll.matId & 0x410) == 0x400)
                 continue;
 
@@ -270,15 +270,27 @@ public class SceneExtractor
         return part;
     }
 
+    private static ulong[] _materialsFlyThrough = [
+        0x100000, // generally set on the invisible walls surrounding walkable areas that can be flown from
+        0x1000000, // if this bit is set, flying upwards into the surface will trigger dive -> fly (or swim) transition
+        0x800000, // not really sure what this is, appears on invisible roof of divable zones
+        0x8000, // actually marks fishable water, but all divable areas are covered by a roof with this bit set
+    ];
+
     private PrimitiveFlags ExtractMaterialFlags(ulong mat)
     {
         var res = PrimitiveFlags.None;
+        foreach (var fly in _materialsFlyThrough)
+            if ((mat & fly) != 0)
+                res |= PrimitiveFlags.FlyThrough;
+
         if ((mat & 0x200000) != 0)
             res |= PrimitiveFlags.Unlandable;
-        if ((mat & 0x2011) == 0x2011)
-            res |= PrimitiveFlags.Unlandable;
-        if ((mat & 0x100000) != 0)
-            res |= PrimitiveFlags.FlyThrough;
+
+        // this bit is set for the invisible walls that surround zones that show a hexagon pattern when you fly into them; some are *not* already flagged as unlandable for whatever reason, probably just a mistake
+        if ((mat & 0x10) != 0)
+            res |= PrimitiveFlags.Unlandable | PrimitiveFlags.ForceUnwalkable;
+
         return res;
     }
 

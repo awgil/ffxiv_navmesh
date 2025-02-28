@@ -8,11 +8,6 @@ class Z0822MtGulg : NavmeshCustomization
     public override void CustomizeScene(SceneExtractor scene)
     {
         //remove entire mesh and all instances
-        if (scene.Meshes.TryGetValue("<plane one-sided>", out var _))
-            scene.Meshes.Remove("<plane one-sided>");
-    }
-
-    public Z0822MtGulg()
-    {
+        scene.Meshes.Remove("<plane one-sided>");
     }
 }

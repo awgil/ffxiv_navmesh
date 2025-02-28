@@ -1,6 +1,8 @@
-﻿using System;
+﻿using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Reflection;
 
 namespace Navmesh;
@@ -19,6 +21,16 @@ public class NavmeshCustomization
 
     // this is a customization point to add or remove colliders in the scene
     public virtual void CustomizeScene(SceneExtractor scene) { }
+
+    public static (Matrix4x3 Transform, AABB AABB) GenerateTransformAABB(Vector3 scale, Vector3 transform)
+    {
+        var t4 = Matrix4x3.Identity;
+        t4.M11 = scale.X;
+        t4.M22 = scale.Y;
+        t4.M33 = scale.Z;
+        t4.Row3 = transform;
+        return (t4, new AABB() { Min = t4.Row3 - scale, Max = t4.Row3 + scale });
+    }
 }
 
 // attribute that defines which territories particular customization applies to

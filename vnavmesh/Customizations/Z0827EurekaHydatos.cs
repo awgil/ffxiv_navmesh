@@ -1,7 +1,7 @@
 ﻿namespace Navmesh.Customizations;
 
-[CustomizationTerritory(795)]
-class Z0795EurekaPyros : NavmeshCustomization
+[CustomizationTerritory(827)]
+class Z0827EurekaHydatos : NavmeshCustomization
 {
     public override int Version => 1;
 
@@ -10,7 +10,7 @@ class Z0795EurekaPyros : NavmeshCustomization
     {
         foreach (var (key, mesh) in scene.Meshes)
         {
-            if (key.StartsWith("bg/ex2/05_zon_z3/fld/z3fc/collision/tr"))
+            if (key.StartsWith("bg/ex2/05_zon_z3/fld/z3fd/collision/tr"))
             {
                 foreach (var part in mesh.Parts)
                 {
@@ -20,12 +20,13 @@ class Z0795EurekaPyros : NavmeshCustomization
                         var v1 = part.Vertices[prim.V1];
                         var v2 = part.Vertices[prim.V2];
                         var v3 = part.Vertices[prim.V3];
-                        // lowest walkable point in pyros is (probably) the SW edge of the skoll prep area, which is at about Y=578
-                        if (v1.Y < 100 && v2.Y < 100 && v3.Y < 100)
+                        // lowest walkable point in hydatos proper is about Y=494, southernmost walkable point is around Z=-40; BA is underground and much further south
+                        if (v1.Y < 480 && v2.Y < 480 && v3.Y < 480 && v1.Z < 0 && v2.Z < 0 && v3.Z < 0)
                             part.Primitives[i] = prim with { Flags = prim.Flags | SceneExtractor.PrimitiveFlags.ForceUnwalkable };
                     }
                 }
             }
         }
     }
+
 }

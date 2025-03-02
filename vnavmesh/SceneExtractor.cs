@@ -287,8 +287,9 @@ public class SceneExtractor
         if ((mat & 0x200000) != 0)
             res |= PrimitiveFlags.Unlandable;
 
-        // this bit is set for the invisible walls that surround zones that show a hexagon pattern when you fly into them; some are *not* already flagged as unlandable for whatever reason, probably just a mistake
-        if ((mat & 0x10) != 0)
+        // 0x11 is set on all the invisible walls surrounding every zone; some are not marked as unlandable so we can't just use that
+        // some regular terrain materials have 0x10 set as well (see flowers in il mheg) which is why we check for both bits here
+        if ((mat & 0x1F) == 0x11)
             res |= PrimitiveFlags.Unlandable | PrimitiveFlags.ForceUnwalkable;
 
         return res;

@@ -9,6 +9,7 @@ using ImGuiNET;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Text;
 using Matrix4x4 = System.Numerics.Matrix4x4;
 using Vector3 = System.Numerics.Vector3;
@@ -36,6 +37,8 @@ public unsafe class DebugGameCollision : IDisposable
 
     private delegate bool RaycastDelegate(SceneWrapper* self, RaycastHit* result, ulong layerMask, RaycastParams* param);
     private Hook<RaycastDelegate>? _raycastHook;
+
+    private RaycastHit? _savedHit;
 
     public DebugGameCollision(DebugDrawer dd)
     {
@@ -67,6 +70,9 @@ public unsafe class DebugGameCollision : IDisposable
                 else
                     _raycastHook.Disable();
         }
+
+        if (_savedHit != null && ImGui.Button("Reset remembered raycast hit"))
+            _savedHit = null;
 
         var module = Framework.Instance()->BGCollisionModule;
         ImGui.TextUnformatted($"Module: {(nint)module:X}->{(nint)module->SceneManager:X} ({module->SceneManager->NumScenes} scenes, {module->LoadInProgressCounter} loads)");
@@ -275,19 +281,10 @@ public unsafe class DebugGameCollision : IDisposable
             return;
         }
 
-        var clipPos = new Vector3(2 * screenPos.X / _dd.ViewportSize.X - 1, 1 - 2 * screenPos.Y / _dd.ViewportSize.Y, 1);
-        Matrix4x4.Invert(_dd.ViewProj, out var invViewProj);
-        var cameraPosAtPlaneP = Vector4.Transform(clipPos, invViewProj);
-        var cameraPosAtPlane = new Vector3(cameraPosAtPlaneP.X / cameraPosAtPlaneP.W, cameraPosAtPlaneP.Y / cameraPosAtPlaneP.W, cameraPosAtPlaneP.Z / cameraPosAtPlaneP.W);
-        var dir = Vector3.Normalize(cameraPosAtPlane - _dd.Origin);
-        _tree.LeafNode($"Mouse pos: screen={screenPos}, clip={clipPos}, dir={dir}");
-        float maxDist = 100000;
-        var filter = new RaycastMaterialFilter() { Mask = _materialMask.Raw, Value = _materialId.Raw };
-        var res = new RaycastHit();
-        var sphere = new Vector4(_dd.Origin, 1);
-        var arg = new RaycastParams() { Origin = &sphere, Direction = &dir, MaxDistance = &maxDist, MaterialFilter = &filter };
-        if (s->Raycast(&res, _shownLayers.Raw, &arg))
+        var res1 = GetRaycastHit(s, index, screenPos);
+        if (res1 != null)
         {
+            var res = res1.Value;
             _tree.LeafNode($"Raycast: {_dd.Origin} + {res.Distance} = {res.Point}");
             var ab = res.V2 - res.V1;
             var ac = res.V3 - res.V1;
@@ -304,6 +301,32 @@ public unsafe class DebugGameCollision : IDisposable
         {
             _tree.LeafNode($"Raycast: N/A");
         }
+    }
+
+    private RaycastHit? GetRaycastHit(SceneWrapper* s, int index, Vector2 screenPos)
+    {
+        if (_savedHit != null)
+            return _savedHit;
+
+        var clipPos = new Vector3(2 * screenPos.X / _dd.ViewportSize.X - 1, 1 - 2 * screenPos.Y / _dd.ViewportSize.Y, 1);
+        Matrix4x4.Invert(_dd.ViewProj, out var invViewProj);
+        var cameraPosAtPlaneP = Vector4.Transform(clipPos, invViewProj);
+        var cameraPosAtPlane = new Vector3(cameraPosAtPlaneP.X / cameraPosAtPlaneP.W, cameraPosAtPlaneP.Y / cameraPosAtPlaneP.W, cameraPosAtPlaneP.Z / cameraPosAtPlaneP.W);
+        var dir = Vector3.Normalize(cameraPosAtPlane - _dd.Origin);
+        _tree.LeafNode($"Mouse pos: screen={screenPos}, clip={clipPos}, dir={dir}");
+        float maxDist = 100000;
+        var filter = new RaycastMaterialFilter() { Mask = _materialMask.Raw, Value = _materialId.Raw };
+        var res = new RaycastHit();
+        var sphere = new Vector4(_dd.Origin, 1);
+        var arg = new RaycastParams() { Origin = &sphere, Direction = &dir, MaxDistance = &maxDist, MaterialFilter = &filter };
+        if (s->Raycast(&res, _shownLayers.Raw, &arg))
+        {
+            if (_savedHit == null && ImGui.GetIO().KeyShift)
+                _savedHit = res;
+
+            return res;
+        }
+        return null;
     }
 
     private void DrawCollider(Collider* coll)

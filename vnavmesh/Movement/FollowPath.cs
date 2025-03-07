@@ -82,6 +82,12 @@ public class FollowPath : IDisposable
         }
         else
         {
+            if (Service.Config.CancelMoveOnUserInput && _movement.UserInput)
+            {
+                Stop();
+                return;
+            }
+
             OverrideAFK.ResetTimers();
             _movement.Enabled = MovementAllowed;
             _movement.DesiredPosition = Waypoints[0];
@@ -129,8 +135,8 @@ public class FollowPath : IDisposable
     {
         // Unable to jump while diving, prevents spamming error messages.
         if (Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Diving])
-	        return;
-        
+            return;
+
         if (DateTime.Now >= _nextJump)
         {
             ActionManager.Instance()->UseAction(ActionType.GeneralAction, 2);

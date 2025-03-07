@@ -14,6 +14,7 @@ public class Config
     public bool AlignCameraToMovement;
     public bool ShowWaypoints;
     public bool ForceShowGameCollision;
+    public bool CancelMoveOnUserInput;
 
     public event Action? Modified;
 
@@ -30,6 +31,8 @@ public class Config
         if (ImGui.Checkbox("Show active waypoints", ref ShowWaypoints))
             NotifyModified();
         if (ImGui.Checkbox("Always visualize game collision", ref ForceShowGameCollision))
+            NotifyModified();
+        if (ImGui.Checkbox("Cancel current path on player movement input", ref CancelMoveOnUserInput))
             NotifyModified();
     }
 

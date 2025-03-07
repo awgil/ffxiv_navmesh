@@ -34,6 +34,7 @@ public unsafe class OverrideMovement : IDisposable
             }
             else
             {
+                UserInput = false;
                 _rmiWalkHook.Disable();
                 _rmiFlyHook.Disable();
             }
@@ -43,6 +44,9 @@ public unsafe class OverrideMovement : IDisposable
     public bool IgnoreUserInput; // if true - override even if user tries to change camera orientation, otherwise override only if user does nothing
     public Vector3 DesiredPosition;
     public float Precision = 0.01f;
+
+    // true if player (or some other plugin) is pressing keys
+    public bool UserInput { get; private set; }
 
     private bool _legacyMode;
 
@@ -86,6 +90,7 @@ public unsafe class OverrideMovement : IDisposable
         _rmiWalkHook.Original(self, sumLeft, sumForward, sumTurnLeft, haveBackwardOrStrafe, a6, bAdditiveUnk);
         // TODO: we really need to introduce some extra checks that PlayerMoveController::readInput does - sometimes it skips reading input, and returning something non-zero breaks stuff...
         bool movementAllowed = bAdditiveUnk == 0 && _rmiWalkIsInputEnabled1(self) && _rmiWalkIsInputEnabled2(self); //&& !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.BeingMoved];
+        UserInput = *sumLeft != 0 || *sumForward != 0;
         if (movementAllowed && (IgnoreUserInput || *sumLeft == 0 && *sumForward == 0) && DirectionToDestination(false) is var relDir && relDir != null)
         {
             var dir = relDir.Value.h.ToDirection();
@@ -97,6 +102,7 @@ public unsafe class OverrideMovement : IDisposable
     private void RMIFlyDetour(void* self, PlayerMoveControllerFlyInput* result)
     {
         _rmiFlyHook.Original(self, result);
+        UserInput = result->Forward != 0 || result->Left != 0 || result->Up != 0;
         // TODO: we really need to introduce some extra checks that PlayerMoveController::readInput does - sometimes it skips reading input, and returning something non-zero breaks stuff...
         if ((IgnoreUserInput || result->Forward == 0 && result->Left == 0 && result->Up == 0) && DirectionToDestination(true) is var relDir && relDir != null)
         {

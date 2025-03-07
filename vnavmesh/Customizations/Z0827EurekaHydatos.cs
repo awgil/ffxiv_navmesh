@@ -5,7 +5,8 @@ class Z0827EurekaHydatos : NavmeshCustomization
 {
     public override int Version => 1;
 
-    // remove all floor triangles that are part of existing colliders, but are far below the walkable area of the map, as they can cause annoying false positives when calling PointOnFloor
+    // remove all floor triangles that are part of existing colliders, but are below the walkable area of the map, as they can cause annoying false positives when calling PointOnFloor
+    // this really only affects PW's boss room, which has some extra terrain beneath it
     public override void CustomizeScene(SceneExtractor scene)
     {
         foreach (var (key, mesh) in scene.Meshes)

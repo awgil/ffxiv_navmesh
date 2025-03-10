@@ -13,7 +13,7 @@ namespace Navmesh;
 // manager that loads navmesh matching current zone and performs async pathfinding queries
 public sealed class NavmeshManager : IDisposable
 {
-    public bool UseRaycasts = false;
+    public bool UseRaycasts = true;
     public bool UseStringPulling = true;
 
     public string CurrentKey { get; private set; } = ""; // unique string representing currently loaded navmesh

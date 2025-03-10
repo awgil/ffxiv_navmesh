@@ -32,7 +32,7 @@ public class DebugCompactHeightfield : DebugRecast
 
         _regionsNumSpans = new int[_chf.maxRegions + 1];
         foreach (ref var span in chf.spans.AsSpan())
-            ++_regionsNumSpans[span.reg & ~RcConstants.RC_BORDER_REG];
+            ++_regionsNumSpans[span.reg & ~RcRecast.RC_BORDER_REG];
         _regionsStartOffset = new int[_regionsNumSpans.Length];
         for (int i = 1; i < _regionsNumSpans.Length; i++)
             _regionsStartOffset[i] = _regionsStartOffset[i - 1] + _regionsNumSpans[i - 1];
@@ -81,7 +81,7 @@ public class DebugCompactHeightfield : DebugRecast
                             for (int i = 0; i < cell.count; ++i)
                             {
                                 ref var span = ref _chf.spans[cell.index + i];
-                                if (_tree.LeafNode($"y={span.y}+{span.h}, conn={RcCommons.GetCon(ref span, 0)} {RcCommons.GetCon(ref span, 1)} {RcCommons.GetCon(ref span, 2)} {RcCommons.GetCon(ref span, 3)}, reg={span.reg & ~RcConstants.RC_BORDER_REG} ({((span.reg & RcConstants.RC_BORDER_REG) == 0 ? "normal" : "border")}), dist={_chf.dist[i]}, area={_chf.areas[i]}").SelectedOrHovered)
+                                if (_tree.LeafNode($"y={span.y}+{span.h}, conn={RcRecast.GetCon(ref span, 0)} {RcRecast.GetCon(ref span, 1)} {RcRecast.GetCon(ref span, 2)} {RcRecast.GetCon(ref span, 3)}, reg={span.reg & ~RcRecast.RC_BORDER_REG} ({((span.reg & RcRecast.RC_BORDER_REG) == 0 ? "normal" : "border")}), dist={_chf.dist[i]}, area={_chf.areas[i]}").SelectedOrHovered)
                                     VisualizeSolidSpan(x, z, cell.index + i, true);
                             }
                         }
@@ -117,7 +117,7 @@ public class DebugCompactHeightfield : DebugRecast
                             for (int idx = 0; idx < cell.count; ++idx)
                             {
                                 ref var span = ref _chf.spans[cell.index + idx];
-                                if ((span.reg & ~RcConstants.RC_BORDER_REG) != i)
+                                if ((span.reg & ~RcRecast.RC_BORDER_REG) != i)
                                     continue;
 
                                 if (_tree.LeafNode($"{ispan}: [{x}x{z}]: y={span.y}+{span.h}").SelectedOrHovered)
@@ -217,7 +217,7 @@ public class DebugCompactHeightfield : DebugRecast
             var offsets = new int[_regionsNumSpans.Length];
             foreach (var (center, index) in EnumerateSpanPositions())
             {
-                var reg = _chf.spans[index].reg & ~RcConstants.RC_BORDER_REG;
+                var reg = _chf.spans[index].reg & ~RcRecast.RC_BORDER_REG;
                 var off = offsets[reg]++;
                 storage[_regionsStartOffset[reg] + off] = quad.BuildInstance(center, wx, wz, RegionColor(reg));
             }
@@ -300,11 +300,11 @@ public class DebugCompactHeightfield : DebugRecast
         ref var span = ref _chf.spans[spanIndex];
         for (int dir = 0; dir < 4; ++dir)
         {
-            var conn = RcCommons.GetCon(ref span, dir);
-            if (conn == RcConstants.RC_NOT_CONNECTED)
+            var conn = RcRecast.GetCon(ref span, dir);
+            if (conn == RcRecast.RC_NOT_CONNECTED)
                 continue;
-            int nx = x + RcCommons.GetDirOffsetX(dir);
-            int nz = z + RcCommons.GetDirOffsetY(dir);
+            int nx = x + RcRecast.GetDirOffsetX(dir);
+            int nz = z + RcRecast.GetDirOffsetY(dir);
             ref var nc = ref _chf.cells[nz * _chf.width + nx];
             ref var ns = ref _chf.spans[nc.index + conn];
             var from = _chf.bmin.RecastToSystem() + new Vector3(_chf.cs * (x + 0.5f), _chf.ch * (span.y + _heightOffset), _chf.cs * (z + 0.5f));

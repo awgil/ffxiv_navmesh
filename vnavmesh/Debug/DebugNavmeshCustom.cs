@@ -330,17 +330,15 @@ class DebugNavmeshCustom : IDisposable
         {
             for (int x = 0; x < tileSizeXVoxels; ++x)
             {
-                var so = shfOld.spans[ispan];
-                var sn = shfNew.spans[ispan];
-                while (so != 0 && sn != 0)
+                var spanOld = shfOld.spans[ispan];
+                var spanNew = shfNew.spans[ispan];
+                while (spanOld != null && spanNew != null)
                 {
-                    ref var spanOld = ref shfOld.Span(so);
-                    ref var spanNew = ref shfNew.Span(sn);
                     identical &= (spanOld.smin == spanNew.smin) && (spanOld.smax == spanNew.smax) && (spanOld.area == spanNew.area);
-                    so = spanOld.next;
-                    sn = spanNew.next;
+                    spanOld = spanOld.next;
+                    spanNew = spanNew.next;
                 }
-                identical &= (so == 0) && (sn == 0);
+                identical &= (spanOld == null) && (spanNew == null);
                 ispan++;
             }
         }

@@ -54,9 +54,10 @@ public class NavmeshBuilder
         navmeshParams.tileWidth = (BoundsMax.X - BoundsMin.X) / NumTilesX;
         navmeshParams.tileHeight = (BoundsMax.Z - BoundsMin.Z) / NumTilesZ;
         navmeshParams.maxTiles = NumTilesX * NumTilesZ;
-        navmeshParams.maxPolys = 1 << DtNavMesh.DT_POLY_BITS;
+        navmeshParams.maxPolys = 1 << DtDetour.DT_POLY_BITS;
 
-        var navmesh = new DtNavMesh(navmeshParams, Settings.PolyMaxVerts);
+        var navmesh = new DtNavMesh();
+        navmesh.Init(navmeshParams, Settings.PolyMaxVerts);
         var volume = flyable ? new VoxelMap(BoundsMin, BoundsMax, Settings.NumTiles) : null;
         Navmesh = new(customization.Version, navmesh, volume);
 
@@ -216,7 +217,7 @@ public class NavmeshBuilder
         {
             lock (Navmesh.Mesh)
             {
-                Navmesh.Mesh.AddTile(navmeshData, 0, 0);
+                Navmesh.Mesh.AddTile(navmeshData, 0, 0, out _);
             }
         }
 

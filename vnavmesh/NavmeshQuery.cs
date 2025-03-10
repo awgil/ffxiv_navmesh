@@ -1,5 +1,6 @@
 ﻿using DotRecast.Detour;
 using Navmesh.NavVolume;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -12,7 +13,7 @@ public class NavmeshQuery
     private class IntersectQuery : IDtPolyQuery
     {
         public List<long> Result = new();
-        public void Process(DtMeshTile tile, DtPoly poly, long refs) => Result.Add(refs);
+        public void Process(DtMeshTile tile, DtPoly[] polys, Span<long> refs, int count) => Result.AddRange(refs);
     }
 
     public DtNavMeshQuery MeshQuery;
@@ -56,11 +57,11 @@ public class NavmeshQuery
 
         if (useStringPulling)
         {
-            var straightPath = new List<DtStraightPath>();
-            var success = MeshQuery.FindStraightPath(from.SystemToRecast(), endPos, polysPath, ref straightPath, 1024, 0);
+            var straightPath = new DtStraightPath[1024];
+            var success = MeshQuery.FindStraightPath(from.SystemToRecast(), endPos, polysPath, polysPath.Count, straightPath.AsSpan(), out var pathCount, 1024, 0);
             if (success.Failed())
                 Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find straight path ({success.Value:X})");
-            var res = straightPath.Select(p => p.pos.RecastToSystem()).ToList();
+            var res = straightPath[..pathCount].Select(p => p.pos.RecastToSystem()).ToList();
             res.Add(endPos.RecastToSystem());
             return res;
         }
@@ -149,7 +150,7 @@ public class NavmeshQuery
                 continue; // already visited
 
             MeshQuery.GetAttachedNavMesh().GetTileAndPolyByRefUnsafe(next, out var nextTile, out var nextPoly);
-            for (int i = nextTile.polyLinks[nextPoly.index]; i != DtNavMesh.DT_NULL_LINK; i = nextTile.links[i].next)
+            for (int i = nextPoly.firstLink; i != DtDetour.DT_NULL_LINK; i = nextTile.links[i].next)
             {
                 long neighbourRef = nextTile.links[i].refs;
                 if (neighbourRef != 0)

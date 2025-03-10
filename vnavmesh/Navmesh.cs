@@ -45,12 +45,13 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
     {
         var numTiles = reader.ReadInt32();
         var opts = DeserializeMeshParams(reader);
-        var result = new DtNavMesh(opts, reader.ReadInt32());
+        var result = new DtNavMesh();
+        result.Init(opts, reader.ReadInt32());
         for (int i = 0; i < numTiles; ++i)
         {
             var tileRef = reader.ReadInt64();
             var tile = DeserializeMeshTile(reader);
-            result.AddTile(tile, i, tileRef);
+            result.AddTile(tile, i, tileRef, out _);
         }
         return result;
     }
@@ -93,8 +94,8 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
     {
         var tile = new DtMeshData();
         tile.header = new();
-        tile.header.magic = DtNavMesh.DT_NAVMESH_MAGIC;
-        tile.header.version = DtNavMesh.DT_NAVMESH_VERSION;
+        tile.header.magic = DtDetour.DT_NAVMESH_MAGIC;
+        tile.header.version = DtDetour.DT_NAVMESH_VERSION;
         tile.header.x = reader.ReadInt32();
         tile.header.y = reader.ReadInt32();
         tile.header.layer = reader.ReadInt32();
@@ -148,12 +149,12 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         for (int i = 0; i < tile.header.bvNodeCount; ++i)
         {
             var node = tile.bvTree[i] = new();
-            node.bmin[0] = reader.ReadInt32();
-            node.bmin[1] = reader.ReadInt32();
-            node.bmin[2] = reader.ReadInt32();
-            node.bmax[0] = reader.ReadInt32();
-            node.bmax[1] = reader.ReadInt32();
-            node.bmax[2] = reader.ReadInt32();
+            node.bmin.X = reader.ReadInt32();
+            node.bmin.Y = reader.ReadInt32();
+            node.bmin.Z = reader.ReadInt32();
+            node.bmax.X = reader.ReadInt32();
+            node.bmax.Y = reader.ReadInt32();
+            node.bmax.Z = reader.ReadInt32();
             node.i = reader.ReadInt32();
         }
 
@@ -227,12 +228,12 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         for (int i = 0; i < tile.header.bvNodeCount; ++i)
         {
             var node = tile.bvTree[i];
-            writer.Write(node.bmin[0]);
-            writer.Write(node.bmin[1]);
-            writer.Write(node.bmin[2]);
-            writer.Write(node.bmax[0]);
-            writer.Write(node.bmax[1]);
-            writer.Write(node.bmax[2]);
+            writer.Write(node.bmin.X);
+            writer.Write(node.bmin.Y);
+            writer.Write(node.bmin.Z);
+            writer.Write(node.bmax.X);
+            writer.Write(node.bmax.Y);
+            writer.Write(node.bmax.Z);
             writer.Write(node.i);
         }
 

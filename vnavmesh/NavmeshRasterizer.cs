@@ -201,7 +201,7 @@ public class NavmeshRasterizer
                     || normal.Y < _walkableNormalThreshold
                     // for flyable scenes, assume unlandable == unwalkable, unless explicitly set
                     || _voxelizer != null && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable) && !flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceWalkable);
-                var areaId = unwalkable ? 0 : RcConstants.RC_WALKABLE_AREA;
+                var areaId = unwalkable ? 0 : RcRecast.RC_WALKABLE_AREA;
 
                 // prepare for clipping: while iterating over z, we'll keep the 'remaining polygon' in clipRemainingZ
                 int numRemainingZ = 0;
@@ -316,11 +316,10 @@ public class NavmeshRasterizer
         // find insert position for new span: skip any existing spans that end before new span start
         var prevMaxY = mergeBelow ? y0 - _minSpanGap - 1 : y1; // any spans that have smax >= prevMaxY are merged
         var nextMinY = y1 + _minSpanGap + 1; // any spans that have smin <= nextMinY are merged
-        uint prevSpanIndex = 0;
-        uint currSpanIndex = cellHead;
-        while (currSpanIndex != 0)
+        RcSpan? prevSpan = null;
+        var currSpan = cellHead;
+        while (currSpan != null)
         {
-            ref var currSpan = ref _heightfield.Span(currSpanIndex);
             if (currSpan.smin > nextMinY)
             {
                 // new span should be inserted before current one
@@ -330,8 +329,8 @@ public class NavmeshRasterizer
             if (currSpan.smax < prevMaxY)
             {
                 // new span is fully above current one - continue...
-                prevSpanIndex = currSpanIndex;
-                currSpanIndex = currSpan.next;
+                prevSpan = currSpan;
+                currSpan = currSpan.next;
                 continue;
             }
 
@@ -346,17 +345,15 @@ public class NavmeshRasterizer
 
             // free merged span; note that prev would still point to it, we'll fix it later
             var nextSpanIndex = currSpan.next;
-            _heightfield.spanPool.Free(currSpanIndex);
-            currSpanIndex = nextSpanIndex;
+            currSpan = nextSpanIndex;
         }
 
         // insert new span
-        var newSpanIndex = _heightfield.spanPool.Alloc();
-        _heightfield.Span(newSpanIndex) = new() { smin = y0, smax = y1, area = areaId, next = currSpanIndex };
-        if (prevSpanIndex == 0)
-            cellHead = newSpanIndex;
+        var newSpan = new RcSpan() { smin = y0, smax = y1, area = areaId, next = currSpan };
+        if (prevSpan == null)
+            cellHead = newSpan;
         else
-            _heightfield.Span(prevSpanIndex).next = newSpanIndex;
+            prevSpan.next = newSpan;
 
         // and also mark overlapping voxels as solid
         if (includeInVolume && _voxelizer != null)
@@ -472,7 +469,7 @@ public class NavmeshRasterizer
                             unwalkable = normal.Y < _walkableNormalThreshold;
                         }
 
-                        var areaId = unwalkable ? 0 : RcConstants.RC_WALKABLE_AREA;
+                        var areaId = unwalkable ? 0 : RcRecast.RC_WALKABLE_AREA;
                         RcRasterizations.RasterizeTriangle(_telemetry, vertices, p.V1, p.V2, p.V3, areaId, _heightfield, _walkableClimbThreshold);
                     }
                 }

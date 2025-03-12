@@ -86,7 +86,7 @@ public sealed class NavmeshManager : IDisposable
                     if ((DateTime.Now - waitStart).TotalSeconds >= 5)
                     {
                         waitStart = DateTime.Now;
-                        Log("waiting for cutscene to end");
+                        Log("waiting for cutscene");
                     }
                     await Service.Framework.DelayTicks(1, cancel);
                 }

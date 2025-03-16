@@ -133,13 +133,16 @@ public class FollowPath : IDisposable
 
     private unsafe void ExecuteJump()
     {
-        // Unable to jump while diving, prevents spamming error messages.
-        if (Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Diving])
+        var actionManager = ActionManager.Instance();
+        // Unable to jump while jumping or diving, or if jump is not ready, to prevent spamming error messages.
+        if (Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Jumping]
+            || Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Diving]
+            || actionManager->GetActionStatus(ActionType.GeneralAction, 2) != 0)
             return;
 
         if (DateTime.Now >= _nextJump)
         {
-            ActionManager.Instance()->UseAction(ActionType.GeneralAction, 2);
+            actionManager->UseAction(ActionType.GeneralAction, 2);
             _nextJump = DateTime.Now.AddMilliseconds(100);
         }
     }

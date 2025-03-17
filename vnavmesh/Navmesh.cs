@@ -125,7 +125,7 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
             for (int j = 0; j < nv; ++j)
                 poly.neis[j] = reader.ReadUInt16();
         }
-        //tile.header.maxLinkCount = reader.ReadInt32(); - some legacy thing, always 0
+        tile.header.maxLinkCount = reader.ReadInt32();
 
         tile.header.detailMeshCount = reader.ReadInt32();
         tile.detailMeshes = new DtPolyDetail[tile.header.detailMeshCount];
@@ -202,7 +202,7 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
             for (int j = 0; j < poly.vertCount; ++j)
                 writer.Write((ushort)poly.neis[j]);
         }
-        //writer.Write(tile.header.maxLinkCount); - some legacy thing, always 0
+        writer.Write(tile.header.maxLinkCount);
 
         writer.Write(tile.header.detailMeshCount);
         for (int i = 0; i < tile.header.detailMeshCount; ++i)

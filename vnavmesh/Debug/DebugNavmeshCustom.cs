@@ -153,8 +153,6 @@ class DebugNavmeshCustom : IDisposable
     private DebugExtractedCollision? _drawExtracted;
     private HeightfieldComparison? _globalHFC;
     private PerTile[,]? _debugTiles;
-    private DebugDetourNavmesh? _drawNavmesh;
-    private DebugVoxelMap? _debugVoxelMap;
 
     private Vector3 _dest = new();
 
@@ -171,8 +169,6 @@ class DebugNavmeshCustom : IDisposable
         if (_debugTiles != null)
             foreach (var t in _debugTiles)
                 t?.Dispose();
-        _drawNavmesh?.Dispose();
-        _debugVoxelMap?.Dispose();
     }
 
     public void Draw()
@@ -281,13 +277,10 @@ class DebugNavmeshCustom : IDisposable
                 }
             }
         }
-        _drawNavmesh ??= new(navmesh, _navmesh.Query!.MeshQuery, _navmesh.Query.LastPath, _tree, _dd);
-        _drawNavmesh.Draw();
-        if (_navmesh.Volume != null)
-        {
-            _debugVoxelMap ??= new(_navmesh.Volume, null, _tree, _dd);
-            _debugVoxelMap.Draw();
-        }
+
+        using var dt = _tree.Node("Detour navmesh");
+        if (dt.Opened)
+            _tree.LeafNode("Loaded mesh replaced with custom build, check Navmesh Manager tab");
     }
 
     private void Clear()
@@ -299,10 +292,6 @@ class DebugNavmeshCustom : IDisposable
             foreach (var t in _debugTiles)
                 t?.Dispose();
         _debugTiles = null;
-        _drawNavmesh?.Dispose();
-        _drawNavmesh = null;
-        _debugVoxelMap?.Dispose();
-        _debugVoxelMap = null;
         _navmesh.Clear();
     }
 

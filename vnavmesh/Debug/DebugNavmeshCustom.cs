@@ -24,7 +24,7 @@ class DebugNavmeshCustom : IDisposable
     }
 
     // async navmesh builder
-    public class AsyncBuilder : IDisposable
+    public class AsyncBuilder(NavmeshManager manager) : IDisposable
     {
         public enum State { NotBuilt, InProgress, Failed, Ready }
 
@@ -48,6 +48,7 @@ class DebugNavmeshCustom : IDisposable
         private NavmeshQuery? _query;
         private IntermediateData? _intermediates;
         private Task? _task;
+        private NavmeshManager _manager = manager;
 
         public State CurrentState => _task == null ? State.NotBuilt : !_task.IsCompleted ? State.InProgress : _task.IsFaulted ? State.Failed : State.Ready;
         public SceneDefinition? Scene => _task != null && _task.IsCompletedSuccessfully ? _scene : null;
@@ -114,6 +115,7 @@ class DebugNavmeshCustom : IDisposable
 
                 _query = new(_builder.Navmesh);
                 Service.Log.Debug($"navmesh build time: {timer.Value().TotalMilliseconds}ms");
+                _manager.ReplaceMesh(_builder.Navmesh);
             }
             catch (Exception ex)
             {
@@ -144,20 +146,21 @@ class DebugNavmeshCustom : IDisposable
     }
 
     private Customization _settings = new();
-    private AsyncBuilder _navmesh = new();
+    private AsyncBuilder _navmesh;
     private UITree _tree = new();
     private DebugDrawer _dd;
     private DebugGameCollision _coll;
     private DebugExtractedCollision? _drawExtracted;
     private HeightfieldComparison? _globalHFC;
     private PerTile[,]? _debugTiles;
-    private DebugDetourNavmesh? _drawNavmesh;
-    private DebugVoxelMap? _debugVoxelMap;
 
-    public DebugNavmeshCustom(DebugDrawer dd, DebugGameCollision coll)
+    private Vector3 _dest = new();
+
+    public DebugNavmeshCustom(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager)
     {
         _dd = dd;
         _coll = coll;
+        _navmesh = new(manager);
     }
 
     public void Dispose()
@@ -166,8 +169,6 @@ class DebugNavmeshCustom : IDisposable
         if (_debugTiles != null)
             foreach (var t in _debugTiles)
                 t?.Dispose();
-        _drawNavmesh?.Dispose();
-        _debugVoxelMap?.Dispose();
     }
 
     public void Draw()
@@ -200,6 +201,16 @@ class DebugNavmeshCustom : IDisposable
 
         if (_navmesh.CurrentState != AsyncBuilder.State.Ready)
             return;
+
+        ImGui.InputFloat("X", ref _dest.X);
+        ImGui.InputFloat("Y", ref _dest.Y);
+        ImGui.InputFloat("Z", ref _dest.Z);
+        if (ImGui.Button("Pathfind"))
+        {
+            var player = Service.ClientState.LocalPlayer;
+            var playerPos = player?.Position ?? default;
+            _navmesh.Query!.PathfindMesh(playerPos, _dest, true, true, new());
+        }
 
         var navmesh = _navmesh.Navmesh!;
         navmesh.CalcTileLoc((Service.ClientState.LocalPlayer?.Position ?? default).SystemToRecast(), out var playerTileX, out var playerTileZ);
@@ -266,13 +277,10 @@ class DebugNavmeshCustom : IDisposable
                 }
             }
         }
-        _drawNavmesh ??= new(navmesh, null, _tree, _dd);
-        _drawNavmesh.Draw();
-        if (_navmesh.Volume != null)
-        {
-            _debugVoxelMap ??= new(_navmesh.Volume, null, _tree, _dd);
-            _debugVoxelMap.Draw();
-        }
+
+        using var dt = _tree.Node("Detour navmesh");
+        if (dt.Opened)
+            _tree.LeafNode("Loaded mesh replaced with custom build, check Navmesh Manager tab");
     }
 
     private void Clear()
@@ -284,10 +292,6 @@ class DebugNavmeshCustom : IDisposable
             foreach (var t in _debugTiles)
                 t?.Dispose();
         _debugTiles = null;
-        _drawNavmesh?.Dispose();
-        _drawNavmesh = null;
-        _debugVoxelMap?.Dispose();
-        _debugVoxelMap = null;
         _navmesh.Clear();
     }
 

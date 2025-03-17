@@ -20,6 +20,9 @@ public class NavmeshQuery
     public VoxelPathfind? VolumeQuery;
     private IDtQueryFilter _filter = new DtQueryDefaultFilter();
 
+    public List<long> LastPath => _lastPath;
+    private List<long> _lastPath = [];
+
     public NavmeshQuery(Navmesh navmesh)
     {
         MeshQuery = new(navmesh.Mesh);
@@ -39,15 +42,15 @@ public class NavmeshQuery
         }
 
         var timer = Timer.Create();
-        var polysPath = new List<long>();
-        var opt = new DtFindPathOption(useRaycast ? DtFindPathOptions.DT_FINDPATH_ANY_ANGLE : 0, float.MaxValue);
-        MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _filter, ref polysPath, opt);
-        if (polysPath.Count == 0)
+        _lastPath.Clear();
+        var opt = new DtFindPathOption(useRaycast ? DtFindPathOptions.DT_FINDPATH_ANY_ANGLE : 0, useRaycast ? 5 : 0);
+        MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _filter, ref _lastPath, opt);
+        if (_lastPath.Count == 0)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find path on mesh");
             return new();
         }
-        Service.Log.Debug($"Pathfind took {timer.Value().TotalSeconds:f3}s: {string.Join(", ", polysPath.Select(r => r.ToString("X")))}");
+        Service.Log.Debug($"Pathfind took {timer.Value().TotalSeconds:f3}s: {string.Join(", ", _lastPath.Select(r => r.ToString("X")))}");
 
         // In case of partial path, make sure the end point is clamped to the last polygon.
         var endPos = to.SystemToRecast();
@@ -58,7 +61,7 @@ public class NavmeshQuery
         if (useStringPulling)
         {
             var straightPath = new DtStraightPath[1024];
-            var success = MeshQuery.FindStraightPath(from.SystemToRecast(), endPos, polysPath, polysPath.Count, straightPath.AsSpan(), out var pathCount, 1024, 0);
+            var success = MeshQuery.FindStraightPath(from.SystemToRecast(), endPos, _lastPath, _lastPath.Count, straightPath.AsSpan(), out var pathCount, 1024, 0);
             if (success.Failed())
                 Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find straight path ({success.Value:X})");
             var res = straightPath[..pathCount].Select(p => p.pos.RecastToSystem()).ToList();
@@ -67,7 +70,7 @@ public class NavmeshQuery
         }
         else
         {
-            var res = polysPath.Select(r => MeshQuery.GetAttachedNavMesh().GetPolyCenter(r).RecastToSystem()).ToList();
+            var res = _lastPath.Select(r => MeshQuery.GetAttachedNavMesh().GetPolyCenter(r).RecastToSystem()).ToList();
             res.Add(endPos.RecastToSystem());
             return res;
         }

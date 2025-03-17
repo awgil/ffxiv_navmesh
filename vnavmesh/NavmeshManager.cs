@@ -110,6 +110,14 @@ public sealed class NavmeshManager : IDisposable
         return true;
     }
 
+    internal void ReplaceMesh(Navmesh mesh)
+    {
+        Log($"Mesh replaced");
+        Navmesh = mesh;
+        Query = new(Navmesh);
+        OnNavmeshChanged?.Invoke(Navmesh, Query);
+    }
+
     private static bool InCutscene => Service.Condition[ConditionFlag.WatchingCutscene] || Service.Condition[ConditionFlag.OccupiedInCutSceneEvent];
 
     public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, CancellationToken externalCancel = default)

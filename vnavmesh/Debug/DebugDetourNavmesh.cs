@@ -1,6 +1,8 @@
 ﻿using DotRecast.Detour;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using Navmesh.Render;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 namespace Navmesh.Debug;
@@ -18,16 +20,18 @@ public class DebugDetourNavmesh : DebugRecast
     private UITree _tree;
     private DebugDrawer _dd;
     private PerTile[] _perTile;
+    private List<long> _path;
 
     private static Vector4 _colAreaNull = new(0, 0, 0, 0.25f);
     private static Vector4 _colAreaWalkable = new(0, 0.75f, 1.0f, 0.5f);
     private static Vector4 _colClosedList = new(1.0f, 0.75f, 1.0f, 0.5f);
     private enum InstanceID { Tile, AreaNull, AreaWalkable, ClosedList, Count };
 
-    public DebugDetourNavmesh(DtNavMesh navmesh, DtNavMeshQuery? query, UITree tree, DebugDrawer dd)
+    public DebugDetourNavmesh(DtNavMesh navmesh, DtNavMeshQuery? query, List<long> queryPath, UITree tree, DebugDrawer dd)
     {
         _navmesh = navmesh;
         _query = query;
+        _path = queryPath;
         _tree = tree;
         _dd = dd;
         _perTile = new PerTile[navmesh.GetParams().maxTiles];
@@ -182,9 +186,11 @@ public class DebugDetourNavmesh : DebugRecast
         int i = 1;
         foreach (var n in _query!.GetNodePool().AsEnumerable())
         {
-            if (_tree.LeafNode($"{i++}: {n.id:X}, parent={n.pidx}, enter={n.pos}, cost={n.cost}, total={n.total}, state={n.state}, flags={n.flags}").SelectedOrHovered)
+            var queried = _path.Any(p => p == n.id);
+            var node = _tree.LeafNode($"{i++}: {n.id:X}, parent={n.pidx}, enter={n.pos}, cost={n.cost}, total={n.total}, state={n.state}, flags={n.flags}", queried ? 0xff808000 : 0xffffffff);
+            if (node.SelectedOrHovered || queried)
             {
-                VisualizeRoughPolygon(n.id, true);
+                VisualizeRoughPolygon(n.id, true, node.SelectedOrHovered);
                 VisualizeVertex(n.pos.RecastToSystem());
             }
         }
@@ -302,20 +308,20 @@ public class DebugDetourNavmesh : DebugRecast
             VisualizeRoughPolygon(tile, visu, tile.data.polys[i], colorByArea, false);
     }
 
-    private void VisualizeRoughPolygon(DtMeshTile tile, DtPoly poly, bool colorByArea)
+    private void VisualizeRoughPolygon(DtMeshTile tile, DtPoly poly, bool colorByArea, bool highlight = false)
     {
         if (_dd.EffectMesh == null)
             return;
         var visu = GetOrInitVisualizerRough(tile.index);
         _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
         visu.Bind(_dd.RenderContext);
-        VisualizeRoughPolygon(tile, visu, poly, colorByArea, true);
+        VisualizeRoughPolygon(tile, visu, poly, colorByArea, highlight);
     }
 
-    private void VisualizeRoughPolygon(long refs, bool colorByArea)
+    private void VisualizeRoughPolygon(long refs, bool colorByArea, bool highlight = false)
     {
         if (_navmesh.GetTileAndPolyByRef(refs, out var tile, out var poly).Succeeded())
-            VisualizeRoughPolygon(tile, poly, colorByArea);
+            VisualizeRoughPolygon(tile, poly, colorByArea, highlight);
     }
 
     // effect + data are expected to be already bound

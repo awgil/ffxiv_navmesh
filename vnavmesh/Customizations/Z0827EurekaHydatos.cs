@@ -33,6 +33,6 @@ class Z0827EurekaHydatos : NavmeshCustomization
     public Z0827EurekaHydatos()
     {
         // watershed partitioning causes some annoying corner cases with large flat areas of map - very noticeable when pathfinding from Daphne spawn to Central Point
-        Settings.Partitioning = DotRecast.Recast.RcPartition.LAYERS;
+        Settings.Partitioning = DotRecast.Recast.RcPartition.WATERSHED;
     }
 }

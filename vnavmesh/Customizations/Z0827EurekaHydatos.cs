@@ -3,7 +3,7 @@
 [CustomizationTerritory(827)]
 class Z0827EurekaHydatos : NavmeshCustomization
 {
-    public override int Version => 1;
+    public override int Version => 2;
 
     // remove all floor triangles that are part of existing colliders, but are below the walkable area of the map, as they can cause annoying false positives when calling PointOnFloor
     // this really only affects PW's boss room, which has some extra terrain beneath it
@@ -30,4 +30,9 @@ class Z0827EurekaHydatos : NavmeshCustomization
         }
     }
 
+    public Z0827EurekaHydatos()
+    {
+        // watershed partitioning causes some annoying corner cases with large flat areas of map - very noticeable when pathfinding from Daphne spawn to Central Point
+        Settings.Partitioning = DotRecast.Recast.RcPartition.LAYERS;
+    }
 }

@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "meshtool": {
+      "commandName": "Project",
+      "workingDirectory": "$(SolutionDir)",
+      "remoteDebugEnabled": false
+    }
+  }
+}

@@ -192,7 +192,7 @@ public sealed class NavmeshManager : IDisposable
         return $"{terrRow?.Bg}//{filterKey:X}//{LayoutUtils.FestivalsString(layout->ActiveFestivals)}";
     }
 
-    private unsafe string GetCacheKey(SceneDefinition scene)
+    internal static unsafe string GetCacheKey(SceneDefinition scene)
     {
         // note: festivals are active globally, but majority of zones don't have festival-specific layers, so we only want real ones in the cache key
         var layout = LayoutWorld.Instance()->ActiveLayout;

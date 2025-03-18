@@ -1,7 +1,10 @@
 ﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+using ImGuiNET;
 using Navmesh.Render;
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 
@@ -15,14 +18,16 @@ public class DebugExtractedCollision : IDisposable
     private DebugDrawer _dd;
     private DebugGameCollision _coll;
     private EffectMesh.Data? _visu;
+    private string _configDirectory;
 
-    public DebugExtractedCollision(SceneDefinition scene, SceneExtractor extractor, UITree tree, DebugDrawer dd, DebugGameCollision coll)
+    public DebugExtractedCollision(SceneDefinition scene, SceneExtractor extractor, UITree tree, DebugDrawer dd, DebugGameCollision coll, string configDir)
     {
         _scene = scene;
         _extractor = extractor;
         _tree = tree;
         _dd = dd;
         _coll = coll;
+        _configDirectory = configDir;
     }
 
     public void Dispose()
@@ -124,6 +129,9 @@ public class DebugExtractedCollision : IDisposable
             Visualize();
         if (!nr.Opened)
             return;
+
+        if (ImGui.Button("Export to DotRecast obj file"))
+            ExportMesh();
 
         int meshIndex = 0;
         foreach (var (name, mesh) in _extractor.Meshes)
@@ -307,4 +315,41 @@ public class DebugExtractedCollision : IDisposable
         mesh.MeshType.HasFlag(SceneExtractor.MeshType.Terrain) ? new(0, 1, 0, 0.55f) :
         mesh.MeshType.HasFlag(SceneExtractor.MeshType.FileMesh) ? new(1, 1, 0, 0.55f) :
         new(1, 0, 0, 0.55f);
+
+    private void ExportMesh()
+    {
+        var key = NavmeshManager.GetCacheKey(_scene);
+        var outFile = new FileInfo($"{_configDirectory}/export/{key}.obj");
+
+        var verts = new List<Vector3>();
+        var polys = new List<SceneExtractor.Primitive>();
+
+        foreach (var mesh in _extractor.Meshes.Values)
+        {
+
+            foreach (var inst in mesh.Instances)
+            {
+                var transform = inst.WorldTransform;
+
+                foreach (var part in mesh.Parts)
+                {
+                    var voff = verts.Count;
+
+                    verts.AddRange(part.Vertices.Select(transform.TransformCoordinate));
+                    polys.AddRange(part.Primitives.Select(p => new SceneExtractor.Primitive(p.V1 + voff, p.V2 + voff, p.V3 + voff, p.Flags)));
+                }
+            }
+        }
+
+        using var stream = outFile.OpenWrite();
+        using var writer = new StreamWriter(stream);
+
+        foreach (var v in verts)
+            writer.WriteLine($"v {v.X:f6} {v.Y:f6} {v.Z:f6}");
+
+        foreach (var p in polys)
+            writer.WriteLine($"f {p.V1 + 1} {p.V2 + 1} {p.V3 + 1}");
+
+        Service.Log.Debug($"wrote DotRecast geom file to {outFile}");
+    }
 }

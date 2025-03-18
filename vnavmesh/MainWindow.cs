@@ -14,13 +14,15 @@ public class MainWindow : Window, IDisposable
     private DebugNavmeshManager _debugNavmeshManager;
     private DebugNavmeshCustom _debugNavmeshCustom;
     private DebugLayout _debugLayout;
+    private string _configDirectory;
 
-    public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr) : base("Navmesh")
+    public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, string configDir) : base("Navmesh")
     {
         _path = path;
+        _configDirectory = configDir;
         _debugGameColl = new(_dd);
         _debugNavmeshManager = new(_dd, _debugGameColl, manager, path, move, dtr);
-        _debugNavmeshCustom = new(_dd, _debugGameColl, manager);
+        _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _configDirectory);
         _debugLayout = new(_debugGameColl);
     }
 

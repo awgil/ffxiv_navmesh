@@ -156,11 +156,14 @@ class DebugNavmeshCustom : IDisposable
 
     private Vector3 _dest = new();
 
-    public DebugNavmeshCustom(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager)
+    private string _configDirectory;
+
+    public DebugNavmeshCustom(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, string configDir)
     {
         _dd = dd;
         _coll = coll;
         _navmesh = new(manager);
+        _configDirectory = configDir;
     }
 
     public void Dispose()
@@ -216,7 +219,7 @@ class DebugNavmeshCustom : IDisposable
         navmesh.CalcTileLoc((Service.ClientState.LocalPlayer?.Position ?? default).SystemToRecast(), out var playerTileX, out var playerTileZ);
         _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
 
-        _drawExtracted ??= new(_navmesh.Scene!, _navmesh.Extractor!, _tree, _dd, _coll);
+        _drawExtracted ??= new(_navmesh.Scene!, _navmesh.Extractor!, _tree, _dd, _coll, _configDirectory);
         _drawExtracted.Draw();
         var intermediates = _navmesh.Intermediates;
         if (intermediates != null)

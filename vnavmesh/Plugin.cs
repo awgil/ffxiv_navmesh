@@ -41,7 +41,7 @@ public sealed class Plugin : IDalamudPlugin
         _followPath = new(dalamud, _navmeshManager);
         _asyncMove = new(_navmeshManager, _followPath);
         _dtrProvider = new(_navmeshManager);
-        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider);
+        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider, dalamud.ConfigDirectory.FullName);
         _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain, _dtrProvider);
 
         WindowSystem.AddWindow(_wndMain);

@@ -43,7 +43,7 @@ public class AsyncMoveRequest : IDisposable
             }
             catch (Exception ex)
             {
-                Service.Log.Error($"Failed to find path: {ex}");
+                Plugin.DuoLog(ex, "Failed to find path");
             }
             _pendingTask.Dispose();
             _pendingTask = null;

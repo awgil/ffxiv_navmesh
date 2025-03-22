@@ -57,7 +57,9 @@ public static class VoxelSearch
         {
             iters += 1;
             if (iters > 10000)
-                throw new Exception("Too many iterations in EnumerateVoxelsInLine (> 10000)");
+            {
+                Plugin.DuoLog(new Exception("Too many iterations in EnumerateVoxelsInLine (> 10000)"));
+            }
             var bounds = volume.VoxelBounds(fromVoxel, 0);
             // find closest intersection among three (out of six) neighbours
             // line-plane intersection: Q = A + AB*t, PQ*n=0 => (PA + tAB)*n = 0 => t = AP*n / AB*n

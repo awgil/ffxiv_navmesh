@@ -125,6 +125,14 @@ public class SceneExtractor
             if (info.path.Length > 0)
                 AddInstance(Meshes[info.path], coll.key, ref info.transform, ref info.bounds, coll.matId, coll.matMask);
         }
+
+        // add fake colliders on overworld zone transitions to prevent fly pathfind from trying to go OOB there
+        foreach (var ex in scene.ExitRanges)
+        {
+            var transform = new Matrix4x3(ex.transform.Compose());
+            var bounds = CalculateBoxBounds(ref transform);
+            AddInstance(Meshes[_keyAnalyticBox], ex.key, ref transform, ref bounds, 0x202411, 0x7FFFFFFFF);
+        }
     }
 
     public (string path, Matrix4x3 transform, AABB bounds) ExtractBgPartInfo(SceneDefinition scene, ulong key, Transform instanceTransform, uint crc, bool analytic)
@@ -274,14 +282,17 @@ public class SceneExtractor
         0x100000, // generally set on the invisible walls surrounding walkable areas that can be flown from
         0x1000000, // if this bit is set, flying upwards into the surface will trigger dive -> fly (or swim) transition
         0x800000, // not really sure what this is, appears on invisible roof of divable zones
-        0x8000, // actually marks fishable water, but all divable areas are covered by a roof with this bit set
+
+        // 0xBC00 can be dived into, but 0xB800 cannot. both allow fishing
+        // 0x400 is some kind of generic "this collider is conditionally active" flag, but it's set on zone walls, so we can't skip it
+        0xB400,
     ];
 
     private PrimitiveFlags ExtractMaterialFlags(ulong mat)
     {
         var res = PrimitiveFlags.None;
         foreach (var fly in _materialsFlyThrough)
-            if ((mat & fly) != 0)
+            if ((mat & fly) == fly)
                 res |= PrimitiveFlags.FlyThrough;
 
         if ((mat & 0x200000) != 0)

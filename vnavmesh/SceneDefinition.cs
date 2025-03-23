@@ -17,6 +17,7 @@ public class SceneDefinition
     public Dictionary<uint, string> MeshPaths = new(); // key = crc, value = pcb path; used by all colliders
     public List<(ulong key, Transform transform, uint crc, ulong matId, ulong matMask, bool analytic)> BgParts = new();
     public List<(ulong key, Transform transform, uint crc, ulong matId, ulong matMask, ColliderType type)> Colliders = new();
+    public List<(ulong key, Transform transform)> ExitRanges = new();
 
     public unsafe void FillFromActiveLayout() => FillFromLayout(LayoutWorld.Instance()->ActiveLayout);
 
@@ -75,6 +76,15 @@ public class SceneDefinition
                 if (cast->PcbPathCrc != 0 && !MeshPaths.ContainsKey(cast->PcbPathCrc))
                     MeshPaths[cast->PcbPathCrc] = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref layout->CrcToPath, cast->PcbPathCrc));
                 Colliders.Add((k, cast->Transform, cast->PcbPathCrc, ((ulong)cast->MaterialIdHigh << 32) | cast->MaterialIdLow, ((ulong)cast->MaterialMaskHigh << 32) | cast->MaterialMaskLow, cast->TriggerBoxLayoutInstance.Type));
+            }
+        }
+
+        var exitRanges = LayoutUtils.FindPtr(ref layout->InstancesByType, InstanceType.ExitRange);
+        if (exitRanges != null)
+        {
+            foreach (var (k, v) in *exitRanges)
+            {
+                ExitRanges.Add((k, *v.Value->GetTransformImpl()));
             }
         }
     }

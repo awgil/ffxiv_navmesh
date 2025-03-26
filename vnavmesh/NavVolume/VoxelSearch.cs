@@ -52,14 +52,8 @@ public static class VoxelSearch
     {
         var ab = toPos - fromPos;
         var eps = 0.1f / ab.Length();
-        var iters = 0;
         while (fromVoxel != toVoxel)
         {
-            iters += 1;
-            if (iters > 10000)
-            {
-                Plugin.DuoLog(new Exception("Too many iterations in EnumerateVoxelsInLine (> 10000)"));
-            }
             var bounds = volume.VoxelBounds(fromVoxel, 0);
             // find closest intersection among three (out of six) neighbours
             // line-plane intersection: Q = A + AB*t, PQ*n=0 => (PA + tAB)*n = 0 => t = AP*n / AB*n
@@ -71,6 +65,8 @@ public static class VoxelSearch
             var t = Math.Min(Math.Min(tx, ty), Math.Min(tz, 1));
             var tAdj = Math.Min(t + eps, 1);
             var (nextVoxel, nextEmpty) = volume.FindLeafVoxel(fromPos + tAdj * ab);
+            if (nextVoxel == fromVoxel)
+                Plugin.DuoLog(new Exception("Infinite loop in EnumerateVoxelsInLine"));
             yield return (nextVoxel, t, nextEmpty);
             fromVoxel = nextVoxel;
             if (tAdj >= 1)

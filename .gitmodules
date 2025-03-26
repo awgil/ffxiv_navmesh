@@ -1,6 +1,3 @@
-[submodule "FFXIVClientStructs"]
-	path = FFXIVClientStructs
-	url = https://github.com/awgil/FFXIVClientStructs.git
 [submodule "DotRecast"]
 	path = DotRecast
 	url = https://github.com/ikpil/DotRecast.git

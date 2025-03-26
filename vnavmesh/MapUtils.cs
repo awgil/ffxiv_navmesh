@@ -15,7 +15,7 @@ public static class MapUtils
     private unsafe static Vector2? GetFlagPosition()
     {
         var map = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentMap.Instance();
-        if (map == null || map->IsFlagMarkerSet == 0)
+        if (map == null || !map->IsFlagMarkerSet)
             return null;
         var marker = map->FlagMapMarker;
         return new(marker.XFloat, marker.YFloat);

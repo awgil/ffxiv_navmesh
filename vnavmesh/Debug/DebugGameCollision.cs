@@ -331,7 +331,7 @@ public unsafe class DebugGameCollision : IDisposable
 
     private void DrawCollider(Collider* coll)
     {
-        if (!FilterCollider(coll))
+        if (coll == null || !FilterCollider(coll))
             return;
 
         var raycastFlag = (coll->VisibilityFlags & 1) != 0;

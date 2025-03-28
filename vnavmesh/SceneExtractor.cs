@@ -31,9 +31,10 @@ public class SceneExtractor
         FlyThrough = 1 << 1, // this primitive should not be present in voxel map
         Unlandable = 1 << 2, // this primitive can't be landed on (fly->walk transition)
         ForceWalkable = 1 << 3, // this primitive can be walked on, even though it isn't landable
+        Fishable = 1 << 4, // player can fish if they have line of sight on this primitive
     }
 
-    public record struct Primitive(int V1, int V2, int V3, PrimitiveFlags Flags);
+    public record struct Primitive(int V1, int V2, int V3, PrimitiveFlags Flags, ulong Material = 0);
 
     public class MeshPart
     {
@@ -274,7 +275,7 @@ public class SceneExtractor
         for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
             part.Vertices.Add(node->Vertex(i));
         foreach (ref var p in node->Primitives)
-            part.Primitives.Add(new(p.V1, p.V2, p.V3, ExtractMaterialFlags(p.Material)));
+            part.Primitives.Add(new(p.V1, p.V2, p.V3, ExtractMaterialFlags(p.Material), p.Material));
         return part;
     }
 
@@ -302,6 +303,9 @@ public class SceneExtractor
         // some regular terrain materials have 0x10 set as well (see flowers in il mheg) which is why we check for both bits here
         if ((mat & 0x1F) == 0x11)
             res |= PrimitiveFlags.Unlandable | PrimitiveFlags.ForceUnwalkable;
+
+        if ((mat & 0x8000) != 0)
+            res |= PrimitiveFlags.Fishable;
 
         return res;
     }

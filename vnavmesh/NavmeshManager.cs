@@ -1,5 +1,6 @@
 ﻿using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -147,13 +148,17 @@ public sealed class NavmeshManager : IDisposable
     }
 
     // note: pixelSize should be power-of-2
-    public (Vector3 min, Vector3 max) BuildBitmap(Vector3 startingPos, string filename, float pixelSize)
+    public (Vector3 min, Vector3 max) BuildBitmap(Vector3 startingPos, string filename, float pixelSize, AABB? mapBounds = null)
     {
         if (Navmesh == null || Query == null)
             throw new InvalidOperationException($"Can't build bitmap - navmesh creation is in progress");
 
+        bool inBounds(Vector3 vert) => mapBounds is not AABB aabb || vert.X >= aabb.Min.X && vert.Y >= aabb.Min.Y && vert.Z >= aabb.Min.Z && vert.X <= aabb.Max.X && vert.Y <= aabb.Max.Y && vert.Z <= aabb.Max.Z;
+
         var startPoly = Query.FindNearestMeshPoly(startingPos);
         var reachablePolys = Query.FindReachableMeshPolys(startPoly);
+
+        HashSet<long> polysInbounds = [];
 
         Vector3 min = new(1024), max = new(-1024);
         foreach (var p in reachablePolys)
@@ -162,15 +167,22 @@ public sealed class NavmeshManager : IDisposable
             for (int i = 0; i < poly.vertCount; ++i)
             {
                 var v = NavmeshBitmap.GetVertex(tile, poly.verts[i]);
+                if (!inBounds(v))
+                    goto cont;
+
                 min = Vector3.Min(min, v);
                 max = Vector3.Max(max, v);
                 //Service.Log.Debug($"{p:X}.{i}= {v}");
             }
+
+            polysInbounds.Add(p);
+
+        cont:;
         }
         //Service.Log.Debug($"bounds: {min}-{max}");
 
         var bitmap = new NavmeshBitmap(min, max, pixelSize);
-        foreach (var p in reachablePolys)
+        foreach (var p in polysInbounds)
         {
             bitmap.RasterizePolygon(Navmesh.Mesh, p);
         }

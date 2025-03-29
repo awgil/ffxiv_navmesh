@@ -1,4 +1,5 @@
-﻿using Navmesh.Movement;
+﻿using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+using Navmesh.Movement;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -24,6 +25,7 @@ class IPCProvider : IDisposable
         RegisterFunc("Nav.IsAutoLoad", () => Service.Config.AutoLoadNavmesh);
         RegisterAction("Nav.SetAutoLoad", (bool v) => { Service.Config.AutoLoadNavmesh = v; Service.Config.NotifyModified(); });
         RegisterFunc("Nav.BuildBitmap", (Vector3 startingPos, string filename, float pixelSize) => navmeshManager.BuildBitmap(startingPos, filename, pixelSize));
+        RegisterFunc("Nav.BuildBitmapBounded", (Vector3 startingPos, string filename, float pixelSize, Vector3 minBounds, Vector3 maxBounds) => navmeshManager.BuildBitmap(startingPos, filename, pixelSize, new AABB { Min = minBounds, Max = maxBounds }));
 
         RegisterFunc("Query.Mesh.NearestPoint", (Vector3 p, float halfExtentXZ, float halfExtentY) => navmeshManager.Query?.FindNearestPointOnMesh(p, halfExtentXZ, halfExtentY));
         RegisterFunc("Query.Mesh.PointOnFloor", (Vector3 p, bool allowUnlandable, float halfExtentXZ) => navmeshManager.Query?.FindPointOnFloor(p, halfExtentXZ));
@@ -87,6 +89,13 @@ class IPCProvider : IDisposable
     private void RegisterFunc<TRet, T1, T2, T3, T4>(string name, Func<T1, T2, T3, T4, TRet> func)
     {
         var p = Service.PluginInterface.GetIpcProvider<T1, T2, T3, T4, TRet>("vnavmesh." + name);
+        p.RegisterFunc(func);
+        _disposeActions.Add(p.UnregisterFunc);
+    }
+
+    private void RegisterFunc<TRet, T1, T2, T3, T4, T5>(string name, Func<T1, T2, T3, T4, T5, TRet> func)
+    {
+        var p = Service.PluginInterface.GetIpcProvider<T1, T2, T3, T4, T5, TRet>("vnavmesh." + name);
         p.RegisterFunc(func);
         _disposeActions.Add(p.UnregisterFunc);
     }

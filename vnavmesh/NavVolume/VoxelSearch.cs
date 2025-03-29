@@ -19,9 +19,9 @@ public static class VoxelSearch
     public static IEnumerable<(ulong index, bool empty)> EnumerateLeafVoxels(VoxelMap volume, Vector3 center, Vector3 halfExtent)
         => volume.RootTile.EnumerateLeafVoxels(center - halfExtent, center + halfExtent);
 
-    public static Vector3 FindClosestVoxelPoint(VoxelMap volume, ulong index, Vector3 p)
+    public static Vector3 FindClosestVoxelPoint(VoxelMap volume, ulong index, Vector3 p, float eps = 0.1f)
     {
-        var (min, max) = volume.VoxelBounds(index, 0.1f);
+        var (min, max) = volume.VoxelBounds(index, eps);
         return Vector3.Clamp(p, min, max);
     }
 
@@ -39,14 +39,14 @@ public static class VoxelSearch
             if (!v.empty)
                 continue;
 
-            var p = FindClosestVoxelPoint(volume, v.index, center);
+            var p = FindClosestVoxelPoint(volume, v.index, center, 0);
             var d = p - center;
             var dist = d.LengthSquared();
             if (d.X != 0 || d.Z != 0)
                 dist += 100; // penalty for moving sideways vs up - TODO reconsider...
             if (d.Y < 0)
                 dist += 400; // penalty for lower voxels to reduce chance of it being underground - TODO reconsider...
-            //Service.Log.Debug($"Considering {x}x{y}x{z}: {dist}, min so far {minDist}");
+            //Service.Log.Debug($"Considering {p.X}x{p.Y}x{p.Z}: {dist}, min so far {minDist}");
 
             if (dist < minDist)
             {

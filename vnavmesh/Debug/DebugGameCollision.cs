@@ -293,6 +293,7 @@ public unsafe class DebugGameCollision : IDisposable
             _tree.LeafNode($"Material: {res.Material:X}");
             DrawCollider(res.Object);
             VisualizeCollider(res.Object, _materialId, _materialMask);
+            _tree.LeafNode($"Vertices: {res.V1}, {res.V2}, {res.V3}");
             _dd.DrawWorldLine(res.V1, res.V2, 0xff0000ff, 2);
             _dd.DrawWorldLine(res.V2, res.V3, 0xff0000ff, 2);
             _dd.DrawWorldLine(res.V3, res.V1, 0xff0000ff, 2);

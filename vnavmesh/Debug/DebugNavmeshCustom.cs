@@ -4,6 +4,7 @@ using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
 using ImGuiNET;
+using Navmesh.Customizations;
 using Navmesh.NavVolume;
 using System;
 using System.Numerics;
@@ -18,9 +19,23 @@ class DebugNavmeshCustom : IDisposable
     public class Customization : NavmeshCustomization
     {
         public bool Flyable;
+        public bool LoadExisting = true;
 
         public override int Version => 1;
         public override bool IsFlyingSupported(SceneDefinition definition) => Flyable;
+
+        public override void CustomizeScene(SceneExtractor scene)
+        {
+            if (LoadExisting)
+            {
+                var tt = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
+                if (tt.Version > 0)
+                {
+                    Service.Log.Debug($"loading existing customization {tt}");
+                    tt.CustomizeScene(scene);
+                }
+            }
+        }
     }
 
     // async navmesh builder
@@ -181,6 +196,7 @@ class DebugNavmeshCustom : IDisposable
             if (nsettings.Opened)
             {
                 ImGui.Checkbox("Support flying", ref _settings.Flyable);
+                ImGui.Checkbox("Load existing territory customization", ref _settings.LoadExisting);
                 _settings.Settings.Draw();
             }
         }

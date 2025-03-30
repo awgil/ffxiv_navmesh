@@ -46,7 +46,7 @@ public static class VoxelSearch
                 dist += 100; // penalty for moving sideways vs up - TODO reconsider...
             if (d.Y < 0)
                 dist += 400; // penalty for lower voxels to reduce chance of it being underground - TODO reconsider...
-            //Service.Log.Debug($"Considering {p.X}x{p.Y}x{p.Z}: {dist}, min so far {minDist}");
+            // Service.Log.Debug($"Considering {v.index:X} @ {p.X}x{p.Y}x{p.Z}: {dist}, min so far {minDist}");
 
             if (dist < minDist)
             {

@@ -4,7 +4,6 @@ using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
 using ImGuiNET;
-using Navmesh.Customizations;
 using Navmesh.NavVolume;
 using System;
 using System.Numerics;

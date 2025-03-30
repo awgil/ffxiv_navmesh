@@ -369,7 +369,9 @@ public class NavmeshRasterizer
                 z >>= _voxShiftZ;
                 if (x < _voxelizer.NumX && z < _voxelizer.NumZ)
                 {
-                    _voxelizer.AddSpan(x, z, y0 >> _voxShiftY, y1 >> _voxShiftY);
+                    // add 1-cell "underhang" in case this span lies exactly on a tile boundary (which is actually fairly common for level geometry)
+                    // TODO figure out less of a hack for this - spans along a boundary should only occupy the lower voxel, not both
+                    _voxelizer.AddSpan(x, z, (y0 - 1) >> _voxShiftY, y1 >> _voxShiftY);
                 }
             }
         }

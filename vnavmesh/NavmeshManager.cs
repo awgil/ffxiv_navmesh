@@ -34,13 +34,24 @@ public sealed class NavmeshManager : IDisposable
 
     private DirectoryInfo _cacheDir;
 
-    public NavmeshManager(DirectoryInfo cacheDir)
+    public NavmeshManager()
     {
-        _cacheDir = cacheDir;
-        cacheDir.Create(); // ensure directory exists
+        _cacheDir = new DirectoryInfo(Service.Config.MeshDirectory);
+        _cacheDir.Create(); // ensure directory exists
+        Service.Config.Modified += OnConfigModified;
 
         // prepare a task with correct task scheduler that other tasks can be chained off
         _lastLoadQueryTask = Service.Framework.Run(() => Log("Tasks kicked off"));
+    }
+
+    private void OnConfigModified()
+    {
+        if (Service.Config.MeshDirectory != _cacheDir.FullName)
+        {
+            _cacheDir = new DirectoryInfo(Service.Config.MeshDirectory);
+            _cacheDir.Create(); // ensure directory exists
+        }
+        Reload(false); // reload navmesh with new settings
     }
 
     public void Dispose()

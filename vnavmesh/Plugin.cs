@@ -37,7 +37,7 @@ public sealed class Plugin : IDalamudPlugin
         Service.Config.Load(dalamud.ConfigFile);
         Service.Config.Modified += () => Service.Config.Save(dalamud.ConfigFile);
 
-        _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
+        _navmeshManager = new();
         _followPath = new(dalamud, _navmeshManager);
         _asyncMove = new(_navmeshManager, _followPath);
         _dtrProvider = new(_navmeshManager, _asyncMove);

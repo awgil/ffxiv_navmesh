@@ -15,6 +15,7 @@ public class Config
     public bool ShowWaypoints;
     public bool ForceShowGameCollision;
     public bool CancelMoveOnUserInput;
+    public float RandomnessMultiplier = 5.0f;
 
     public event Action? Modified;
 
@@ -33,6 +34,8 @@ public class Config
         if (ImGui.Checkbox("Always visualize game collision", ref ForceShowGameCollision))
             NotifyModified();
         if (ImGui.Checkbox("Cancel current path on player movement input", ref CancelMoveOnUserInput))
+            NotifyModified();
+        if (ImGui.SliderFloat("Randomness Multiplier", ref RandomnessMultiplier, 0.0f, 10.0f, "%.2f"))
             NotifyModified();
     }
 

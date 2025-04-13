@@ -352,8 +352,10 @@ public class VoxelPathfind
         }
     }
 
+    private Random _rng = new();
     private float CalculateGScore(ref Node parent, ulong destVoxel, Vector3 destPos, ref int parentIndex)
     {
+        float randomFactor = (float)_rng.NextDouble() * Service.Config.RandomnessMultiplier;
         if (_useRaycast)
         {
             // check LoS from grandparent
@@ -364,10 +366,10 @@ public class VoxelPathfind
             if (dist <= _raycastLimitSq && VoxelSearch.LineOfSight(_volume, grandParentNode.Voxel, destVoxel, grandParentNode.Position, destPos))
             {
                 parentIndex = grandParentIndex;
-                return grandParentNode.GScore + MathF.Sqrt(dist);
+                return grandParentNode.GScore + MathF.Sqrt(dist) + randomFactor;
             }
         }
-        return parent.GScore + (parent.Position - destPos).Length();
+        return parent.GScore + (parent.Position - destPos).Length() + randomFactor;
     }
 
     private float HeuristicDistance(ulong nodeVoxel, Vector3 v) => nodeVoxel != _goalVoxel ? (v - _goalPos).Length() * 0.999f : 0;

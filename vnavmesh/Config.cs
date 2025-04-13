@@ -57,6 +57,10 @@ public class Config
     {
         try
         {
+            if (!file.Exists)
+            {
+                Save(file);
+            }
             var contents = File.ReadAllText(file.FullName);
             var json = JObject.Parse(contents);
             var version = (int?)json["Version"] ?? 0;

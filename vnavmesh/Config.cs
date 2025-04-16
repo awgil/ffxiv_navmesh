@@ -2,6 +2,7 @@
 using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
+using Dalamud.Interface.ImGuiFileDialog;
 
 namespace Navmesh;
 
@@ -15,13 +16,33 @@ public class Config
     public bool ShowWaypoints;
     public bool ForceShowGameCollision;
     public bool CancelMoveOnUserInput;
+    public string MeshDirectory = string.Empty;
 
+    private string _defaultMeshDirectory;
     public event Action? Modified;
 
     public void NotifyModified() => Modified?.Invoke();
 
+    private FileDialogManager _fileDialogManager = new();
     public void Draw()
     {
+        if (ImGui.InputText("Mesh Directory", ref MeshDirectory, 256))
+        {
+            if (!Directory.Exists(MeshDirectory))
+                MeshDirectory = _defaultMeshDirectory;
+            NotifyModified();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Browse"))
+        {
+            _fileDialogManager.OpenFolderDialog("Navmesh Directory", (success, path) =>
+            {
+                if (success && Directory.Exists(path))
+                    MeshDirectory = path;
+                NotifyModified();
+            });
+        }
         if (ImGui.Checkbox("Automatically load/build navigation data when changing zones", ref AutoLoadNavmesh))
             NotifyModified();
         if (ImGui.Checkbox("Enable DTR bar", ref EnableDTR))
@@ -34,6 +55,7 @@ public class Config
             NotifyModified();
         if (ImGui.Checkbox("Cancel current path on player movement input", ref CancelMoveOnUserInput))
             NotifyModified();
+        _fileDialogManager.Draw();
     }
 
     public void Save(FileInfo file)
@@ -57,6 +79,7 @@ public class Config
     {
         try
         {
+            _defaultMeshDirectory = Path.Combine(Service.PluginInterface.ConfigDirectory.FullName, "meshcache");
             var contents = File.ReadAllText(file.FullName);
             var json = JObject.Parse(contents);
             var version = (int?)json["Version"] ?? 0;
@@ -76,6 +99,12 @@ public class Config
                         }
                     }
                 }
+            }
+
+            if (string.IsNullOrEmpty(MeshDirectory) || !Directory.Exists(MeshDirectory))
+            {
+                MeshDirectory = _defaultMeshDirectory;
+                NotifyModified();
             }
         }
         catch (Exception e)

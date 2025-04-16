@@ -1,8 +1,8 @@
-﻿using ImGuiNET;
+﻿using Dalamud.Interface.ImGuiFileDialog;
+using ImGuiNET;
 using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
-using Dalamud.Interface.ImGuiFileDialog;
 
 namespace Navmesh;
 
@@ -18,15 +18,16 @@ public class Config
     public bool CancelMoveOnUserInput;
     public string MeshDirectory = string.Empty;
 
-    private string _defaultMeshDirectory;
     public event Action? Modified;
 
     public void NotifyModified() => Modified?.Invoke();
 
-    private FileDialogManager _fileDialogManager = new();
+    private string _defaultMeshDirectory = "";
+    private readonly FileDialogManager _fileDialogManager = new();
+
     public void Draw()
     {
-        if (ImGui.InputText("Mesh Directory", ref MeshDirectory, 256))
+        if (ImGui.InputText("Cache directory", ref MeshDirectory, 256))
         {
             if (!Directory.Exists(MeshDirectory))
                 MeshDirectory = _defaultMeshDirectory;
@@ -36,7 +37,7 @@ public class Config
         ImGui.SameLine();
         if (ImGui.Button("Browse"))
         {
-            _fileDialogManager.OpenFolderDialog("Navmesh Directory", (success, path) =>
+            _fileDialogManager.OpenFolderDialog("Cache directory", (success, path) =>
             {
                 if (success && Directory.Exists(path))
                     MeshDirectory = path;
@@ -80,6 +81,8 @@ public class Config
         try
         {
             _defaultMeshDirectory = Path.Combine(Service.PluginInterface.ConfigDirectory.FullName, "meshcache");
+            if (!file.Exists)
+                Save(file);
             var contents = File.ReadAllText(file.FullName);
             var json = JObject.Parse(contents);
             var version = (int?)json["Version"] ?? 0;

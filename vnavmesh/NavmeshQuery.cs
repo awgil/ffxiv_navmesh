@@ -1,4 +1,5 @@
-﻿using DotRecast.Detour;
+﻿using DotRecast.Core.Numerics;
+using DotRecast.Detour;
 using Navmesh.NavVolume;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,13 +12,22 @@ public class NavmeshQuery
 {
     private class IntersectQuery : IDtPolyQuery
     {
-        public List<long> Result = new();
+        public readonly List<long> Result = new();
         public void Process(DtMeshTile tile, DtPoly poly, long refs) => Result.Add(refs);
+    }
+
+    private class ToleranceHeuristic(float tolerance) : IDtQueryHeuristic
+    {
+        float IDtQueryHeuristic.GetCost(RcVec3f neighbourPos, RcVec3f endPos)
+        {
+            var dist = RcVec3f.Distance(neighbourPos, endPos) * DtDefaultQueryHeuristic.H_SCALE;
+            return dist < tolerance ? -1 : dist;
+        }
     }
 
     public DtNavMeshQuery MeshQuery;
     public VoxelPathfind? VolumeQuery;
-    private IDtQueryFilter _filter = new DtQueryDefaultFilter();
+    private readonly IDtQueryFilter _filter = new DtQueryDefaultFilter();
 
     public List<long> LastPath => _lastPath;
     private List<long> _lastPath = [];
@@ -29,7 +39,7 @@ public class NavmeshQuery
             VolumeQuery = new(navmesh.Volume);
     }
 
-    public List<Vector3> PathfindMesh(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling, CancellationToken cancel)
+    public List<Vector3> PathfindMesh(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling, CancellationToken cancel, float range = 0)
     {
         var startRef = FindNearestMeshPoly(from);
         var endRef = FindNearestMeshPoly(to);
@@ -42,7 +52,7 @@ public class NavmeshQuery
 
         var timer = Timer.Create();
         _lastPath.Clear();
-        var opt = new DtFindPathOption(useRaycast ? DtFindPathOptions.DT_FINDPATH_ANY_ANGLE : 0, useRaycast ? 5 : 0);
+        var opt = new DtFindPathOption(range > 0 ? new ToleranceHeuristic(range) : DtDefaultQueryHeuristic.Default, useRaycast ? DtFindPathOptions.DT_FINDPATH_ANY_ANGLE : 0, useRaycast ? 5 : 0);
         MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _filter, ref _lastPath, opt);
         if (_lastPath.Count == 0)
         {

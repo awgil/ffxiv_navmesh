@@ -121,7 +121,7 @@ public sealed class NavmeshManager : IDisposable
 
     private static bool InCutscene => Service.Condition[ConditionFlag.WatchingCutscene] || Service.Condition[ConditionFlag.OccupiedInCutSceneEvent];
 
-    public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, CancellationToken externalCancel = default)
+    public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, CancellationToken externalCancel = default, float range = 0)
     {
         if (_currentCTS == null)
             throw new Exception($"Can't initiate query - navmesh is not loaded");
@@ -140,7 +140,7 @@ public sealed class NavmeshManager : IDisposable
                 if (Query == null)
                     throw new Exception($"Can't pathfind, navmesh did not build successfully");
                 Log($"Executing pathfind from {from} to {to}");
-                return flying ? Query.PathfindVolume(from, to, UseRaycasts, UseStringPulling, combined.Token) : Query.PathfindMesh(from, to, UseRaycasts, UseStringPulling, combined.Token);
+                return flying ? Query.PathfindVolume(from, to, UseRaycasts, UseStringPulling, combined.Token) : Query.PathfindMesh(from, to, UseRaycasts, UseStringPulling, combined.Token, range);
             }, combined.Token);
             Log($"Pathfinding done: {path.Count} waypoints");
             return path;

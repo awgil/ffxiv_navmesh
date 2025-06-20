@@ -43,6 +43,7 @@ class IPCProvider : IDisposable
         RegisterAction("Path.SetTolerance", (float v) => followPath.Tolerance = v);
 
         RegisterFunc("SimpleMove.PathfindAndMoveTo", (Vector3 dest, bool fly) => move.MoveTo(dest, fly));
+        RegisterFunc("SimpleMove.PathfindToRange", (Vector3 dest, bool fly, float range) => move.MoveTo(dest, fly, range));
         RegisterFunc("SimpleMove.PathfindInProgress", () => move.TaskInProgress);
 
         RegisterFunc("Window.IsOpen", () => mainWindow.IsOpen);

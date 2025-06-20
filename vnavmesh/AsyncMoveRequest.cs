@@ -12,6 +12,7 @@ public class AsyncMoveRequest : IDisposable
     private FollowPath _follow;
     private Task<List<Vector3>>? _pendingTask;
     private bool _pendingFly;
+    private float _pendingDestRange;
 
     public bool TaskInProgress => _pendingTask != null;
 
@@ -39,7 +40,7 @@ public class AsyncMoveRequest : IDisposable
             Service.Log.Information($"Pathfinding complete");
             try
             {
-                _follow.Move(_pendingTask.Result, !_pendingFly);
+                _follow.Move(_pendingTask.Result, !_pendingFly, _pendingDestRange);
             }
             catch (Exception ex)
             {
@@ -50,7 +51,7 @@ public class AsyncMoveRequest : IDisposable
         }
     }
 
-    public bool MoveTo(Vector3 dest, bool fly)
+    public bool MoveTo(Vector3 dest, bool fly, float range = 0)
     {
         if (_pendingTask != null)
         {
@@ -58,9 +59,12 @@ public class AsyncMoveRequest : IDisposable
             return false;
         }
 
-        Service.Log.Info($"Queueing {(fly ? "fly" : "move")}-to {dest:f3}");
-        _pendingTask = _manager.QueryPath(Service.ClientState.LocalPlayer?.Position ?? default, dest, fly);
+        var toleranceStr = range > 0 ? $" within {range}y" : "";
+
+        Service.Log.Info($"Queueing {(fly ? "fly" : "move")}-to {dest:f3}{toleranceStr}");
+        _pendingTask = _manager.QueryPath(Service.ClientState.LocalPlayer?.Position ?? default, dest, fly, range: range);
         _pendingFly = fly;
+        _pendingDestRange = range;
         return true;
     }
 }

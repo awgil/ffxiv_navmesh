@@ -22,6 +22,8 @@ public class NavmeshBuilder
     public int NumTilesZ;
     public Navmesh Navmesh; // should not be accessed while building tiles
 
+    private NavmeshCustomization customization;
+
     private int _walkableClimbVoxels;
     private int _walkableHeightVoxels;
     private int _walkableRadiusVoxels;
@@ -38,6 +40,7 @@ public class NavmeshBuilder
     {
         Settings = customization.Settings;
         var flyable = customization.IsFlyingSupported(scene);
+        this.customization = customization;
 
         // load all meshes
         Scene = new(scene);
@@ -209,6 +212,7 @@ public class NavmeshBuilder
 
             buildBvTree = true, // TODO: false if using layers?
         };
+        customization.CustomizeSettings(navmeshConfig);
         var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
 
         // 10. add tile to the navmesh

@@ -11,7 +11,6 @@ public class FollowPath : IDisposable
     public bool MovementAllowed = true;
     public bool IgnoreDeltaY = false;
     public float Tolerance = 0.25f;
-    public float DestinationTolerance = 0;
     public List<Vector3> Waypoints = new();
 
     private IDalamudPluginInterface _dalamud;
@@ -58,12 +57,6 @@ public class FollowPath : IDisposable
             var a = Waypoints[0];
             var b = player.Position;
             var c = posPreviousFrame ?? b;
-
-            if (DestinationTolerance > 0 && (b - Waypoints[^1]).Length() <= DestinationTolerance)
-            {
-                Waypoints.Clear();
-                break;
-            }
 
             if (IgnoreDeltaY)
             {
@@ -151,12 +144,11 @@ public class FollowPath : IDisposable
         }
     }
 
-    public void Move(List<Vector3> waypoints, bool ignoreDeltaY, float destTolerance = 0)
+    public void Move(List<Vector3> waypoints, bool ignoreDeltaY)
     {
         UpdateSharedState(true);
         Waypoints = waypoints;
         IgnoreDeltaY = ignoreDeltaY;
-        DestinationTolerance = destTolerance;
     }
 
     private void OnNavmeshChanged(Navmesh? navmesh, NavmeshQuery? query)

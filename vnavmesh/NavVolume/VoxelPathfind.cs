@@ -352,22 +352,47 @@ public class VoxelPathfind
         }
     }
 
+    private Random _rng = new();
     private float CalculateGScore(ref Node parent, ulong destVoxel, Vector3 destPos, ref int parentIndex)
     {
+        float randomFactor = (float)_rng.NextDouble() * Service.Config.RandomnessMultiplier;
+
+        float baseDistance;
+        float parentBaseG;
+        Vector3 fromPos;
+
         if (_useRaycast)
         {
             // check LoS from grandparent
             int grandParentIndex = parent.ParentIndex;
             ref var grandParentNode = ref NodeSpan[grandParentIndex];
             // TODO: invert LoS check to match path reconstruction step?
-            var dist = (grandParentNode.Position - destPos).LengthSquared();
-            if (dist <= _raycastLimitSq && VoxelSearch.LineOfSight(_volume, grandParentNode.Voxel, destVoxel, grandParentNode.Position, destPos))
+            var distanceSquared = (grandParentNode.Position - destPos).LengthSquared();
+            if (distanceSquared <= _raycastLimitSq && VoxelSearch.LineOfSight(_volume, grandParentNode.Voxel, destVoxel, grandParentNode.Position, destPos))
             {
                 parentIndex = grandParentIndex;
-                return grandParentNode.GScore + MathF.Sqrt(dist);
+                baseDistance = MathF.Sqrt(distanceSquared);
+                parentBaseG = grandParentNode.GScore;
+                fromPos = grandParentNode.Position;
+            }
+            else
+            {
+                baseDistance = (parent.Position - destPos).Length();
+                parentBaseG = parent.GScore;
+                fromPos = parent.Position;
             }
         }
-        return parent.GScore + (parent.Position - destPos).Length();
+        else
+        {
+            baseDistance = (parent.Position - destPos).Length();
+            parentBaseG = parent.GScore;
+            fromPos = parent.Position;
+        }
+
+        float verticalDifference = MathF.Abs(fromPos.Y - destPos.Y);
+        float verticalPenalty = 0.2f * verticalDifference;
+
+        return parentBaseG + baseDistance + randomFactor + verticalPenalty;
     }
 
     private float HeuristicDistance(ulong nodeVoxel, Vector3 v) => nodeVoxel != _goalVoxel ? (v - _goalPos).Length() * 0.999f : 0;

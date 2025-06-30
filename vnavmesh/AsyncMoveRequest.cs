@@ -20,6 +20,8 @@ public class AsyncMoveRequest : IDisposable
     {
         _manager = manager;
         _follow = follow;
+
+        _follow.OnStuck += MoveTo;
     }
 
     public void Dispose()

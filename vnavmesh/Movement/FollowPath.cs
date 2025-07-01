@@ -3,6 +3,7 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Dalamud.Plugin.Services;
 
 namespace Navmesh.Movement;
 
@@ -21,6 +22,10 @@ public class FollowPath : IDisposable
     private DateTime _nextJump;
 
     private Vector3? posPreviousFrame;
+
+    private int _millisecondsWithNoSignificantMovement = 0;
+
+    public event Action<Vector3, bool, float>? OnStuck;
 
     // entries in dalamud shared data cache must be reference types, so we use an array
     private readonly bool[] _sharedPathIsRunning;
@@ -47,7 +52,7 @@ public class FollowPath : IDisposable
 
     private void UpdateSharedState(bool isRunning) => _sharedPathIsRunning[0] = isRunning;
 
-    public unsafe void Update()
+    public void Update(IFramework fwk)
     {
         var player = Service.ClientState.LocalPlayer;
         if (player == null)
@@ -78,10 +83,10 @@ public class FollowPath : IDisposable
             Waypoints.RemoveAt(0);
         }
 
-        posPreviousFrame = player.Position;
 
         if (Waypoints.Count == 0)
         {
+            posPreviousFrame = player.Position;
             _movement.Enabled = _camera.Enabled = false;
             _camera.SpeedH = _camera.SpeedV = default;
             _movement.DesiredPosition = player.Position;
@@ -89,6 +94,29 @@ public class FollowPath : IDisposable
         }
         else
         {
+            if (Service.Config.StopOnStuck && posPreviousFrame.HasValue)
+            {
+                float distance = Vector3.Distance(player.Position, posPreviousFrame.Value);
+                if (distance <= Service.Config.StuckTolerance)
+                {
+                    _millisecondsWithNoSignificantMovement += fwk.UpdateDelta.Milliseconds;
+                }
+                else
+                {
+                    _millisecondsWithNoSignificantMovement = 0;
+                }
+
+                if (_millisecondsWithNoSignificantMovement >= Service.Config.StuckTimeoutMs)
+                {
+                    var destination = Waypoints[^1];
+                    Stop();
+                    OnStuck?.Invoke(destination, !IgnoreDeltaY, DestinationTolerance);
+                    return;
+                }
+            }
+
+            posPreviousFrame = player.Position;
+
             if (Service.Config.CancelMoveOnUserInput && _movement.UserInput)
             {
                 Stop();
@@ -135,6 +163,7 @@ public class FollowPath : IDisposable
     public void Stop()
     {
         UpdateSharedState(false);
+        _millisecondsWithNoSignificantMovement = 0;
         Waypoints.Clear();
     }
 

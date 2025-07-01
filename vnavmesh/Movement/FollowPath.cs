@@ -25,7 +25,7 @@ public class FollowPath : IDisposable
 
     private int _millisecondsWithNoSignificantMovement = 0;
 
-    public event Func<Vector3, bool, float, bool>? OnStuck;
+    public event Action<Vector3, bool, float>? OnStuck;
 
     // entries in dalamud shared data cache must be reference types, so we use an array
     private readonly bool[] _sharedPathIsRunning;
@@ -94,10 +94,10 @@ public class FollowPath : IDisposable
         }
         else
         {
-            if (posPreviousFrame.HasValue)
+            if (Service.Config.StopOnStuck && posPreviousFrame.HasValue)
             {
                 float distance = Vector3.Distance(player.Position, posPreviousFrame.Value);
-                if (distance <= 0.05f)
+                if (distance <= Service.Config.StuckTolerance)
                 {
                     _millisecondsWithNoSignificantMovement += fwk.UpdateDelta.Milliseconds;
                 }
@@ -106,7 +106,7 @@ public class FollowPath : IDisposable
                     _millisecondsWithNoSignificantMovement = 0;
                 }
 
-                if (_millisecondsWithNoSignificantMovement >= 500)
+                if (_millisecondsWithNoSignificantMovement >= Service.Config.StuckTimeoutMs)
                 {
                     var destination = Waypoints[^1];
                     Stop();

@@ -138,8 +138,6 @@ public class FollowPath : IDisposable
                 }
             }
 
-            posPreviousFrame = player.Position;
-
             _camera.Enabled = Service.Config.AlignCameraToMovement;
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();

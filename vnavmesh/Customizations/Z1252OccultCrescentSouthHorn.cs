@@ -5,9 +5,9 @@ using System.Runtime.InteropServices;
 namespace Navmesh.Customizations;
 
 [CustomizationTerritory(1252)]
-internal class Z1252OccultCrescent : NavmeshCustomization
+internal class Z1252OccultCrescentSouthHorn : NavmeshCustomization
 {
-    public override int Version => 2;
+    public override int Version => 3;
 
     public override void CustomizeScene(SceneExtractor scene)
     {
@@ -36,5 +36,17 @@ internal class Z1252OccultCrescent : NavmeshCustomization
 
         // purple chest route
         config.AddOffMeshConnection(new Vector3(-337.27f, 47.34f, -419.95f), new Vector3(-333.29f, 7.06f, -451.97f));
+
+        // The Wanderer's Haven aetheryte platform to beach
+        config.AddOffMeshConnection(new Vector3(-175.51f, 6.5f, -607.24f), new Vector3(-183.04f, 3.85f, -607.21f));
+
+        // The Wanderer's Haven first platform to shallows (south)
+        config.AddOffMeshConnection(new Vector3(-416f, 3.8f, -562.77f), new Vector3(-439.071f, -0.3f, -556.1f));
+
+        // The Wanderer's Haven vertical path to shallows (south)
+        config.AddOffMeshConnection(new Vector3(-500.08f, 3.5f, -552.53f), new Vector3(-509.95f, -0.3f, -552.91f));
+
+        // Top of Heath Cliff (Brain Drain) to Beach (Cursed Concern)
+        config.AddOffMeshConnection(new Vector3(5.23f, 106.65f, -390.92f), new Vector3(16.14f, 25.44f, -437.46f));
     }
 }

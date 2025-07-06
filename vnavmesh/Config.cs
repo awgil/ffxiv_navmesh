@@ -19,6 +19,7 @@ public class Config
     public float StuckTolerance = 0.05f;
     public int StuckTimeoutMs = 500;
     public bool RetryOnStuck = true;
+    public float RandomnessMultiplier = 1f;
 
     public event Action? Modified;
 
@@ -53,11 +54,15 @@ public class Config
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("How long you can remain under the stuck threshold before stopping.");
 
-            if (ImGui.Checkbox("Retry pathing when stuck", ref RetryOnStuck))
+            if (ImGui.Checkbox("Retry pathing after stop", ref RetryOnStuck))
                 NotifyModified();
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("If enabled, the agent will attempt to re-path after being considered stuck.");
         }
+
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Randomness Multiplier", ref RandomnessMultiplier, 0f, 1.0f, "%.2f"))
+            NotifyModified();
     }
 
     public void Save(FileInfo file)

@@ -11,6 +11,7 @@ public class Config
 
     public bool AutoLoadNavmesh = true;
     public bool EnableDTR = true;
+    public bool ShowQueryStatusInDTR = true;
     public bool AlignCameraToMovement;
     public bool ShowWaypoints;
     public bool ForceShowGameCollision;
@@ -26,6 +27,8 @@ public class Config
         if (ImGui.Checkbox("Automatically load/build navigation data when changing zones", ref AutoLoadNavmesh))
             NotifyModified();
         if (ImGui.Checkbox("Enable DTR bar", ref EnableDTR))
+            NotifyModified();
+        if (ImGui.Checkbox("Show detailed query status in DTR", ref ShowQueryStatusInDTR))
             NotifyModified();
         if (ImGui.Checkbox("Align camera to movement direction", ref AlignCameraToMovement))
             NotifyModified();

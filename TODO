@@ -17,6 +17,4 @@
 -- theta* on mesh - easy?
 - jump / drop markup (offmesh connections?)
 - area transitions & high-level zone graph
-
-- show query status in DTR bar
 - fix custom navmesh tab (it doesn't actually replace the current mesh so it's basically using a bunch of CPU to do nothing)

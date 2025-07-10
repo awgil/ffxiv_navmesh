@@ -20,10 +20,12 @@ public class AsyncMoveRequest : IDisposable
     {
         _manager = manager;
         _follow = follow;
+        _follow.OnRepathRequested += HandleRepathRequest;
     }
 
     public void Dispose()
     {
+        _follow.OnRepathRequested -= HandleRepathRequest;
         if (_pendingTask != null)
         {
             if (!_pendingTask.IsCompleted)
@@ -66,5 +68,22 @@ public class AsyncMoveRequest : IDisposable
         _pendingFly = fly;
         _pendingDestRange = range;
         return true;
+    }
+
+    private void HandleRepathRequest(Vector3 currentPosition, Vector3 destination, bool wasFlying)
+    {
+        Service.Log.Information($"Handling re-path request from {currentPosition} to {destination}");
+        
+        // Cancel any existing pathfinding task
+        if (_pendingTask != null)
+        {
+            if (!_pendingTask.IsCompleted)
+                _pendingTask.Wait();
+            _pendingTask.Dispose();
+            _pendingTask = null;
+        }
+        
+        // Start new pathfinding task
+        MoveTo(destination, wasFlying, _pendingDestRange);
     }
 }

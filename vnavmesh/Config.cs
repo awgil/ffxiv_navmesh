@@ -17,6 +17,10 @@ public class Config
     public bool ForceShowGameCollision;
     public bool CancelMoveOnUserInput;
     public float RandomnessMultiplier = 1f;
+    public bool EnableStuckDetection = true;
+    public float StuckTimeoutSeconds = 5.0f;
+    public float StuckDistanceThreshold = 0.5f;
+    public int MaxRetryAttempts = 3;
 
     public event Action? Modified;
 
@@ -41,6 +45,23 @@ public class Config
         ImGui.SetNextItemWidth(200);
         if (ImGui.SliderFloat("Randomness Multiplier", ref RandomnessMultiplier, 0f, 1.0f, "%.2f"))
             NotifyModified();
+        
+        ImGui.Separator();
+        ImGui.Text("Stuck Detection");
+        if (ImGui.Checkbox("Enable stuck detection and auto re-pathing", ref EnableStuckDetection))
+            NotifyModified();
+        if (EnableStuckDetection)
+        {
+            ImGui.SetNextItemWidth(200);
+            if (ImGui.SliderFloat("Stuck timeout (seconds)", ref StuckTimeoutSeconds, 1.0f, 15.0f, "%.1f"))
+                NotifyModified();
+            ImGui.SetNextItemWidth(200);
+            if (ImGui.SliderFloat("Movement threshold (distance)", ref StuckDistanceThreshold, 0.1f, 2.0f, "%.1f"))
+                NotifyModified();
+            ImGui.SetNextItemWidth(200);
+            if (ImGui.SliderInt("Max retry attempts", ref MaxRetryAttempts, 1, 10))
+                NotifyModified();
+        }
     }
 
     public void Save(FileInfo file)

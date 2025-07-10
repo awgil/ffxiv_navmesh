@@ -49,6 +49,7 @@ public unsafe class OverrideMovement : IDisposable
     public bool UserInput { get; private set; }
 
     private bool _legacyMode;
+    private OverrideCamera? _camera;
 
     private delegate bool RMIWalkIsInputEnabled(void* self);
     private RMIWalkIsInputEnabled _rmiWalkIsInputEnabled1;
@@ -62,8 +63,9 @@ public unsafe class OverrideMovement : IDisposable
     [Signature("E8 ?? ?? ?? ?? 0F B6 0D ?? ?? ?? ?? B8")]
     private Hook<RMIFlyDelegate> _rmiFlyHook = null!;
 
-    public OverrideMovement()
+    public OverrideMovement(OverrideCamera? camera = null)
     {
+        _camera = camera;
         var rmiWalkIsInputEnabled1Addr = Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 84 C0 75 10 38 43 3C");
         var rmiWalkIsInputEnabled2Addr = Service.SigScanner.ScanText("E8 ?? ?? ?? ?? 84 C0 75 03 88 47 3F");
         Service.Log.Information($"RMIWalkIsInputEnabled1 address: 0x{rmiWalkIsInputEnabled1Addr:X}");
@@ -127,9 +129,21 @@ public unsafe class OverrideMovement : IDisposable
         var dirV = allowVertical ? Angle.FromDirection(new(dist.Y, new Vector2(dist.X, dist.Z).Length())) : default;
 
         var refDir = _legacyMode
-            ? ((CameraEx*)CameraManager.Instance()->GetActiveCamera())->DirH.Radians() + 180.Degrees()
+            ? GetCameraDirection()
             : player.Rotation.Radians();
         return (dirH - refDir, dirV);
+    }
+
+    private Angle GetCameraDirection()
+    {
+        // If camera alignment is enabled and we have a camera reference, use its target direction
+        if (_camera != null && _camera.Enabled && Service.Config.AlignCameraToMovement)
+        {
+            return _camera.DesiredAzimuth + 180.Degrees();
+        }
+        
+        // Otherwise use current camera direction
+        return ((CameraEx*)CameraManager.Instance()->GetActiveCamera())->DirH.Radians() + 180.Degrees();
     }
 
     private void OnConfigChanged(object? sender, ConfigChangeEvent evt) => UpdateLegacyMode();

@@ -20,6 +20,14 @@ public class AsyncMoveRequest : IDisposable
     {
         _manager = manager;
         _follow = follow;
+
+        _follow.OnStuck += (dest, fly, range) =>
+        {
+            if (!Service.Config.RetryOnStuck)
+                return;
+
+            MoveTo(dest, fly, range);
+        };
     }
 
     public void Dispose()

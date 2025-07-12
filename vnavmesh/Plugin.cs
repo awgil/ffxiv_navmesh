@@ -112,7 +112,7 @@ public sealed class Plugin : IDalamudPlugin
     private void OnUpdate(IFramework fwk)
     {
         _navmeshManager.Update();
-        _followPath.Update();
+        _followPath.Update(fwk);
         _asyncMove.Update();
         _dtrProvider.Update();
     }

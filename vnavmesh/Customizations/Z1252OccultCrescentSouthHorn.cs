@@ -48,5 +48,14 @@ internal class Z1252OccultCrescentSouthHorn : NavmeshCustomization
 
         // Top of Heath Cliff (Brain Drain) to Beach (Cursed Concern)
         config.AddOffMeshConnection(new Vector3(5.23f, 106.65f, -390.92f), new Vector3(16.14f, 25.44f, -437.46f));
+
+        // From Times Bygone drop
+        config.AddOffMeshConnection(new Vector3(-801.5f, 53.95f, 313.05f), new Vector3(-799.7f, 46.73f, 299.39f));
+
+        // Shadowed City roof drop 1
+        config.AddOffMeshConnection(new Vector3(778.16f, 110f, 533.72f), new Vector3(770.54f, 80.3f, 534.08f));
+
+        // Shadowed City roof drop 2
+        config.AddOffMeshConnection(new Vector3(831.25f, 98f, 722.47f), new Vector3(822.42f, 80f, 722.53f));
     }
 }

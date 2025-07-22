@@ -7,7 +7,7 @@ namespace Navmesh.Customizations;
 [CustomizationTerritory(1252)]
 internal class Z1252OccultCrescentSouthHorn : NavmeshCustomization
 {
-    public override int Version => 3;
+    public override int Version => 4;
 
     public override void CustomizeScene(SceneExtractor scene)
     {

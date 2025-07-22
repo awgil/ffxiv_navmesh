@@ -96,7 +96,8 @@ public class FollowPath : IDisposable
         {
             if (Service.Config.StopOnStuck && posPreviousFrame.HasValue)
             {
-                float distance = Vector3.Distance(player.Position, posPreviousFrame.Value);
+                float delta = fwk.UpdateDelta.Milliseconds / 1000f;
+                float distance = Vector3.Distance(player.Position, posPreviousFrame.Value) / delta;
                 if (distance <= Service.Config.StuckTolerance)
                 {
                     _millisecondsWithNoSignificantMovement += fwk.UpdateDelta.Milliseconds;

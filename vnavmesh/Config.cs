@@ -47,7 +47,7 @@ public class Config
 
         if (StopOnStuck)
         {
-            if (ImGui.SliderFloat("Stuck tolerance (units/frame)", ref StuckTolerance, 0.01f, 0.075f))
+            if (ImGui.SliderFloat("Stuck tolerance (yalms/second)", ref StuckTolerance, 0.5f, 3f))
                 NotifyModified();
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("The minimum distance the object must move each frame to avoid being considered stuck.");

@@ -19,8 +19,11 @@ public class SceneDefinition
     public List<(ulong key, Transform transform, uint crc, ulong matId, ulong matMask, ColliderType type)> Colliders = new();
     public List<(ulong key, Transform transform)> ExitRanges = new();
 
-    public unsafe void FillFromActiveLayout() => FillFromLayout(LayoutWorld.Instance()->ActiveLayout);
-    public unsafe void FillFromGlobalLayout() => FillFromLayout(LayoutWorld.Instance()->GlobalLayout);
+    public unsafe void FillFromActiveLayout()
+    {
+        FillFromLayout(LayoutWorld.Instance()->GlobalLayout);
+        FillFromLayout(LayoutWorld.Instance()->ActiveLayout);
+    }
 
     public unsafe void FillFromLayout(LayoutManager* layout)
     {

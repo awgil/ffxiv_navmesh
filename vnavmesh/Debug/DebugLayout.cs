@@ -34,6 +34,7 @@ public unsafe class DebugLayout : IDisposable
     private bool _groupByLayer = true;
     private bool _groupByInstanceType = true;
     private bool _groupByMaterial = false;
+    private string _filterById = "";
 
     public DebugLayout(DebugGameCollision coll)
     {
@@ -54,7 +55,7 @@ public unsafe class DebugLayout : IDisposable
         _insts.Clear();
     }
 
-    public static bool DrawInstance(UITree tree, string tag, LayoutManager* layout, ILayoutInstance* inst)
+    public static bool DrawInstance(UITree tree, string tag, LayoutManager* layout, ILayoutInstance* inst, DebugGameCollision coll)
     {
         using var ni = tree.Node($"{tag} {inst->Id.Type} L{inst->Id.LayerKey:X4} I{inst->Id.InstanceKey:X8}.{inst->SubId:X8} ({inst->Id.u0:X2}) = {(nint)inst:X}, pool-idx={inst->IndexInPool}, prefab-index={inst->IndexInPrefab}, nesting={inst->NestingLevel}, u29low={inst->Flags1 & 0xF}, u29hi={(inst->Flags1 >> 7) != 0}, flags={inst->Flags2:X2} {inst->Flags3:X2}###{tag}");
         var collider = inst->GetCollider();
@@ -111,7 +112,8 @@ public unsafe class DebugLayout : IDisposable
                             int index = 0;
                             foreach (var part in instPrefab->Instances.Instances)
                             {
-                                DrawInstance(tree, $"[{index++}]", layout, part.Value->Instance);
+                                if (DrawInstance(tree, $"[{index++}]", layout, part.Value->Instance, coll))
+                                    coll.VisualizeCollider(part.Value->Instance->GetCollider(), default, default);
                             }
                         }
                     }
@@ -329,8 +331,18 @@ public unsafe class DebugLayout : IDisposable
 
     private void DrawInstance(string tag, LayoutManager* layout, ILayoutInstance* inst)
     {
-        if (DrawInstance(_tree, tag, layout, inst))
+        if (DrawInstance(_tree, tag, layout, inst, _coll))
         {
+            if (inst->Id.Type == InstanceType.SharedGroup)
+            {
+                var sg = (SharedGroupLayoutInstance*)inst;
+                foreach (var obj in sg->Instances.Instances)
+                {
+                    var subcol = obj.Value->Instance->GetCollider();
+                    if (subcol != null)
+                        _coll.VisualizeCollider(subcol, default, default);
+                }
+            }
             var collider = inst->GetCollider();
             if (collider != null)
             {
@@ -530,6 +542,7 @@ public unsafe class DebugLayout : IDisposable
         ImGui.Checkbox("Group by layer", ref _groupByLayer);
         ImGui.Checkbox("Group by instance type", ref _groupByInstanceType);
         ImGui.Checkbox("Group by material", ref _groupByMaterial);
+        ImGui.InputText("Filter by ID", ref _filterById, 255);
         DrawInstancesByLayerGroup(_insts.Values);
     }
 
@@ -713,6 +726,11 @@ public unsafe class DebugLayout : IDisposable
     {
         foreach (var inst in insts)
         {
+            var matches = _filterById.Length == 0 || inst.InstanceId.ToString("X8").Contains(_filterById, StringComparison.InvariantCultureIgnoreCase) || ((nint)inst.Instance).ToString("X").Contains(_filterById, StringComparison.InvariantCultureIgnoreCase);
+
+            if (!matches)
+                continue;
+
             bool inGame = inst.Instance != null;
             var color = !inst.InFile ? 0xff0000ff : inGame != inst.ExpectedToBeInGame ? 0xffff00ff : !inGame ? 0xff00ffff : inst.Collider == null ? 0xff00ff00 : 0xffffffff;
             using var n = _tree.Node($"{inst.Type} {inst.InstanceId:X8}.{inst.SubId:X8} L{inst.LayerId:X4} LG{inst.LayerGroupId:X}: in-file={inst.InFile}, in-game={(nint)inst.Instance:X}, coll={(nint)inst.Collider:X}###{inst.InstanceId:X}.{inst.SubId:X}", inst.Instance == null, color);

@@ -439,7 +439,7 @@ public unsafe class DebugGameCollision : IDisposable
         }
 
         if (layoutInstance != null)
-            DebugLayout.DrawInstance(_tree, "Layout instance:", LayoutWorld.Instance()->ActiveLayout, layoutInstance);
+            DebugLayout.DrawInstance(_tree, "Layout instance:", LayoutWorld.Instance()->ActiveLayout, layoutInstance, this);
     }
 
     private void DrawColliderMesh(ColliderMesh* coll)

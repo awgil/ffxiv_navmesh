@@ -96,6 +96,7 @@ public sealed class NavmeshManager : IDisposable
                 {
                     var scene = new SceneDefinition();
                     scene.FillFromActiveLayout();
+                    scene.FillFromGlobalLayout();
                     var cacheKey = GetCacheKey(scene);
                     return (cacheKey, scene);
                 }, cancel);

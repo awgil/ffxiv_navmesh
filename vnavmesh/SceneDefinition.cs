@@ -20,6 +20,7 @@ public class SceneDefinition
     public List<(ulong key, Transform transform)> ExitRanges = new();
 
     public unsafe void FillFromActiveLayout() => FillFromLayout(LayoutWorld.Instance()->ActiveLayout);
+    public unsafe void FillFromGlobalLayout() => FillFromLayout(LayoutWorld.Instance()->GlobalLayout);
 
     public unsafe void FillFromLayout(LayoutManager* layout)
     {

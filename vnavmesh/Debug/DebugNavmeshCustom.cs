@@ -85,6 +85,7 @@ class DebugNavmeshCustom : IDisposable
             Service.Log.Debug("[navmesh] extract from scene");
             _scene = new();
             _scene.FillFromActiveLayout();
+            _scene.FillFromGlobalLayout();
             Service.Log.Debug("[navmesh] schedule async build");
             _task = Task.Run(() => BuildNavmesh(_scene, settings, includeTiles));
         }

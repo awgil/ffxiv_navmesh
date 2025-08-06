@@ -1,6 +1,6 @@
 ﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;

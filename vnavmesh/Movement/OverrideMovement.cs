@@ -93,7 +93,6 @@ public unsafe class OverrideMovement : IDisposable
         UserInput = *sumLeft != 0 || *sumForward != 0;
         if (movementAllowed && (IgnoreUserInput || *sumLeft == 0 && *sumForward == 0) && DirectionToDestination(false) is var relDir && relDir != null)
         {
-            Service.Log.Debug($"relative dir: {relDir}");
             var dir = relDir.Value.h.ToDirection();
             *sumLeft = dir.X;
             *sumForward = dir.Y;

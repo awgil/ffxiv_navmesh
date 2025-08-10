@@ -43,7 +43,7 @@ class DebugNavmeshManager : IDisposable
         var progress = _manager.LoadTaskProgress;
         if (progress >= 0)
         {
-            ImGui.ProgressBar(progress, new(200, 0));
+            ImGui.ProgressBar(progress, new Vector2(200, 0));
         }
         else
         {

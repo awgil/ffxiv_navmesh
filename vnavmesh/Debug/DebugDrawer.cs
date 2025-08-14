@@ -1,6 +1,6 @@
-﻿using Dalamud.Interface.Utility;
+﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
-using ImGuiNET;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
@@ -217,7 +217,8 @@ public unsafe class DebugDrawer : IDisposable
             var coeff = u * 2 - 1;
             res.Y += h * (1 - coeff * coeff);
             return res;
-        };
+        }
+        ;
 
         const int NumPoints = 8;
         const float u0 = 0.05f;

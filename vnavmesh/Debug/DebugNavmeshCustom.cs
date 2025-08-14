@@ -3,7 +3,7 @@ using DotRecast.Core;
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Navmesh.NavVolume;
 using System;
 using System.Numerics;

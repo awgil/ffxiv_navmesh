@@ -26,6 +26,8 @@ public class NavmeshCustomization
     public virtual void CustomizeScene(SceneExtractor scene) { }
 
     public virtual void CustomizeSettings(DtNavMeshCreateParams config) { }
+
+    public virtual void CustomizeMesh(DtNavMesh mesh) { }
 }
 
 // attribute that defines which territories particular customization applies to

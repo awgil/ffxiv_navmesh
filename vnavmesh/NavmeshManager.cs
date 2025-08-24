@@ -262,15 +262,13 @@ public sealed class NavmeshManager : IDisposable
         // TODO: we can build multiple tiles concurrently
         var builder = new NavmeshBuilder(scene, customization);
         var deltaProgress = 1.0f / (builder.NumTilesX * builder.NumTilesZ);
-        for (int z = 0; z < builder.NumTilesZ; ++z)
+        builder.BuildTiles(() =>
         {
-            for (int x = 0; x < builder.NumTilesX; ++x)
-            {
-                builder.BuildTile(x, z);
-                _loadTaskProgress += deltaProgress;
-                cancel.ThrowIfCancellationRequested();
-            }
-        }
+            _loadTaskProgress += deltaProgress;
+            cancel.ThrowIfCancellationRequested();
+        });
+        customization.CustomizeMesh(builder.Navmesh.Mesh);
+        builder.Navmesh.Mesh.ConnectCrossTileLinks();
 
         // write results to cache
         {

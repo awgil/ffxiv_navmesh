@@ -1,11 +1,12 @@
-﻿using Dalamud.Interface.Utility.Raii;
+﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
 using DotRecast.Core;
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
-using Dalamud.Bindings.ImGui;
 using Navmesh.NavVolume;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Threading.Tasks;
 
@@ -23,17 +24,24 @@ class DebugNavmeshCustom : IDisposable
         public override int Version => 1;
         public override bool IsFlyingSupported(SceneDefinition definition) => Flyable;
 
+        private static NavmeshCustomization? Existing => NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType) is { } t && t.Version > 0 ? t : null;
+
         public override void CustomizeScene(SceneExtractor scene)
         {
             if (LoadExisting)
-            {
-                var tt = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
-                if (tt.Version > 0)
-                {
-                    Service.Log.Debug($"loading existing customization {tt}");
-                    tt.CustomizeScene(scene);
-                }
-            }
+                Existing?.CustomizeScene(scene);
+        }
+
+        public override void CustomizeSettings(DtNavMeshCreateParams config)
+        {
+            if (LoadExisting)
+                Existing?.CustomizeSettings(config);
+        }
+
+        public override void CustomizeMesh(DtNavMesh mesh)
+        {
+            if (LoadExisting)
+                Existing?.CustomizeMesh(mesh);
         }
     }
 
@@ -112,20 +120,20 @@ class DebugNavmeshCustom : IDisposable
                 var timer = Timer.Create();
                 _builder = new(scene, customization);
 
+                List<((int X, int Z), Task<NavmeshBuilder.Intermediates> Task)> _tiles = [];
+
                 // create tile data and add to navmesh
                 _intermediates = new(_builder.NumTilesX, _builder.NumTilesZ);
                 if (includeTiles)
                 {
-                    for (int z = 0; z < _builder.NumTilesZ; ++z)
-                    {
-                        for (int x = 0; x < _builder.NumTilesX; ++x)
-                        {
-                            _intermediates.Tiles[x, z] = _builder.BuildTile(x, z);
-                        }
-                    }
+                    foreach (var ((x, z), intermediates) in _builder.BuildTiles())
+                        _intermediates.Tiles[x, z] = intermediates;
+
                     //int x = 9, z = 15;
                     //_intermediates.Tiles[x, z] = _builder.BuildTile(x, z);
                 }
+                Service.Log.Debug("running customization code");
+                customization.CustomizeMesh(_builder.Navmesh.Mesh);
 
                 _query = new(_builder.Navmesh);
                 Service.Log.Debug($"navmesh build time: {timer.Value().TotalMilliseconds}ms");

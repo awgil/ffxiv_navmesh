@@ -3,7 +3,10 @@ using DotRecast.Detour;
 using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 
 namespace Navmesh;
 
@@ -85,8 +88,43 @@ public class NavmeshBuilder
         }
     }
 
+    public List<((int X, int Z), Intermediates Intermediates)> BuildTiles(Action? onTileFinished = null)
+    {
+        var tiles = new List<((int X, int Z), Intermediates Intermediates)>();
+        var tasks = new List<((int, int), Task<(DtMeshData?, Voxelizer?, Intermediates)>)>();
+
+        for (var z = 0; z < NumTilesZ; z++)
+        {
+            for (var x = 0; x < NumTilesX; x++)
+            {
+                var z0 = z;
+                var x0 = x;
+                tasks.Add(((x0, z0), Task.Run(() =>
+                {
+                    var data = BuildTile(x0, z0);
+                    onTileFinished?.Invoke();
+                    return data;
+                })));
+            }
+        }
+
+        Task.WaitAll(tasks.Select(t => t.Item2));
+
+        foreach (var ((x, z), t) in tasks)
+        {
+            var (tile, vox, i) = t.Result;
+            tiles.Add(((x, z), i));
+            if (tile != null)
+                Navmesh.Mesh.AddTile(tile, 0, 0);
+            if (vox != null)
+                Navmesh.Volume?.Build(vox, x, z);
+        }
+
+        return tiles;
+    }
+
     // this can be called concurrently; returns intermediate data that can be discarded if not used
-    public Intermediates BuildTile(int x, int z)
+    public (DtMeshData?, Voxelizer?, Intermediates) BuildTile(int x, int z)
     {
         var timer = Timer.Create();
 
@@ -215,26 +253,26 @@ public class NavmeshBuilder
         customization.CustomizeSettings(navmeshConfig);
         var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
 
-        // 10. add tile to the navmesh
-        if (navmeshData != null)
-        {
-            lock (Navmesh.Mesh)
-            {
-                Navmesh.Mesh.AddTile(navmeshData, 0, 0);
-            }
-        }
+        //// 10. add tile to the navmesh
+        //if (navmeshData != null)
+        //{
+        //    lock (Navmesh.Mesh)
+        //    {
+        //        Navmesh.Mesh.AddTile(navmeshData, 0, 0);
+        //    }
+        //}
 
-        // 11. build nav volume data
-        // TODO: keep local 1x1x16 voxel map, and just merge under lock
-        if (Navmesh.Volume != null && vox != null)
-        {
-            lock (Navmesh.Volume)
-            {
-                Navmesh.Volume.Build(vox, x, z);
-            }
-        }
+        //// 11. build nav volume data
+        //// TODO: keep local 1x1x16 voxel map, and just merge under lock
+        //if (Navmesh.Volume != null && vox != null)
+        //{
+        //    lock (Navmesh.Volume)
+        //    {
+        //        Navmesh.Volume.Build(vox, x, z);
+        //    }
+        //}
 
         Service.Log.Debug($"built navmesh tile {x}x{z} in {timer.Value().TotalMilliseconds}ms");
-        return new(shf, chf, cset, pmesh, dmesh);
+        return (navmeshData, vox, new(shf, chf, cset, pmesh, dmesh));
     }
 }

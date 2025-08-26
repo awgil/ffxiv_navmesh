@@ -100,7 +100,7 @@ public sealed class NavmeshManager : IDisposable
                     return (cacheKey, scene);
                 }, cancel);
 
-                Log($"Kicking off build for '{cacheKey}'");
+                Log($"Kicking off build for '{cacheKey}' (reload={allowLoadFromCache})");
                 var navmesh = await Task.Run(() => BuildNavmesh(scene, cacheKey, allowLoadFromCache, cancel), cancel);
                 Log($"Mesh loaded: '{cacheKey}'");
                 Navmesh = navmesh;
@@ -200,7 +200,17 @@ public sealed class NavmeshManager : IDisposable
 
         var filter = LayoutUtils.FindFilter(layout);
         var filterKey = filter != null ? filter->Key : 0;
+
         var terrRow = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId);
+
+        // CE always has a festival layer (i hope). the non-festival layout is briefly loaded when entering the zone, which triggers a useless mesh build since the uninitialized zone is still the same size
+        if (terrRow?.TerritoryIntendedUse.RowId == 60)
+        {
+            var fest = layout->ActiveFestivals[0];
+            if (fest.Id == 0 && fest.Phase == 0)
+                return "";
+        }
+
         return $"{terrRow?.Bg}//{filterKey:X}//{LayoutUtils.FestivalsString(layout->ActiveFestivals)}";
     }
 

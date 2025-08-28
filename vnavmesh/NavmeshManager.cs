@@ -203,7 +203,7 @@ public sealed class NavmeshManager : IDisposable
 
         var terrRow = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId);
 
-        // CE always has a festival layer (i hope). the non-festival layout is briefly loaded when entering the zone, which triggers a useless mesh build since the uninitialized zone is still the same size
+        // CE always has a festival layer (i hope). the non-festival layout is briefly loaded when entering the zone, which triggers a useless mesh build (which is also expensive because the zone is large)
         if (terrRow?.TerritoryIntendedUse.RowId == 60)
         {
             var fest = layout->ActiveFestivals[0];

@@ -1,4 +1,5 @@
 ﻿using DotRecast.Detour;
+using System.Numerics;
 
 namespace Navmesh.Customizations;
 
@@ -6,7 +7,12 @@ namespace Navmesh.Customizations;
 internal class Z1237CosmicExploration01 : NavmeshCustomization
 {
     // empty customization to force rebuild for existing users, since SceneDefinition changed in 0.4
-    public override int Version => 1;
+    public override int Version => 2;
+
+    public override void CustomizeScene(SceneExtractor scene)
+    {
+        scene.InsertCylinderCollider(new Vector3(2, 10, 2), new Vector3(-206.5f, 29, 301.5f));
+    }
 
     public override void CustomizeMesh(DtNavMesh mesh)
     {

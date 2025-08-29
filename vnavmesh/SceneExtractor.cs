@@ -310,7 +310,7 @@ public class SceneExtractor
         return res;
     }
 
-    private static List<MeshPart> BuildBoxMesh()
+    public static List<MeshPart> BuildBoxMesh()
     {
         var mesh = new MeshPart();
         mesh.Vertices.Add(new(-1, -1, -1));

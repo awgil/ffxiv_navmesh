@@ -55,8 +55,6 @@ public class NavmeshCustomization
         if (status.Failed() || startRef == 0)
             throw new ArgumentException($"Unable to find a polygon corresponding with input point {pos}");
 
-        Service.Log.Debug($"point {pos} is {startPolyPoint} within {startRef:X}");
-
         mesh.GetTileAndPolyByRefUnsafe(startRef, out var startTile, out var startPoly);
         var p = new DtPoly(startTile.data.header.polyCount, 1)
         {
@@ -102,8 +100,6 @@ public class NavmeshCustomization
         link.bmin = link.bmax = 0;
         link.next = startTile.polyLinks[startPoly.index];
         startTile.polyLinks[startPoly.index] = idx;
-
-        Service.Log.Debug($"inserted single point {pointRef:X}");
 
         return pointRef;
     }

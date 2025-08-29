@@ -28,6 +28,85 @@ public class NavmeshCustomization
     public virtual void CustomizeSettings(DtNavMeshCreateParams config) { }
 
     public virtual void CustomizeMesh(DtNavMesh mesh) { }
+
+    protected static void LinkPoints(DtNavMesh mesh, Vector3 startPos, Vector3 endPos)
+    {
+        var refstart = InsertPointPoly(mesh, startPos, true);
+        var refend = InsertPointPoly(mesh, endPos, false);
+
+        mesh.GetTileAndPolyByRefUnsafe(refstart, out var startTile, out var startPoly);
+
+        // start point -> end point link
+        var idx = mesh.AllocLink(startTile);
+        DtLink link = startTile.links[idx];
+        link.refs = refend;
+        link.edge = 0;
+        link.side = 0;
+        link.bmin = link.bmax = 0;
+        link.next = startTile.polyLinks[startPoly.index];
+        startTile.polyLinks[startPoly.index] = idx;
+    }
+
+    private static long InsertPointPoly(DtNavMesh mesh, Vector3 pos, bool start)
+    {
+        var query = new DtNavMeshQuery(mesh);
+
+        var status = query.FindNearestPoly(pos.SystemToRecast(), new(5, 5, 5), new DtQueryDefaultFilter(), out var startRef, out var startPolyPoint, out _);
+        if (status.Failed() || startRef == 0)
+            throw new ArgumentException($"Unable to find a polygon corresponding with input point {pos}");
+
+        Service.Log.Debug($"point {pos} is {startPolyPoint} within {startRef:X}");
+
+        mesh.GetTileAndPolyByRefUnsafe(startRef, out var startTile, out var startPoly);
+        var p = new DtPoly(startTile.data.header.polyCount, 1)
+        {
+            vertCount = 1,
+            flags = 1
+        };
+        p.SetArea(Navmesh.OffMeshEndpoint);
+        p.SetPolyType(DtPolyTypes.DT_POLYTYPE_OFFMESH_CONNECTION);
+        p.verts[0] = startTile.data.header.vertCount;
+
+        startTile.data.header.polyCount += 1;
+        startTile.data.header.vertCount += 1;
+        Array.Resize(ref startTile.data.polys, startTile.data.header.polyCount);
+        Array.Resize(ref startTile.data.verts, startTile.data.header.vertCount * 3);
+
+        // add new poly to mesh
+        startTile.data.polys[^1] = p;
+        startTile.data.verts[^3] = startPolyPoint.X;
+        startTile.data.verts[^2] = startPolyPoint.Y;
+        startTile.data.verts[^1] = startPolyPoint.Z;
+
+        Array.Resize(ref startTile.polyLinks, startTile.polyLinks.Length + 1);
+        startTile.polyLinks[^1] = DtNavMesh.DT_NULL_LINK;
+
+        var salt = DtNavMesh.DecodePolyIdSalt(startRef);
+        var pointRef = DtNavMesh.EncodePolyId(salt, startTile.index, p.index);
+
+        // link point to the polygon it lies inside
+        var idx = mesh.AllocLink(startTile);
+        var link = startTile.links[idx];
+        link.refs = startRef;
+        link.edge = 0;
+        link.side = 0xff;
+        link.bmin = link.bmax = 0;
+        startTile.polyLinks[p.index] = idx;
+
+        // link owning polygon to point
+        idx = mesh.AllocLink(startTile);
+        link = startTile.links[idx];
+        link.refs = pointRef;
+        link.edge = 0xff;
+        link.side = 0xff;
+        link.bmin = link.bmax = 0;
+        link.next = startTile.polyLinks[startPoly.index];
+        startTile.polyLinks[startPoly.index] = idx;
+
+        Service.Log.Debug($"inserted single point {pointRef:X}");
+
+        return pointRef;
+    }
 }
 
 // attribute that defines which territories particular customization applies to

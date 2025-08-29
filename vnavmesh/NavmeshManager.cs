@@ -259,7 +259,9 @@ public sealed class NavmeshManager : IDisposable
                 Log($"Loading cache: {cache.FullName}");
                 using var stream = cache.OpenRead();
                 using var reader = new BinaryReader(stream);
-                return Navmesh.Deserialize(reader, customization.Version);
+                var mesh = Navmesh.Deserialize(reader, customization.Version);
+                customization.CustomizeMesh(mesh.Mesh);
+                return mesh;
             }
             catch (Exception ex)
             {
@@ -271,14 +273,12 @@ public sealed class NavmeshManager : IDisposable
         // cache doesn't exist or can't be used for whatever reason - build navmesh from scratch
         // TODO: we can build multiple tiles concurrently
         var builder = new NavmeshBuilder(scene, customization);
-        var deltaProgress = 1.0f / (builder.NumTilesX * builder.NumTilesZ);
+        var deltaProgress = 0.95f / (builder.NumTilesX * builder.NumTilesZ);
         builder.BuildTiles(() =>
         {
             _loadTaskProgress += deltaProgress;
             cancel.ThrowIfCancellationRequested();
         });
-        customization.CustomizeMesh(builder.Navmesh.Mesh);
-        builder.Navmesh.Mesh.ConnectCrossTileLinks();
 
         // write results to cache
         {
@@ -287,6 +287,8 @@ public sealed class NavmeshManager : IDisposable
             using var writer = new BinaryWriter(stream);
             builder.Navmesh.Serialize(writer);
         }
+        customization.CustomizeMesh(builder.Navmesh.Mesh);
+        _loadTaskProgress += 0.05f;
         return builder.Navmesh;
     }
 

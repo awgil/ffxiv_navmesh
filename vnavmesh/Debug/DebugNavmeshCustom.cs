@@ -54,13 +54,13 @@ class DebugNavmeshCustom : IDisposable
         {
             public int NumTilesX;
             public int NumTilesZ;
-            public NavmeshBuilder.Intermediates?[,] Tiles;
+            public RcBuilderResult?[,] Tiles;
 
             public IntermediateData(int numTilesX, int numTilesZ)
             {
                 NumTilesX = numTilesX;
                 NumTilesZ = numTilesZ;
-                Tiles = new NavmeshBuilder.Intermediates?[numTilesX, numTilesZ];
+                Tiles = new RcBuilderResult?[numTilesX, numTilesZ];
             }
         }
 
@@ -126,8 +126,8 @@ class DebugNavmeshCustom : IDisposable
                 _intermediates = new(_builder.NumTilesX, _builder.NumTilesZ);
                 if (includeTiles)
                 {
-                    foreach (var (x, z, intermediates) in _builder.BuildTiles())
-                        _intermediates.Tiles[x, z] = intermediates;
+                    foreach (var result in _builder.BuildTiles())
+                        _intermediates.Tiles[result.tileX, result.tileZ] = result;
 
                     //int x = 9, z = 15;
                     //_intermediates.Tiles[x, z] = _builder.BuildTile(x, z);
@@ -275,17 +275,17 @@ class DebugNavmeshCustom : IDisposable
                             continue;
 
                         var debug = _debugTiles[x, z] ??= new();
-                        debug.DrawSolidHeightfield ??= new(inter.Value.SolidHeightfield, _tree, _dd);
+                        debug.DrawSolidHeightfield ??= new(inter.GetSolidHeightfield(), _tree, _dd);
                         debug.DrawSolidHeightfield.Draw();
-                        debug.DrawCompactHeightfield ??= new(inter.Value.CompactHeightfield, _tree, _dd);
+                        debug.DrawCompactHeightfield ??= new(inter.GetCompactHeightfield(), _tree, _dd);
                         debug.DrawCompactHeightfield.Draw();
-                        debug.DrawContourSet ??= new(inter.Value.ContourSet, _tree, _dd);
+                        debug.DrawContourSet ??= new(inter.GetContourSet(), _tree, _dd);
                         debug.DrawContourSet.Draw();
-                        debug.DrawPolyMesh ??= new(inter.Value.PolyMesh, _tree, _dd);
+                        debug.DrawPolyMesh ??= new(inter.GetMesh(), _tree, _dd);
                         debug.DrawPolyMesh.Draw();
-                        if (inter.Value.DetailMesh != null)
+                        if (inter.GetMeshDetail() is { } det)
                         {
-                            debug.DrawPolyMeshDetail ??= new(inter.Value.DetailMesh, _tree, _dd);
+                            debug.DrawPolyMeshDetail ??= new(det, _tree, _dd);
                             debug.DrawPolyMeshDetail.Draw();
                         }
 

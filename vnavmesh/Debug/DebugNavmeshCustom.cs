@@ -126,7 +126,7 @@ class DebugNavmeshCustom : IDisposable
                 _intermediates = new(_builder.NumTilesX, _builder.NumTilesZ);
                 if (includeTiles)
                 {
-                    foreach (var ((x, z), intermediates) in _builder.BuildTiles())
+                    foreach (var (x, z, intermediates) in _builder.BuildTiles())
                         _intermediates.Tiles[x, z] = intermediates;
 
                     //int x = 9, z = 15;

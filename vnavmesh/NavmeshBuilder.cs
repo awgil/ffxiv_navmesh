@@ -6,7 +6,6 @@ using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 
@@ -90,10 +89,9 @@ public class NavmeshBuilder
         }
     }
 
-    public List<((int X, int Z), Intermediates Intermediates)> BuildTiles(Action? onTileFinished = null)
+    public IEnumerable<(int X, int Z, Intermediates Intermediates)> BuildTiles(Action? onTileFinished = null)
     {
-        var tiles = new List<((int X, int Z), Intermediates Intermediates)>();
-        var tasks = new List<((int, int), Task<(DtMeshData?, Voxelizer?, Intermediates)>)>();
+        var tasks = new List<Task<(int, int, (DtMeshData?, Voxelizer?, Intermediates))>>();
 
         for (var z = 0; z < NumTilesZ; z++)
         {
@@ -101,28 +99,26 @@ public class NavmeshBuilder
             {
                 var z0 = z;
                 var x0 = x;
-                tasks.Add(((x0, z0), Task.Run(() =>
+                tasks.Add(Task.Run(() =>
                 {
                     var data = BuildTile(x0, z0);
                     onTileFinished?.Invoke();
-                    return data;
-                })));
+                    return (x0, z0, data);
+                }));
             }
         }
 
-        Task.WaitAll(tasks.Select(t => t.Item2));
-
-        foreach (var ((x, z), t) in tasks)
+        foreach (var t in tasks)
         {
-            var (tile, vox, i) = t.Result;
-            tiles.Add(((x, z), i));
+            t.Wait();
+            var (x, z, (tile, vox, i)) = t.Result;
             if (tile != null)
                 Navmesh.Mesh.AddTile(tile, 0, 0);
             if (vox != null)
                 Navmesh.Volume?.Build(vox, x, z);
-        }
 
-        return tiles;
+            yield return (x, z, i);
+        }
     }
 
     // this can be called concurrently; returns intermediate data that can be discarded if not used

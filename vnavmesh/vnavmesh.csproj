@@ -80,6 +80,7 @@
   <ItemGroup>
     <ProjectReference Include="..\DotRecast\src\DotRecast.Core\DotRecast.Core.csproj" />
     <ProjectReference Include="..\DotRecast\src\DotRecast.Detour\DotRecast.Detour.csproj" />
+    <ProjectReference Include="..\DotRecast\src\DotRecast.Detour.Extras\DotRecast.Detour.Extras.csproj" />
     <ProjectReference Include="..\DotRecast\src\DotRecast.Recast\DotRecast.Recast.csproj" />
   </ItemGroup>
 

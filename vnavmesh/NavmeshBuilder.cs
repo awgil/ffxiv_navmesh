@@ -1,5 +1,7 @@
 ﻿using DotRecast.Core;
+using DotRecast.Core.Numerics;
 using DotRecast.Detour;
+using DotRecast.Detour.Extras.Jumplink;
 using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
@@ -251,6 +253,64 @@ public class NavmeshBuilder
             buildBvTree = true, // TODO: false if using layers?
         };
         customization.CustomizeSettings(navmeshConfig);
+
+        var builderResult = new RcBuilderResult(x, z, shf, chf, cset, pmesh, dmesh, Telemetry);
+        var bl = new JumpLinkBuilder([builderResult]);
+
+        void addConnections(List<JumpLink> links)
+        {
+            foreach (var link in links)
+            {
+                RcVec3f prev = default;
+                for (var i = 0; i < link.startSamples.Length; i++)
+                {
+                    var p = link.startSamples[i].p;
+                    var q = link.endSamples[i].p;
+                    if (i == 0 || RcVecUtils.Dist2D(prev, p) > Settings.AgentRadius)
+                    {
+                        navmeshConfig.AddOffMeshConnection(p.RecastToSystem(), q.RecastToSystem(), Settings.AgentRadius, false);
+                        prev = p;
+                    }
+                }
+            }
+        }
+
+        if (Settings.GenerateEdgeClimbLinks)
+        {
+            var cfg = new JumpLinkBuilderConfig(
+                Settings.CellSize,
+                Settings.CellHeight,
+                Settings.AgentRadius,
+                Settings.AgentHeight,
+                Settings.AgentMaxClimb,
+                Settings.GroundTolerance,
+                -Settings.AgentRadius * 0.2f,
+                Settings.CellSize + 2 * Settings.AgentRadius + Settings.ClimbDownDistance,
+                -Settings.ClimbDownMaxHeight,
+                -Settings.ClimbDownMinHeight,
+                0
+            );
+            addConnections(bl.Build(cfg, JumpLinkType.EDGE_CLIMB_DOWN));
+        }
+
+        if (Settings.GenerateEdgeJumpLinks)
+        {
+            var cfg = new JumpLinkBuilderConfig(
+                Settings.CellSize,
+                Settings.CellHeight,
+                Settings.AgentRadius,
+                Settings.AgentHeight,
+                Settings.AgentMaxClimb,
+                Settings.GroundTolerance,
+                -Settings.AgentRadius * 0.2f,
+                Settings.EdgeJumpEndDistance,
+                -Settings.EdgeJumpMaxDrop,
+                -Settings.EdgeJumpMinDrop,
+                Settings.EdgeJumpHeight
+            );
+            addConnections(bl.Build(cfg, JumpLinkType.EDGE_JUMP));
+        }
+
         var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
 
         //// 10. add tile to the navmesh

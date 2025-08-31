@@ -25,6 +25,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "meshtool", "meshtool\meshto
 		{A15D7C63-D8B7-4433-9F05-4832BB2F29C0} = {A15D7C63-D8B7-4433-9F05-4832BB2F29C0}
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotRecast.Detour.Extras", "DotRecast\src\DotRecast.Detour.Extras\DotRecast.Detour.Extras.csproj", "{55E26212-7003-F164-4095-7C1D49BE99ED}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -73,6 +75,14 @@ Global
 		{F4E1A085-2233-48D0-A19E-4E863FF8D1AA}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F4E1A085-2233-48D0-A19E-4E863FF8D1AA}.Release|x64.ActiveCfg = Release|Any CPU
 		{F4E1A085-2233-48D0-A19E-4E863FF8D1AA}.Release|x64.Build.0 = Release|Any CPU
+		{55E26212-7003-F164-4095-7C1D49BE99ED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{55E26212-7003-F164-4095-7C1D49BE99ED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{55E26212-7003-F164-4095-7C1D49BE99ED}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{55E26212-7003-F164-4095-7C1D49BE99ED}.Debug|x64.Build.0 = Debug|Any CPU
+		{55E26212-7003-F164-4095-7C1D49BE99ED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{55E26212-7003-F164-4095-7C1D49BE99ED}.Release|Any CPU.Build.0 = Release|Any CPU
+		{55E26212-7003-F164-4095-7C1D49BE99ED}.Release|x64.ActiveCfg = Release|Any CPU
+		{55E26212-7003-F164-4095-7C1D49BE99ED}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

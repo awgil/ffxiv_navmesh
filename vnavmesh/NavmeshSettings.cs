@@ -249,9 +249,7 @@ public class NavmeshSettings
             """);
         DrawConfigFloat(ref ClimbDownMaxHeight, 0, 100, 0.5f, "Climb down max height", "Undocumented");
         DrawConfigFloat(ref ClimbDownMinHeight, 0, 100, 0.5f, "Climb down min height", "Undocumented");
-        DrawConfigFloat(ref EdgeJumpEndDistance, 0, 100, 0.5f, "Edge jump end distance", """
-            Determines sample count for simulated edge jumps (roughly, distance/cellSize)
-            """);
+        DrawConfigFloat(ref EdgeJumpEndDistance, 0, 100, 0.5f, "Edge jump end distance", "Undocumented");
         DrawConfigFloat(ref EdgeJumpHeight, 0, 10, 0.1f, "Edge jump height", "Undocumented");
         DrawConfigFloat(ref EdgeJumpMaxDrop, 0, 100, 0.1f, "Edge jump max drop", "Undocumented");
         DrawConfigFloat(ref EdgeJumpMinDrop, 0, 100, 0.1f, "Edge jump min drop", "Undocumented");

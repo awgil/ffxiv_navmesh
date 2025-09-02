@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Navmesh;
@@ -92,6 +93,9 @@ public class NavmeshBuilder
     {
         var tiles = new List<((int X, int Z), Intermediates Intermediates)>();
         var tasks = new List<((int, int), Task<(DtMeshData?, Voxelizer?, Intermediates)>)>();
+        var threads = Math.Max(2, Environment.ProcessorCount / 3);
+        Service.Log.Debug($"Using maximum {threads} threads to build navmesh");
+        var semaphore = new SemaphoreSlim(threads, threads);
 
         for (var z = 0; z < NumTilesZ; z++)
         {
@@ -99,11 +103,19 @@ public class NavmeshBuilder
             {
                 var z0 = z;
                 var x0 = x;
-                tasks.Add(((x0, z0), Task.Run(() =>
+                tasks.Add(((x0, z0), Task.Run(async () =>
                 {
-                    var data = BuildTile(x0, z0);
-                    onTileFinished?.Invoke();
-                    return data;
+                    await semaphore.WaitAsync();
+                    try
+                    {
+                        var data = BuildTile(x0, z0);
+                        onTileFinished?.Invoke();
+                        return data;
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
                 })));
             }
         }

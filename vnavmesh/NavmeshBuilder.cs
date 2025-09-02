@@ -93,7 +93,7 @@ public class NavmeshBuilder
     {
         var tiles = new List<((int X, int Z), Intermediates Intermediates)>();
         var tasks = new List<((int, int), Task<(DtMeshData?, Voxelizer?, Intermediates)>)>();
-        var threads = Math.Max(2, Environment.ProcessorCount / 3);
+        var threads = Math.Max(2, (int)Math.Ceiling(Environment.ProcessorCount / 3f));
         Service.Log.Debug($"Using maximum {threads} threads to build navmesh");
         var semaphore = new SemaphoreSlim(threads, threads);
 

@@ -7,6 +7,7 @@ using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Navmesh;
@@ -89,9 +90,21 @@ public class NavmeshBuilder
         }
     }
 
-    public IEnumerable<RcBuilderResult> BuildTiles()
+    public List<RcBuilderResult> BuildTiles(Action? onTileFinished = null)
     {
         var tasks = new List<Task<(DtMeshData?, Voxelizer?, RcBuilderResult)>>();
+
+        int threadCount;
+
+        var maxThreads = Environment.ProcessorCount;
+        var wantedThreads = Service.Config.BuildMaxCores;
+        if (wantedThreads <= 0)
+            threadCount = maxThreads + wantedThreads;
+        else
+            threadCount = wantedThreads;
+        threadCount = Math.Clamp(threadCount, 1, maxThreads);
+
+        var sem = new SemaphoreSlim(threadCount, threadCount);
 
         for (var z = 0; z < NumTilesZ; z++)
         {
@@ -99,9 +112,24 @@ public class NavmeshBuilder
             {
                 var z0 = z;
                 var x0 = x;
-                tasks.Add(Task.Run(() => BuildTile(x0, z0)));
+                tasks.Add(Task.Run(async () =>
+                {
+                    await sem.WaitAsync();
+                    try
+                    {
+                        var data = BuildTile(x0, z0);
+                        onTileFinished?.Invoke();
+                        return data;
+                    }
+                    finally
+                    {
+                        sem.Release();
+                    }
+                }));
             }
         }
+
+        var results = new List<RcBuilderResult>();
 
         foreach (var t in tasks)
         {
@@ -112,8 +140,10 @@ public class NavmeshBuilder
             if (vox != null)
                 Navmesh.Volume?.Build(vox, result.tileX, result.tileZ);
 
-            yield return result;
+            results.Add(result);
         }
+
+        return results;
     }
 
     // this can be called concurrently; returns intermediate data that can be discarded if not used

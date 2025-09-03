@@ -1,12 +1,13 @@
 ﻿using DotRecast.Detour;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
 namespace Navmesh.Customizations;
 
 [CustomizationTerritory(1237)]
-internal class Z1237CosmicExploration01 : NavmeshCustomization
+internal class Z1237SinusArdorum : NavmeshCustomization
 {
     public override int Version => 3;
 
@@ -48,12 +49,12 @@ internal class Z1237CosmicExploration01 : NavmeshCustomization
     const float pi = MathF.PI;
     const float hpi = pi / 2;
 
-    public override void CustomizeMesh(DtNavMesh mesh)
+    public override void CustomizeMesh(DtNavMesh mesh, List<uint> festivalLayers)
     {
         (Vector3 DepartPoint, Vector3 ArrivePoint) getPoints(Vector3 worldPos, Vector3 rotation)
         {
             var q = Quaternion.CreateFromYawPitchRoll(rotation.Y, rotation.X, rotation.Z);
-            var adjD = Vector3.Transform(new(4.5f, 2.5f, 3), q);
+            var adjD = Vector3.Transform(new(4.5f, 2.5f, 2.8f), q);
             var adjA = Vector3.Transform(new(-4.5f, 2.7f, 1.3f), q);
             return (adjD + worldPos, adjA + worldPos);
         }

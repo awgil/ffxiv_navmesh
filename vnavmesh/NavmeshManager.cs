@@ -250,6 +250,8 @@ public sealed class NavmeshManager : IDisposable
         var customization = NavmeshCustomizationRegistry.ForTerritory(scene.TerritoryID);
         Log($"Customization for '{scene.TerritoryID}': {customization.GetType()}");
 
+        var layers = scene.FestivalLayers.ToList();
+
         // try reading from cache
         var cache = new FileInfo($"{_cacheDir.FullName}/{cacheKey}.navmesh");
         if (allowLoadFromCache && cache.Exists)
@@ -260,7 +262,7 @@ public sealed class NavmeshManager : IDisposable
                 using var stream = cache.OpenRead();
                 using var reader = new BinaryReader(stream);
                 var mesh = Navmesh.Deserialize(reader, customization.Version);
-                customization.CustomizeMesh(mesh.Mesh);
+                customization.CustomizeMesh(mesh.Mesh, layers);
                 return mesh;
             }
             catch (Exception ex)
@@ -274,11 +276,11 @@ public sealed class NavmeshManager : IDisposable
         // TODO: we can build multiple tiles concurrently
         var builder = new NavmeshBuilder(scene, customization);
         var deltaProgress = 0.95f / (builder.NumTilesX * builder.NumTilesZ);
-        foreach (var _ in builder.BuildTiles())
+        builder.BuildTiles(() =>
         {
             _loadTaskProgress += deltaProgress;
             cancel.ThrowIfCancellationRequested();
-        }
+        });
 
         // write results to cache
         {
@@ -287,7 +289,7 @@ public sealed class NavmeshManager : IDisposable
             using var writer = new BinaryWriter(stream);
             builder.Navmesh.Serialize(writer);
         }
-        customization.CustomizeMesh(builder.Navmesh.Mesh);
+        customization.CustomizeMesh(builder.Navmesh.Mesh, layers);
         _loadTaskProgress += 0.05f;
         return builder.Navmesh;
     }

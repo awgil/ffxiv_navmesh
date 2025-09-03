@@ -27,7 +27,7 @@ public class NavmeshCustomization
 
     public virtual void CustomizeSettings(DtNavMeshCreateParams config) { }
 
-    public virtual void CustomizeMesh(DtNavMesh mesh) { }
+    public virtual void CustomizeMesh(DtNavMesh mesh, List<uint> festivalLayers) { }
 
     protected static void LinkPoints(DtNavMesh mesh, Vector3 startPos, Vector3 endPos)
     {

@@ -1,4 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Components;
 using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
@@ -21,6 +22,9 @@ public class Config
     public int StuckTimeoutMs = 500;
     public bool RetryOnStuck = true;
     public float RandomnessMultiplier = 1f;
+    public int BuildMaxCores = 1;
+
+    private static readonly int realMaxCores = Environment.ProcessorCount;
 
     public event Action? Modified;
 
@@ -44,6 +48,11 @@ public class Config
             NotifyModified();
         if (ImGui.Checkbox("Stop pathing when stuck", ref StopOnStuck))
             NotifyModified();
+
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderInt("Max cores used during mesh build", ref BuildMaxCores, -8, realMaxCores))
+            NotifyModified();
+        ImGuiComponents.HelpMarker("0 = use all available; positive number = use that many cores; negative number = leave that many cores idle");
 
         if (StopOnStuck)
         {

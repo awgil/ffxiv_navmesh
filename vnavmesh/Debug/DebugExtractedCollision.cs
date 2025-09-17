@@ -1,6 +1,6 @@
-﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+﻿using Dalamud.Bindings.ImGui;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
-using Dalamud.Bindings.ImGui;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
@@ -122,6 +122,8 @@ public class DebugExtractedCollision : IDisposable
         _tree.LeafNode($"{tag} scale: {transform.Scale}");
     }
 
+    private string _meshFilter = "";
+
     private void DrawExtractor()
     {
         using var nr = _tree.Node("Extracted geometry");
@@ -130,12 +132,20 @@ public class DebugExtractedCollision : IDisposable
         if (!nr.Opened)
             return;
 
+        ImGui.InputText("Filter", ref _meshFilter);
+
         if (ImGui.Button("Export to DotRecast obj file"))
             ExportMesh();
 
         int meshIndex = 0;
         foreach (var (name, mesh) in _extractor.Meshes)
         {
+            if (_meshFilter.Length > 0 && !name.Contains(_meshFilter, StringComparison.InvariantCultureIgnoreCase))
+            {
+                meshIndex++;
+                continue;
+            }
+
             using var nm = _tree.Node($"{name}: flags={mesh.MeshType}");
             if (nm.SelectedOrHovered)
                 VisualizeMeshInstances(meshIndex);

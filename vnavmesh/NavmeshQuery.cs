@@ -25,15 +25,16 @@ public class NavmeshQuery
         }
     }
 
-    private class TestFilter : IDtQueryFilter
+    private class TeleportingQueryFilter : IDtQueryFilter
     {
         private readonly DtQueryDefaultFilter _f = new();
 
         public float GetCost(RcVec3f pa, RcVec3f pb, long prevRef, DtMeshTile prevTile, DtPoly prevPoly, long curRef, DtMeshTile curTile, DtPoly curPoly, long nextRef, DtMeshTile nextTile, DtPoly nextPoly)
         {
             var cst = _f.GetCost(pa, pb, prevRef, prevTile, prevPoly, curRef, curTile, curPoly, nextRef, nextTile, nextPoly);
-            if (curPoly.GetArea() == Navmesh.OffMeshEndpoint && nextPoly?.GetArea() == Navmesh.OffMeshEndpoint)
-                cst *= 0.3f;
+            // increase cost of regular connections instead of reducing cost of off-mesh connections, since lowering cost interferes with heuristic
+            if (!(curPoly.GetArea() == Navmesh.OffMeshEndpoint && nextPoly?.GetArea() == Navmesh.OffMeshEndpoint))
+                cst *= 3;
             return cst;
         }
 
@@ -48,7 +49,7 @@ public class NavmeshQuery
     public DtNavMeshQuery MeshQuery;
     public VoxelPathfind? VolumeQuery;
     private readonly IDtQueryFilter _filter = new DtQueryDefaultFilter();
-    private readonly IDtQueryFilter _pathFilter = new TestFilter();
+    private readonly IDtQueryFilter _pathFilter = new TeleportingQueryFilter();
 
     public List<long> LastPath => _lastPath;
     private List<long> _lastPath = [];

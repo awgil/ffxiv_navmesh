@@ -1,9 +1,11 @@
-﻿namespace Navmesh.Customizations;
+﻿using DotRecast.Detour;
+
+namespace Navmesh.Customizations;
 
 [CustomizationTerritory(132)]
 internal class Z0132NewGridania : NavmeshCustomization
 {
-    public override int Version => 1;
+    public override int Version => 2;
 
     public override void CustomizeScene(SceneExtractor scene)
     {
@@ -11,5 +13,10 @@ internal class Z0132NewGridania : NavmeshCustomization
             foreach (var inst in mesh.Instances)
                 // setting the planter as unwalkable has no effect and i don't feel like figuring out why so just double the height instead
                 inst.WorldTransform.M22 *= 2;
+    }
+
+    public override void CustomizeSettings(DtNavMeshCreateParams config)
+    {
+        config.AddOffMeshConnection(new(45.03f, -0.13f, 83.1f), new(46.78f, -8.5f, 91.75f));
     }
 }

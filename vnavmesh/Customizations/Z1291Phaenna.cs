@@ -159,5 +159,22 @@ internal class Z1291Phaenna : NavmeshCustomization
         // W sands <-> S sands
         addCosmoliner(new(-768, 13.5f, -246), new(pi, 0, pi), new(-604, 24.5f, 50), new(0, hpi, 0));
         #endregion
+
+        if (festivalVersion < 0x14)
+            return;
+
+        #region pools
+        // soda-lime float <-> pools E
+        addCosmoliner(new(279, -9.5f, 132), new(0, -hpi, 0), new(830, -168, 415), new(0, 0.349f, 0));
+
+        // pools E <-> pools S
+        addCosmoliner(new(830, -168, 455), new(pi, -0.349f, pi), new(549.696f, -220, 748.473f), new(0, -1.396f, 0));
+
+        // pools S <-> chasm
+        addCosmoliner(new(510.304f, -220, 741.527f), new(0, 1.047f, 0), new(405.832f, -230, 253.635f), new(-pi, -0.175f, pi));
+
+        // chasm <-> pools middle
+        addCosmoliner(new(433.635f, -230, 234.168f), new(pi, 1.396f, pi), new(660, -242, 420), new(0, 0.785f, 0));
+        #endregion
     }
 }

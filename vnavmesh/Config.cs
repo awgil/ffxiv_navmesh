@@ -1,5 +1,6 @@
 ﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Components;
+using Dalamud.Interface.Utility.Raii;
 using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
@@ -14,6 +15,7 @@ public class Config
     public bool EnableDTR = true;
     public bool ShowQueryStatusInDTR = true;
     public bool AlignCameraToMovement;
+    public float AlignCameraHeight = -15;
     public bool ShowWaypoints;
     public bool ForceShowGameCollision;
     public bool CancelMoveOnUserInput;
@@ -40,6 +42,12 @@ public class Config
             NotifyModified();
         if (ImGui.Checkbox("Align camera to movement direction", ref AlignCameraToMovement))
             NotifyModified();
+        using (ImRaii.Disabled(!AlignCameraToMovement))
+        {
+            ImGui.SetNextItemWidth(200);
+            if (ImGui.SliderFloat("Camera height (degrees)", ref AlignCameraHeight, -75, 75))
+                NotifyModified();
+        }
         if (ImGui.Checkbox("Show active waypoints", ref ShowWaypoints))
             NotifyModified();
         if (ImGui.Checkbox("Always visualize game collision", ref ForceShowGameCollision))

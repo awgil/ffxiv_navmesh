@@ -1,9 +1,9 @@
 ﻿using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Dalamud.Plugin.Services;
 
 namespace Navmesh.Movement;
 
@@ -142,7 +142,7 @@ public class FollowPath : IDisposable
             _camera.Enabled = Service.Config.AlignCameraToMovement;
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
-            _camera.DesiredAltitude = -30.Degrees();
+            _camera.DesiredAltitude = Service.Config.AlignCameraHeight.Degrees();
         }
     }
 

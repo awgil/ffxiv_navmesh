@@ -9,7 +9,7 @@ namespace Navmesh.Customizations;
 [CustomizationTerritory(1237)]
 internal class Z1237SinusArdorum : NavmeshCustomization
 {
-    public override int Version => 3;
+    public override int Version => 4;
 
     public override void CustomizeScene(SceneExtractor scene)
     {
@@ -43,6 +43,12 @@ internal class Z1237SinusArdorum : NavmeshCustomization
                 vert += new Vector3(0, 6.25f, 0.5f);
             }
             mesh.Parts.Add(box);
+        }
+
+        if (scene.Meshes.TryGetValue("bg/ffxiv/cos_c1/hou/common/collision/c1w0_00_bx00d.pcb", out var mesh2))
+        {
+            foreach (var inst in mesh2.Instances)
+                inst.WorldTransform.M22 *= 2;
         }
     }
 

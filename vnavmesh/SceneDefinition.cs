@@ -58,6 +58,11 @@ public class SceneDefinition
             foreach (var (k, v) in *bgParts)
             {
                 var cast = (BgPartsLayoutInstance*)v.Value;
+                // TODO: figure out why these two calls wouldn't match in an active layout
+                // new DT yok huy crafter area is a complete mess because tons of inactive colliders (for later zone development) are present in the layout
+                if (cast->WantToBeActive() && !cast->IsColliderActive())
+                    continue;
+
                 if (cast->AnalyticShapeDataCrc != 0)
                 {
                     BgParts.Add((k, *v.Value->GetTransformImpl(), cast->AnalyticShapeDataCrc, ((ulong)cast->CollisionMaterialIdHigh << 32) | cast->CollisionMaterialIdLow, ((ulong)cast->CollisionMaterialMaskHigh << 32) | cast->CollisionMaterialMaskLow, true));

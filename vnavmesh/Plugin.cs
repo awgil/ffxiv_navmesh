@@ -14,6 +14,7 @@ namespace Navmesh;
 public sealed class Plugin : IDalamudPlugin
 {
     private WindowSystem WindowSystem = new("vnavmesh");
+    private ColliderSet _colliderSet;
     private NavmeshManager _navmeshManager;
     private FollowPath _followPath;
     private AsyncMoveRequest _asyncMove;
@@ -37,7 +38,8 @@ public sealed class Plugin : IDalamudPlugin
         Service.Config.Load(dalamud.ConfigFile);
         Service.Config.Modified += () => Service.Config.Save(dalamud.ConfigFile);
 
-        _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
+        _colliderSet = new();
+        _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"), _colliderSet);
         _followPath = new(dalamud, _navmeshManager);
         _asyncMove = new(_navmeshManager, _followPath);
         _dtrProvider = new(_navmeshManager, _asyncMove, _followPath);
@@ -95,6 +97,7 @@ public sealed class Plugin : IDalamudPlugin
         _asyncMove.Dispose();
         _followPath.Dispose();
         _navmeshManager.Dispose();
+        _colliderSet.Dispose();
     }
 
     public static void DuoLog(Exception ex)

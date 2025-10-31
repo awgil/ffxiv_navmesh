@@ -1,11 +1,11 @@
-﻿using FFXIVClientStructs.FFXIV.Client.Game;
+﻿using Dalamud.Bindings.ImGui;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.Interop;
-using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,6 +29,7 @@ public unsafe class DebugLayout : IDisposable
 
     private UITree _tree = new();
     private DebugGameCollision _coll;
+    private DebugDrawer _dd;
     private Dictionary<ulong, InstanceData> _insts = new();
     private bool _groupByLayerGroup = true;
     private bool _groupByLayer = true;
@@ -36,8 +37,9 @@ public unsafe class DebugLayout : IDisposable
     private bool _groupByMaterial = false;
     private string _filterById = "";
 
-    public DebugLayout(DebugGameCollision coll)
+    public DebugLayout(DebugDrawer dd, DebugGameCollision coll)
     {
+        _dd = dd;
         _coll = coll;
     }
 
@@ -53,6 +55,48 @@ public unsafe class DebugLayout : IDisposable
             DrawFile($"Territory {Service.ClientState.TerritoryType}", $"bg/{terr.Value.Bg}.lvb");
         DrawComparison(LayoutWorld.Instance()->ActiveLayout);
         _insts.Clear();
+    }
+
+    [Flags]
+    enum InstanceFlags
+    {
+        None = 0,
+        InFile = 1 << 0,
+        InGame = 1 << 1,
+        InGameMismatch = 1 << 2,
+        HasCollider = 1 << 3
+    }
+
+    private static InstanceFlags GetFlags(InstanceData inst)
+    {
+        var flags = InstanceFlags.None;
+        if (inst.InFile)
+            flags |= InstanceFlags.InFile;
+        var inGame = inst.Instance != null;
+        if (inGame)
+            flags |= InstanceFlags.InGame;
+        if (inGame != inst.ExpectedToBeInGame)
+            flags |= InstanceFlags.InGameMismatch;
+        if (inst.Collider != null)
+            flags |= InstanceFlags.HasCollider;
+        return flags;
+    }
+
+    private static uint ColorInstance(InstanceFlags flags)
+    {
+        if (!flags.HasFlag(InstanceFlags.InFile))
+            return 0xFF0000FF;
+
+        if (flags.HasFlag(InstanceFlags.InGameMismatch))
+            return 0xFFFF00FF;
+
+        if (!flags.HasFlag(InstanceFlags.InGame))
+            return 0xFF00FFFF;
+
+        if (!flags.HasFlag(InstanceFlags.HasCollider))
+            return 0xFF00FF00;
+
+        return 0xFFFFFFFF;
     }
 
     public static bool DrawInstance(UITree tree, string tag, LayoutManager* layout, ILayoutInstance* inst, DebugGameCollision coll)
@@ -726,16 +770,31 @@ public unsafe class DebugLayout : IDisposable
     {
         foreach (var inst in insts)
         {
-            var matches = _filterById.Length == 0 || inst.InstanceId.ToString("X8").Contains(_filterById, StringComparison.InvariantCultureIgnoreCase) || ((nint)inst.Instance).ToString("X").Contains(_filterById, StringComparison.InvariantCultureIgnoreCase);
+            var nodeLabel = $"{inst.Type} {inst.InstanceId:X8}.{inst.SubId:X8} L{inst.LayerId:X4} LG{inst.LayerGroupId:X}: in-file={inst.InFile}, in-game={(nint)inst.Instance:X}, coll={(nint)inst.Collider:X}###{inst.InstanceId:X}.{inst.SubId:X}";
+            var matches = _filterById.Length == 0 || nodeLabel.Contains(_filterById, StringComparison.InvariantCultureIgnoreCase);
 
             if (!matches)
                 continue;
 
-            bool inGame = inst.Instance != null;
-            var color = !inst.InFile ? 0xff0000ff : inGame != inst.ExpectedToBeInGame ? 0xffff00ff : !inGame ? 0xff00ffff : inst.Collider == null ? 0xff00ff00 : 0xffffffff;
-            using var n = _tree.Node($"{inst.Type} {inst.InstanceId:X8}.{inst.SubId:X8} L{inst.LayerId:X4} LG{inst.LayerGroupId:X}: in-file={inst.InFile}, in-game={(nint)inst.Instance:X}, coll={(nint)inst.Collider:X}###{inst.InstanceId:X}.{inst.SubId:X}", inst.Instance == null, color);
-            if (n.SelectedOrHovered && inst.Collider != null)
-                _coll.VisualizeCollider(inst.Collider, default, default);
+            var flags = GetFlags(inst);
+            var color = ColorInstance(flags);
+
+            using var n = _tree.Node(nodeLabel, inst.Instance == null, color);
+            if (n.SelectedOrHovered)
+            {
+                if (inst.Collider == null)
+                {
+                    if (inst.Instance != null)
+                    {
+                        var trans = inst.Instance->GetTranslationImpl();
+                        _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, *trans, 0xFFFF00FF);
+                    }
+                }
+                else
+                    _coll.VisualizeCollider(inst.Collider, default, default);
+            }
+            if (n.Hovered)
+                ImGui.SetTooltip(flags.ToString());
             if (!n.Opened)
                 continue;
             DrawInstance("Game", inst.Instance->Layout, inst.Instance);

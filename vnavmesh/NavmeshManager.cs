@@ -3,6 +3,7 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -34,10 +35,16 @@ public sealed class NavmeshManager : IDisposable
 
     private DirectoryInfo _cacheDir;
 
-    public NavmeshManager(DirectoryInfo cacheDir)
+    private readonly Debounce _timer = new(5000);
+    private readonly ColliderSet _colliders;
+
+    public unsafe NavmeshManager(DirectoryInfo cacheDir, ColliderSet colliders)
     {
         _cacheDir = cacheDir;
         cacheDir.Create(); // ensure directory exists
+
+        _colliders = colliders;
+        //_colliders.Changed += SpawnTimer;
 
         // prepare a task with correct task scheduler that other tasks can be chained off
         _lastLoadQueryTask = Service.Framework.Run(() => Log("Tasks kicked off"));
@@ -46,6 +53,8 @@ public sealed class NavmeshManager : IDisposable
     public void Dispose()
     {
         Log("Disposing");
+        _colliders.Dispose();
+        _timer.Dispose();
         ClearState();
     }
 
@@ -211,7 +220,9 @@ public sealed class NavmeshManager : IDisposable
                 return "";
         }
 
-        return $"{terrRow?.Bg}//{filterKey:X}//{LayoutUtils.FestivalsString(layout->ActiveFestivals)}";
+        var sgs = LayoutUtils.GetZoneSharedGroupsEnabled(filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId);
+
+        return $"{terrRow?.Bg}//{filterKey:X}//{LayoutUtils.FestivalsString(layout->ActiveFestivals)}//{string.Join('.', sgs)}";
     }
 
     internal static unsafe string GetCacheKey(SceneDefinition scene)
@@ -220,8 +231,12 @@ public sealed class NavmeshManager : IDisposable
         var layout = LayoutWorld.Instance()->ActiveLayout;
         var filter = LayoutUtils.FindFilter(layout);
         var filterKey = filter != null ? filter->Key : 0;
-        var terrRow = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId);
-        return $"{terrRow?.Bg.ToString().Replace('/', '_')}__{filterKey:X}__{string.Join('.', scene.FestivalLayers.Select(id => id.ToString("X")))}";
+        var terrId = filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId;
+        var terrRow = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(terrId);
+
+        static string numbers<T>(IEnumerable<T> nums) where T : INumber<T> => string.Join('.', nums.Select(n => n.ToString("X", CultureInfo.InvariantCulture)));
+
+        return $"{terrRow?.Bg.ToString().Replace('/', '_')}__{filterKey:X}__{numbers(scene.FestivalLayers)}__{numbers(scene.ZoneSGs)}";
     }
 
     private void ClearState()
@@ -339,5 +354,22 @@ public sealed class NavmeshManager : IDisposable
     {
         if (task.IsFaulted)
             Service.Log.Error($"[NavmeshManager] Task failed with error: {task.Exception}");
+    }
+
+    public readonly List<CollidersChangedEventArgs> ColliderHistory = [];
+
+    private void SpawnTimer(object? sender, CollidersChangedEventArgs args)
+    {
+        if (sender is not ColliderSet coll)
+            return;
+
+        ColliderHistory.Insert(0, args);
+        if (ColliderHistory.Count >= 5)
+            ColliderHistory.RemoveRange(5, ColliderHistory.Count - 5);
+
+        _timer.Spawn(tok =>
+        {
+            // TODO: trigger mesh rebuild
+        });
     }
 }

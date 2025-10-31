@@ -23,7 +23,7 @@ public class MainWindow : Window, IDisposable
         _debugGameColl = new(_dd);
         _debugNavmeshManager = new(_dd, _debugGameColl, manager, path, move, dtr);
         _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _configDirectory);
-        _debugLayout = new(_debugGameColl);
+        _debugLayout = new(_dd, _debugGameColl);
     }
 
     public void Dispose()

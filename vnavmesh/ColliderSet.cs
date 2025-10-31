@@ -5,16 +5,19 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.Interop;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Navmesh;
 
-public record struct CollidersChangedEventArgs(Pointer<ILayoutInstance> Instance, bool Active, ulong CacheKey);
-
 public sealed unsafe class ColliderSet : IDisposable
 {
-    private readonly SortedSet<ulong> _colliders = [];
+    public readonly SortedSet<ulong> Colliders = [];
 
-    public event EventHandler<CollidersChangedEventArgs> Changed = delegate { };
+    public event Action<ColliderSet> Initialized = delegate { };
+    public event Action<ColliderSet, Pointer<ILayoutInstance>, bool, ulong> Changed = delegate { };
+    public event Action<ColliderSet> Cleared = delegate { };
 
     private unsafe delegate void BgPartsSetActiveDelegate(BgPartsLayoutInstance* thisPtr, byte active);
     private readonly Hook<BgPartsSetActiveDelegate> _bgPartsSetActiveHook;
@@ -23,7 +26,7 @@ public sealed unsafe class ColliderSet : IDisposable
 
     public bool Active { get; private set; }
 
-    public int On => _colliders.Count;
+    public int Count => Colliders.Count;
 
     public ColliderSet()
     {
@@ -33,6 +36,23 @@ public sealed unsafe class ColliderSet : IDisposable
         _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxSetActiveDelegate>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
         _bgPartsSetActiveHook.Enable();
         _triggerBoxSetActiveHook.Enable();
+    }
+
+    public void Init()
+    {
+        Colliders.Clear();
+
+        Active = true;
+        Service.Log.Debug($"[init] collecting active colliders from level");
+        var scene = new SceneDefinition();
+        scene.FillFromActiveLayout();
+        foreach (var part in scene.BgParts)
+            Colliders.Add(part.key);
+        foreach (var box in scene.Colliders)
+            Colliders.Add(box.key);
+
+        Service.Log.Debug($"[init] collected {Count} colliders");
+        Initialized.Invoke(this);
     }
 
     public void Dispose()
@@ -45,7 +65,8 @@ public sealed unsafe class ColliderSet : IDisposable
     private void OnZoneInit(ZoneInitEventArgs _)
     {
         Active = true;
-        _colliders.Clear();
+        Cleared.Invoke(this);
+        Colliders.Clear();
     }
 
     private unsafe void Set(ILayoutInstance* inst, bool active)
@@ -54,13 +75,13 @@ public sealed unsafe class ColliderSet : IDisposable
 
         if (active)
         {
-            if (_colliders.Add(key))
-                Changed.Invoke(this, new(inst, active, key));
+            if (Colliders.Add(key))
+                Changed.Invoke(this, inst, active, key);
         }
         else
         {
-            if (_colliders.Remove(key))
-                Changed.Invoke(this, new(inst, active, key));
+            if (Colliders.Remove(key))
+                Changed.Invoke(this, inst, active, key);
         }
     }
 
@@ -70,22 +91,48 @@ public sealed unsafe class ColliderSet : IDisposable
 
         // TODO: BgPartsLayoutInstance.CreateSecondary (responsible for loading collider) exits early if (Flags2 & 1) == 0, figure out why?
         if (Active)
-        {
-            // only fire activation event if a collider is expected
-            if (active == 1 && (thisPtr->CollisionMeshPathCrc != 0 || thisPtr->AnalyticShapeDataCrc != 0))
-                Set(&thisPtr->ILayoutInstance, true);
-
-            // always fire deactivation event, it will be a no-op if the key is not present
-            if (active == 0)
-                Set(&thisPtr->ILayoutInstance, false);
-        }
+            SetBgpart(thisPtr, active == 1);
     }
 
     private unsafe void TriggerBoxSetActiveDetour(TriggerBoxLayoutInstance* thisPtr, byte active)
     {
         _triggerBoxSetActiveHook.Original(thisPtr, active);
 
-        if (Active && thisPtr->Id.Type is InstanceType.CollisionBox)
-            Set(&thisPtr->ILayoutInstance, active == 1);
+        if (Active)
+            SetTriggerbox(thisPtr, active == 1);
+    }
+
+    private unsafe void SetBgpart(BgPartsLayoutInstance* thisPtr, bool active)
+    {
+        // only fire activation event if a collider is expected
+        if (active && (thisPtr->CollisionMeshPathCrc != 0 || thisPtr->AnalyticShapeDataCrc != 0))
+            Set(&thisPtr->ILayoutInstance, true);
+
+        // always fire deactivation event, it will be a no-op if the key is not present
+        if (!active)
+            Set(&thisPtr->ILayoutInstance, false);
+    }
+
+    private unsafe void SetTriggerbox(TriggerBoxLayoutInstance* thisPtr, bool active)
+    {
+        if (thisPtr->Id.Type is InstanceType.CollisionBox)
+            Set(&thisPtr->ILayoutInstance, active);
+    }
+
+    public ICollection<ulong> IdsSorted => Colliders;
+
+    public string GetCacheKey() => GetCacheKey(IdsSorted);
+    public static string GetCacheKey(ICollection<ulong> ids)
+    {
+        var ids0 = ids.ToArray();
+        var bytes = new byte[sizeof(ulong) * ids0.Length];
+        Buffer.BlockCopy(ids0, 0, bytes, 0, bytes.Length);
+
+        var hash = MD5.HashData(bytes);
+        var sb = new StringBuilder();
+        foreach (var byte_ in hash)
+            sb.Append(byte_.ToString("X2"));
+
+        return sb.ToString();
     }
 }

@@ -11,6 +11,7 @@ public sealed class Debounce(int delayMS) : IDisposable
 
     public void Dispose()
     {
+        _source?.Cancel();
         _source?.Dispose();
     }
 

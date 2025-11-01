@@ -2,7 +2,6 @@
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using Navmesh.Render;
 using System;
-using System.Linq;
 using System.Numerics;
 
 namespace Navmesh.Debug;
@@ -96,10 +95,18 @@ public class DebugExtractedCollision : IDisposable
                 {
                     for (var j = 0; j < _scene.NumTilesInRow; j++)
                     {
-                        var ck = _scene[i, j];
-                        if (ck.Count == 0)
+                        if (_scene[i, j].Count == 0)
                             continue;
-                        _tree.LeafNode($"[{i}x{j}] {ck.Count} {ck.First():X}##ck{i}");
+
+                        double minStale = 2000.0;
+                        double maxStale = 10000.0;
+
+                        var staleness = -(_scene.Timers[i, j] - SceneTracker.DebounceMS);
+                        var alpha = 0xff - (byte)(Math.Max(0, Math.Min(maxStale, staleness) - minStale) / (maxStale - minStale) * 0x80);
+
+                        var color = (uint)alpha << 24 | 0xFFFFFF;
+
+                        _tree.LeafNode($"[{i}x{j}] {_scene[i, j].Count} ({staleness * 0.001f:f2}s old)##ck{i}", color);
                     }
                 }
             }

@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Reactive.Linq;
+using System.Security.Cryptography;
 
 namespace Navmesh;
 
@@ -62,16 +63,24 @@ public sealed class SceneTracker : IDisposable
     public int NumTiles => NumTilesInRow * NumTilesInRow;
     public int TileLength => 2048 / NumTilesInRow;
 
+    public const double DebounceMS = 500.0;
+
     // initialized by NumTilesInRow setter
     private SortedSet<ulong>[,] _cacheKeys = null!;
+    public double[,] Timers { get; private set; } = null!;
 
     public SortedSet<ulong> this[int x, int z] => _cacheKeys[x, z] ??= [];
+
+    public event Action<List<ChangedTile>> TileChanged = delegate { };
+
+    public record struct ChangedTile(int X, int Z, List<ulong> SortedIds);
 
     public unsafe SceneTracker()
     {
         Meshes = MeshesGlobal.ToDictionary();
 
         Service.ClientState.ZoneInit += OnZoneInit;
+        Service.Framework.Update += Tick;
 
         _bgPartsSetActiveHook = Service.Hook.HookFromSignature<BgPartsSetActiveDelegate>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B D9 0F B6 C2 ", BgPartsSetActiveDetour);
         _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxSetActiveDelegate>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
@@ -83,15 +92,44 @@ public sealed class SceneTracker : IDisposable
 
     public void Dispose()
     {
+        Service.Framework.Update -= Tick;
         Service.ClientState.ZoneInit -= OnZoneInit;
 
         _bgPartsSetActiveHook.Dispose();
         _triggerBoxSetActiveHook.Dispose();
     }
 
+    private void Tick(Dalamud.Plugin.Services.IFramework framework)
+    {
+        var tick = framework.UpdateDelta.TotalMilliseconds;
+
+        List<ChangedTile> tilesChanged = [];
+        for (var i = 0; i < Timers.GetLength(0); i++)
+        {
+            for (var j = 0; j < Timers.GetLength(1); j++)
+            {
+                ref var cnt = ref Timers[i, j];
+                var pos = cnt > 0;
+                cnt -= tick;
+
+                if (pos && cnt <= 0)
+                    tilesChanged.Add(new(i, j, [.. _cacheKeys[i, j]]));
+            }
+        }
+
+        if (tilesChanged.Count > 0)
+            TileChanged.Invoke(tilesChanged);
+    }
+
     public void OnPluginInit() => Reload(true);
 
     private unsafe void OnZoneInit(ZoneInitEventArgs args) => Reload(false);
+
+    private void RebuildCache()
+    {
+        _cacheKeys = new SortedSet<ulong>[NumTilesInRow, NumTilesInRow];
+        Timers = new double[NumTilesInRow, NumTilesInRow];
+    }
 
     private unsafe void Reload(bool pluginInit)
     {
@@ -104,12 +142,24 @@ public sealed class SceneTracker : IDisposable
         FillFromLayout(LayoutWorld.Instance()->ActiveLayout, pluginInit);
     }
 
-    private void RebuildCache() => _cacheKeys = new SortedSet<ulong>[NumTilesInRow, NumTilesInRow];
-
     private unsafe void FillFromLayout(LayoutManager* layout, bool pluginInit)
     {
         foreach (var (k, v) in layout->Terrains)
-            Terrains.Add($"{v.Value->PathString}/collision");
+        {
+            var terr = $"{v.Value->PathString}/collision";
+            if (Service.DataManager.GetFile(terr + "/list.pcb") is { } list)
+            {
+                fixed (byte* data = &list.Data[0])
+                {
+                    var header = (ColliderStreamed.FileHeader*)data;
+                    foreach (ref var entry in new Span<ColliderStreamed.FileEntry>(header + 1, header->NumMeshes))
+                    {
+                        var mesh = LoadFileMesh($"{terr}/tr{entry.MeshId:d4}.pcb", SceneExtractor.MeshType.Terrain);
+                        SceneExtractor.AddInstance(mesh, 0, ref Matrix4x3.Identity, ref entry.Bounds, 0, 0);
+                    }
+                }
+            }
+        }
 
         foreach (var (k, v) in layout->CrcToAnalyticShapeData)
             AnalyticShapes[k.Key] = (v.Transform, v.BoundsMin, v.BoundsMax);
@@ -131,7 +181,7 @@ public sealed class SceneTracker : IDisposable
                     SetActive((TriggerBoxLayoutInstance*)v.Value, true);
     }
 
-    private unsafe SceneExtractor.Mesh LoadFileMesh(uint crc, string path)
+    private unsafe SceneExtractor.Mesh LoadFileMesh(string path, SceneExtractor.MeshType type)
     {
         var mesh = new SceneExtractor.Mesh();
         var f = Service.DataManager.GetFile(path);
@@ -144,7 +194,7 @@ public sealed class SceneTracker : IDisposable
                     SceneExtractor.FillFromFileNode(mesh.Parts, (MeshPCB.FileNode*)(data + 1));
             }
         }
-        mesh.MeshType = SceneExtractor.MeshType.FileMesh;
+        mesh.MeshType = type;
         return Meshes[path] = mesh;
     }
 
@@ -174,10 +224,7 @@ public sealed class SceneTracker : IDisposable
             if (thisPtr->AnalyticShapeDataCrc != 0)
             {
                 if (!AnalyticShapes.TryGetValue(thisPtr->AnalyticShapeDataCrc, out var shape))
-                {
-                    Service.Log.Warning($"unable to fetch analytic shape data for {thisPtr->AnalyticShapeDataCrc} - this is a bug!");
                     return;
-                }
 
                 var transform = *thisPtr->GetTransformImpl();
                 var mtxBounds = Matrix4x4.CreateScale((shape.bbMax - shape.bbMin) * 0.5f);
@@ -210,7 +257,7 @@ public sealed class SceneTracker : IDisposable
                 }
 
                 if (!Meshes.TryGetValue(path, out var mesh))
-                    mesh = LoadFileMesh(thisPtr->CollisionMeshPathCrc, path);
+                    mesh = LoadFileMesh(path, SceneExtractor.MeshType.FileMesh);
 
                 var transform = *thisPtr->GetTransformImpl();
                 var t2 = new Matrix4x3(transform.Compose());
@@ -246,7 +293,7 @@ public sealed class SceneTracker : IDisposable
             {
                 var path = MeshPaths[cast->PcbPathCrc] = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref thisPtr->Layout->CrcToPath, cast->PcbPathCrc));
                 if (!Meshes.TryGetValue(path, out mesh))
-                    mesh = LoadFileMesh(cast->PcbPathCrc, path);
+                    mesh = LoadFileMesh(path, SceneExtractor.MeshType.FileMesh);
             }
 
             var transform = new Matrix4x3(cast->Transform.Compose());
@@ -286,7 +333,7 @@ public sealed class SceneTracker : IDisposable
     private void AddBgPart(ulong key, BgPart part)
     {
         BgParts[key] = part;
-        AddKey(key, part.Bounds);
+        AddKeyWithBounds(key, part.Bounds);
     }
 
     private void RemoveBgPart(ulong key)
@@ -294,14 +341,14 @@ public sealed class SceneTracker : IDisposable
         if (BgParts.TryGetValue(key, out var part))
         {
             BgParts.Remove(key);
-            RemoveKey(key, part.Bounds);
+            RemoveKeyWithBounds(key, part.Bounds);
         }
     }
 
     private void AddCollider(ulong key, CollisionBox box)
     {
         Colliders[key] = box;
-        AddKey(key, box.Bounds);
+        AddKeyWithBounds(key, box.Bounds);
     }
 
     private void RemoveCollider(ulong key)
@@ -309,11 +356,11 @@ public sealed class SceneTracker : IDisposable
         if (Colliders.TryGetValue(key, out var box))
         {
             Colliders.Remove(key);
-            RemoveKey(key, box.Bounds);
+            RemoveKeyWithBounds(key, box.Bounds);
         }
     }
 
-    private void AddKey(ulong key, AABB bounds)
+    private void AddKeyWithBounds(ulong key, AABB bounds)
     {
         var (tileBoundsMin, tileBoundsMax) = GetTiles(bounds);
         for (var i = tileBoundsMin.Item1; i <= tileBoundsMax.Item1; i++)
@@ -323,11 +370,12 @@ public sealed class SceneTracker : IDisposable
             {
                 if (j < 0 || j >= NumTilesInRow) continue;
                 this[i, j].Add(key);
+                Timers[i, j] = DebounceMS;
             }
         }
     }
 
-    private void RemoveKey(ulong key, AABB bounds)
+    private void RemoveKeyWithBounds(ulong key, AABB bounds)
     {
         var (tileBoundsMin, tileBoundsMax) = GetTiles(bounds);
         for (var i = tileBoundsMin.Item1; i <= tileBoundsMax.Item1; i++)
@@ -337,6 +385,7 @@ public sealed class SceneTracker : IDisposable
             {
                 if (j < 0 || j >= NumTilesInRow) continue;
                 this[i, j].Remove(key);
+                Timers[i, j] = DebounceMS;
             }
         }
     }
@@ -347,6 +396,14 @@ public sealed class SceneTracker : IDisposable
         var max = box.Max - new Vector3(-1024);
 
         return (((int)min.X / TileLength, (int)min.Z / TileLength), ((int)max.X / TileLength, (int)max.Z / TileLength));
+    }
+
+    public static string HashKeys(IList<ulong> keys)
+    {
+        var span = keys.ToArray();
+        var bytes = new byte[span.Length * sizeof(ulong)];
+        Buffer.BlockCopy(span, 0, bytes, 0, bytes.Length);
+        return Convert.ToHexString(MD5.HashData(bytes));
     }
 }
 

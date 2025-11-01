@@ -3,6 +3,7 @@ using Dalamud.Interface.Windowing;
 using Navmesh.Debug;
 using Navmesh.Movement;
 using System;
+using System.Collections.Generic;
 
 namespace Navmesh;
 
@@ -20,6 +21,7 @@ public class MainWindow : Window, IDisposable
     public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, string configDir) : base("Navmesh")
     {
         _scene = new();
+        _scene.TileChanged += OnTileChanged;
         _scene.OnPluginInit();
         _path = path;
         _configDirectory = configDir;
@@ -27,6 +29,12 @@ public class MainWindow : Window, IDisposable
         _debugNavmeshManager = new(_dd, _debugGameColl, manager, path, move, dtr);
         _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _scene, _configDirectory);
         _debugLayout = new(_dd, _debugGameColl);
+    }
+
+    private void OnTileChanged(List<SceneTracker.ChangedTile> tiles)
+    {
+        foreach (var tile in tiles)
+            Service.Log.Debug($"tile {tile.X}x{tile.Z} hash key: {SceneTracker.HashKeys(tile.SortedIds)}");
     }
 
     public void Dispose()

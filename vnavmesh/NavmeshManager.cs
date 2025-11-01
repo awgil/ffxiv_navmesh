@@ -35,16 +35,10 @@ public sealed class NavmeshManager : IDisposable
 
     private DirectoryInfo _cacheDir;
 
-    private readonly Debounce _timer = new(5000);
-    private readonly ColliderSet _colliders;
-
-    public unsafe NavmeshManager(DirectoryInfo cacheDir, ColliderSet colliders)
+    public unsafe NavmeshManager(DirectoryInfo cacheDir)
     {
         _cacheDir = cacheDir;
         cacheDir.Create(); // ensure directory exists
-
-        _colliders = colliders;
-        //_colliders.Changed += SpawnTimer;
 
         // prepare a task with correct task scheduler that other tasks can be chained off
         _lastLoadQueryTask = Service.Framework.Run(() => Log("Tasks kicked off"));
@@ -53,8 +47,6 @@ public sealed class NavmeshManager : IDisposable
     public void Dispose()
     {
         Log("Disposing");
-        _colliders.Dispose();
-        _timer.Dispose();
         ClearState();
     }
 

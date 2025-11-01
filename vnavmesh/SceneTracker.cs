@@ -36,13 +36,13 @@ public sealed class SceneTracker : IDisposable
     public readonly Dictionary<uint, (Transform transform, Vector3 bbMin, Vector3 bbMax)> AnalyticShapes = [];
 
     public readonly Dictionary<uint, string> MeshPaths = [];
-    public readonly Dictionary<string, SceneExtractor.Mesh> Meshes;
+    public readonly Dictionary<string, SceneExtractor.Mesh> MeshesByPath;
 
     public readonly Dictionary<ulong, BgPart> BgParts = [];
     public readonly Dictionary<ulong, CollisionBox> Colliders = [];
 
     public record struct BgPart(ulong Key, string Path, Matrix4x3 Transform, AABB Bounds, ulong MaterialId, ulong MaterialMask);
-    public record struct CollisionBox(ulong Key, Matrix4x3 Transform, AABB Bounds, ulong MaterialId, ulong MaterialMask);
+    public record struct CollisionBox(ulong Key, string Path, Matrix4x3 Transform, AABB Bounds, ulong MaterialId, ulong MaterialMask);
 
     private unsafe delegate void BgPartsSetActiveDelegate(BgPartsLayoutInstance* thisPtr, byte active);
     private readonly Hook<BgPartsSetActiveDelegate> _bgPartsSetActiveHook;
@@ -73,14 +73,13 @@ public sealed class SceneTracker : IDisposable
 
     public event Action<List<ChangedTile>> TileChanged = delegate { };
 
-    public record struct ChangedTile(int X, int Z, List<ulong> SortedIds);
+    public record struct ChangedTile(int X, int Z, SortedSet<ulong> SortedIds);
 
     public unsafe SceneTracker()
     {
         Meshes = MeshesGlobal.ToDictionary();
 
         Service.ClientState.ZoneInit += OnZoneInit;
-        Service.Framework.Update += Tick;
 
         _bgPartsSetActiveHook = Service.Hook.HookFromSignature<BgPartsSetActiveDelegate>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B D9 0F B6 C2 ", BgPartsSetActiveDetour);
         _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxSetActiveDelegate>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
@@ -92,14 +91,13 @@ public sealed class SceneTracker : IDisposable
 
     public void Dispose()
     {
-        Service.Framework.Update -= Tick;
         Service.ClientState.ZoneInit -= OnZoneInit;
 
         _bgPartsSetActiveHook.Dispose();
         _triggerBoxSetActiveHook.Dispose();
     }
 
-    private void Tick(Dalamud.Plugin.Services.IFramework framework)
+    public void Tick(Dalamud.Plugin.Services.IFramework framework)
     {
         var tick = framework.UpdateDelta.TotalMilliseconds;
 
@@ -144,6 +142,9 @@ public sealed class SceneTracker : IDisposable
 
     private unsafe void FillFromLayout(LayoutManager* layout, bool pluginInit)
     {
+        if (layout == null || layout->InitState != 7 || layout->FestivalStatus is > 0 and < 5)
+            return;
+
         foreach (var (k, v) in layout->Terrains)
         {
             var terr = $"{v.Value->PathString}/collision";
@@ -287,11 +288,12 @@ public sealed class SceneTracker : IDisposable
             if (Colliders.ContainsKey(key))
                 return;
 
+            string? path = null;
             SceneExtractor.Mesh? mesh = null;
 
             if (cast->PcbPathCrc != 0 && !MeshPaths.ContainsKey(cast->PcbPathCrc))
             {
-                var path = MeshPaths[cast->PcbPathCrc] = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref thisPtr->Layout->CrcToPath, cast->PcbPathCrc));
+                path = MeshPaths[cast->PcbPathCrc] = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref thisPtr->Layout->CrcToPath, cast->PcbPathCrc));
                 if (!Meshes.TryGetValue(path, out mesh))
                     mesh = LoadFileMesh(path, SceneExtractor.MeshType.FileMesh);
             }
@@ -300,16 +302,16 @@ public sealed class SceneTracker : IDisposable
             switch (cast->TriggerBoxLayoutInstance.Type)
             {
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Box:
-                    AddCollider(key, new CollisionBox(key, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask));
+                    AddCollider(key, new CollisionBox(key, _keyAnalyticBox, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask));
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Sphere:
-                    AddCollider(key, new CollisionBox(key, transform, SceneExtractor.CalculateSphereBounds(key, ref transform), mat, matMask));
+                    AddCollider(key, new CollisionBox(key, _keyAnalyticSphere, transform, SceneExtractor.CalculateSphereBounds(key, ref transform), mat, matMask));
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Cylinder:
-                    AddCollider(key, new CollisionBox(key, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask));
+                    AddCollider(key, new CollisionBox(key, _keyAnalyticCylinder, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask));
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Plane:
-                    AddCollider(key, new CollisionBox(key, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask));
+                    AddCollider(key, new CollisionBox(key, _keyAnalyticPlaneSingle, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask));
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Mesh:
                     if (mesh == null)
@@ -317,10 +319,10 @@ public sealed class SceneTracker : IDisposable
                         Service.Log.Warning($"Mesh-type collider found with path CRC {cast->PcbPathCrc}, but no matching mesh exists! This is a bug");
                         return;
                     }
-                    AddCollider(key, new CollisionBox(key, transform, SceneExtractor.CalculateMeshBounds(mesh!, ref transform), mat, matMask));
+                    AddCollider(key, new CollisionBox(key, path!, transform, SceneExtractor.CalculateMeshBounds(mesh!, ref transform), mat, matMask));
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.PlaneTwoSided:
-                    AddCollider(key, new CollisionBox(key, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask));
+                    AddCollider(key, new CollisionBox(key, _keyAnalyticPlaneDouble, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask));
                     break;
             }
         }
@@ -333,6 +335,9 @@ public sealed class SceneTracker : IDisposable
     private void AddBgPart(ulong key, BgPart part)
     {
         BgParts[key] = part;
+        var t = part.Transform;
+        var b = part.Bounds;
+        SceneExtractor.AddInstance(Meshes[part.Path], part.Key, ref t, ref b, part.MaterialId, part.MaterialMask);
         AddKeyWithBounds(key, part.Bounds);
     }
 
@@ -342,12 +347,16 @@ public sealed class SceneTracker : IDisposable
         {
             BgParts.Remove(key);
             RemoveKeyWithBounds(key, part.Bounds);
+            Meshes[part.Path].Instances.RemoveAll(i => i.Id == key);
         }
     }
 
     private void AddCollider(ulong key, CollisionBox box)
     {
         Colliders[key] = box;
+        var t = box.Transform;
+        var b = box.Bounds;
+        SceneExtractor.AddInstance(Meshes[box.Path], box.Key, ref t, ref b, box.MaterialId, box.MaterialMask);
         AddKeyWithBounds(key, box.Bounds);
     }
 
@@ -357,6 +366,7 @@ public sealed class SceneTracker : IDisposable
         {
             Colliders.Remove(key);
             RemoveKeyWithBounds(key, box.Bounds);
+            Meshes[box.Path].Instances.RemoveAll(i => i.Id == key);
         }
     }
 
@@ -398,7 +408,7 @@ public sealed class SceneTracker : IDisposable
         return (((int)min.X / TileLength, (int)min.Z / TileLength), ((int)max.X / TileLength, (int)max.Z / TileLength));
     }
 
-    public static string HashKeys(IList<ulong> keys)
+    public static string GetHashFromKeys(SortedSet<ulong> keys)
     {
         var span = keys.ToArray();
         var bytes = new byte[span.Length * sizeof(ulong)];

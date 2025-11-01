@@ -175,17 +175,19 @@ class DebugNavmeshCustom : IDisposable
     private DebugExtractedCollision? _drawExtracted;
     private HeightfieldComparison? _globalHFC;
     private PerTile[,]? _debugTiles;
-    private SceneTracker _scene;
+    private TileManager _tiles;
+    private NavmeshManager _manager;
 
     private Vector3 _dest = new();
 
     private string _configDirectory;
 
-    public DebugNavmeshCustom(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, SceneTracker scene, string configDir)
+    public DebugNavmeshCustom(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, TileManager tiles, string configDir)
     {
-        _scene = scene;
+        _tiles = tiles;
         _dd = dd;
         _coll = coll;
+        _manager = manager;
         _navmesh = new(manager);
         _configDirectory = configDir;
     }
@@ -200,6 +202,11 @@ class DebugNavmeshCustom : IDisposable
 
     public void Draw()
     {
+        if (ImGui.Button("Replace with mesh from tile manager") && _tiles.Mesh != null)
+        {
+            _manager.ReplaceMesh(new(1, _tiles.Mesh, null));
+        }
+
         using (var nsettings = _tree.Node("Navmesh properties"))
         {
             if (nsettings.Opened)
@@ -227,7 +234,7 @@ class DebugNavmeshCustom : IDisposable
             ImGui.TextUnformatted($"State: {_navmesh.CurrentState}");
         }
 
-        _drawExtracted ??= new(_scene, _tree, _dd, _coll, _configDirectory);
+        _drawExtracted ??= new(_tiles, _tree, _dd, _coll, _configDirectory);
         _drawExtracted.Draw();
 
         if (_navmesh.CurrentState != AsyncBuilder.State.Ready)

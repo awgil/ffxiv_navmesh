@@ -137,15 +137,20 @@ public class NavmeshRasterizer
         }
     }
 
-    public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold)
+    public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold) => RasterizeFiltered(geom.Meshes.Values, types, perMeshInteriors, solidBelowNonManifold, null);
+
+    public void RasterizeFiltered(IEnumerable<SceneExtractor.Mesh> meshes, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold, SortedSet<ulong>? filter)
     {
-        foreach (var (name, mesh) in geom.Meshes)
+        foreach (var mesh in meshes)
         {
             if ((mesh.MeshType & types) == SceneExtractor.MeshType.None)
                 continue;
 
             foreach (var instance in mesh.Instances)
             {
+                if (filter?.Contains(instance.Id) == false)
+                    continue;
+
                 if (RasterizeMesh(mesh, instance, out var minY) && perMeshInteriors)
                 {
                     int z0 = Math.Clamp((int)((instance.WorldBounds.Min.Z - _heightfield.bmin.Z) * _invCellXZ), 0, _heightfield.height - 1);

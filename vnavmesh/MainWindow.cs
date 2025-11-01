@@ -3,7 +3,6 @@ using Dalamud.Interface.Windowing;
 using Navmesh.Debug;
 using Navmesh.Movement;
 using System;
-using System.Collections.Generic;
 
 namespace Navmesh;
 
@@ -14,32 +13,23 @@ public class MainWindow : Window, IDisposable
     private DebugGameCollision _debugGameColl;
     private DebugNavmeshManager _debugNavmeshManager;
     private DebugNavmeshCustom _debugNavmeshCustom;
+    private TileManager _tileManager;
     private DebugLayout _debugLayout;
-    private SceneTracker _scene;
     private string _configDirectory;
 
-    public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, string configDir) : base("Navmesh")
+    public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, TileManager tileManager, string configDir) : base("Navmesh")
     {
-        _scene = new();
-        _scene.TileChanged += OnTileChanged;
-        _scene.OnPluginInit();
+        _tileManager = tileManager;
         _path = path;
         _configDirectory = configDir;
         _debugGameColl = new(_dd);
         _debugNavmeshManager = new(_dd, _debugGameColl, manager, path, move, dtr);
-        _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _scene, _configDirectory);
+        _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _tileManager, _configDirectory);
         _debugLayout = new(_dd, _debugGameColl);
-    }
-
-    private void OnTileChanged(List<SceneTracker.ChangedTile> tiles)
-    {
-        foreach (var tile in tiles)
-            Service.Log.Debug($"tile {tile.X}x{tile.Z} hash key: {SceneTracker.HashKeys(tile.SortedIds)}");
     }
 
     public void Dispose()
     {
-        _scene.Dispose();
         _debugLayout.Dispose();
         _debugNavmeshCustom.Dispose();
         _debugNavmeshManager.Dispose();

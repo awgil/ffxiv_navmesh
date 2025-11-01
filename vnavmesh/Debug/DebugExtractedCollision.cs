@@ -8,6 +8,7 @@ namespace Navmesh.Debug;
 
 public class DebugExtractedCollision : IDisposable
 {
+    private TileManager _tiles;
     private SceneTracker _scene;
     private UITree _tree;
     private DebugDrawer _dd;
@@ -15,9 +16,10 @@ public class DebugExtractedCollision : IDisposable
     private EffectMesh.Data? _visu;
     private string _configDirectory;
 
-    public DebugExtractedCollision(SceneTracker scene, UITree tree, DebugDrawer dd, DebugGameCollision coll, string configDir)
+    public DebugExtractedCollision(TileManager tiles, UITree tree, DebugDrawer dd, DebugGameCollision coll, string configDir)
     {
-        _scene = scene;
+        _tiles = tiles;
+        _scene = tiles.Scene;
         _tree = tree;
         _dd = dd;
         _coll = coll;

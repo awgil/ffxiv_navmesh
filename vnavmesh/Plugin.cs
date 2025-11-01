@@ -14,13 +14,13 @@ namespace Navmesh;
 public sealed class Plugin : IDalamudPlugin
 {
     private WindowSystem WindowSystem = new("vnavmesh");
-    private ColliderSet _colliderSet;
     private NavmeshManager _navmeshManager;
     private FollowPath _followPath;
     private AsyncMoveRequest _asyncMove;
     private DTRProvider _dtrProvider;
     private MainWindow _wndMain;
     private IPCProvider _ipcProvider;
+    private TileManager _tileManager;
 
     public Plugin(IDalamudPluginInterface dalamud)
     {
@@ -38,12 +38,12 @@ public sealed class Plugin : IDalamudPlugin
         Service.Config.Load(dalamud.ConfigFile);
         Service.Config.Modified += () => Service.Config.Save(dalamud.ConfigFile);
 
-        _colliderSet = new();
-        _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"), _colliderSet);
+        _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
+        _tileManager = new();
         _followPath = new(dalamud, _navmeshManager);
         _asyncMove = new(_navmeshManager, _followPath);
         _dtrProvider = new(_navmeshManager, _asyncMove, _followPath);
-        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider, dalamud.ConfigDirectory.FullName) { IsOpen = dalamud.IsDev };
+        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider, _tileManager, dalamud.ConfigDirectory.FullName) { IsOpen = dalamud.IsDev };
         _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain, _dtrProvider);
 
         WindowSystem.AddWindow(_wndMain);
@@ -97,7 +97,7 @@ public sealed class Plugin : IDalamudPlugin
         _asyncMove.Dispose();
         _followPath.Dispose();
         _navmeshManager.Dispose();
-        _colliderSet.Dispose();
+        _tileManager.Dispose();
     }
 
     public static void DuoLog(Exception ex)
@@ -114,6 +114,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnUpdate(IFramework fwk)
     {
+        _tileManager.Update(fwk);
         _navmeshManager.Update();
         _followPath.Update(fwk);
         _asyncMove.Update();

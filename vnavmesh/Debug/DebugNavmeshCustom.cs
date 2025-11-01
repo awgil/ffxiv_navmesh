@@ -175,13 +175,15 @@ class DebugNavmeshCustom : IDisposable
     private DebugExtractedCollision? _drawExtracted;
     private HeightfieldComparison? _globalHFC;
     private PerTile[,]? _debugTiles;
+    private SceneTracker _scene;
 
     private Vector3 _dest = new();
 
     private string _configDirectory;
 
-    public DebugNavmeshCustom(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, string configDir)
+    public DebugNavmeshCustom(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, SceneTracker scene, string configDir)
     {
+        _scene = scene;
         _dd = dd;
         _coll = coll;
         _navmesh = new(manager);
@@ -225,6 +227,9 @@ class DebugNavmeshCustom : IDisposable
             ImGui.TextUnformatted($"State: {_navmesh.CurrentState}");
         }
 
+        _drawExtracted ??= new(_scene, _tree, _dd, _coll, _configDirectory);
+        _drawExtracted.Draw();
+
         if (_navmesh.CurrentState != AsyncBuilder.State.Ready)
             return;
 
@@ -241,9 +246,6 @@ class DebugNavmeshCustom : IDisposable
         var navmesh = _navmesh.Navmesh!;
         navmesh.CalcTileLoc((Service.ClientState.LocalPlayer?.Position ?? default).SystemToRecast(), out var playerTileX, out var playerTileZ);
         _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
-
-        _drawExtracted ??= new(_navmesh.Scene!, _navmesh.Extractor!, _tree, _dd, _coll, _configDirectory);
-        _drawExtracted.Draw();
         var intermediates = _navmesh.Intermediates;
         if (intermediates != null)
         {

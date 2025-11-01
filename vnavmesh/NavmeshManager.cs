@@ -355,21 +355,4 @@ public sealed class NavmeshManager : IDisposable
         if (task.IsFaulted)
             Service.Log.Error($"[NavmeshManager] Task failed with error: {task.Exception}");
     }
-
-    public readonly List<CollidersChangedEventArgs> ColliderHistory = [];
-
-    private void SpawnTimer(object? sender, CollidersChangedEventArgs args)
-    {
-        if (sender is not ColliderSet coll)
-            return;
-
-        ColliderHistory.Insert(0, args);
-        if (ColliderHistory.Count >= 5)
-            ColliderHistory.RemoveRange(5, ColliderHistory.Count - 5);
-
-        _timer.Spawn(tok =>
-        {
-            // TODO: trigger mesh rebuild
-        });
-    }
 }

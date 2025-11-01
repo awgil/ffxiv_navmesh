@@ -14,20 +14,24 @@ public class MainWindow : Window, IDisposable
     private DebugNavmeshManager _debugNavmeshManager;
     private DebugNavmeshCustom _debugNavmeshCustom;
     private DebugLayout _debugLayout;
+    private SceneTracker _scene;
     private string _configDirectory;
 
     public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, string configDir) : base("Navmesh")
     {
+        _scene = new();
+        _scene.OnPluginInit();
         _path = path;
         _configDirectory = configDir;
         _debugGameColl = new(_dd);
         _debugNavmeshManager = new(_dd, _debugGameColl, manager, path, move, dtr);
-        _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _configDirectory);
+        _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _scene, _configDirectory);
         _debugLayout = new(_dd, _debugGameColl);
     }
 
     public void Dispose()
     {
+        _scene.Dispose();
         _debugLayout.Dispose();
         _debugNavmeshCustom.Dispose();
         _debugNavmeshManager.Dispose();

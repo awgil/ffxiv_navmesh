@@ -67,27 +67,27 @@ public class SceneExtractor
     private const string _keyAnalyticPlaneDouble = "<plane two-sided>";
     private const string _keyMeshCylinder = "<mesh cylinder>";
 
-    private static List<MeshPart> _meshBox;
-    private static List<MeshPart> _meshSphere;
-    private static List<MeshPart> _meshCylinder;
-    private static List<MeshPart> _meshPlane;
+    public static readonly List<MeshPart> MeshBox;
+    public static readonly List<MeshPart> MeshSphere;
+    public static readonly List<MeshPart> MeshCylinder;
+    public static readonly List<MeshPart> MeshPlane;
 
     static SceneExtractor()
     {
-        _meshBox = BuildBoxMesh();
-        _meshSphere = BuildSphereMesh(16);
-        _meshCylinder = BuildCylinderMesh(16);
-        _meshPlane = BuildPlaneMesh();
+        MeshBox = BuildBoxMesh();
+        MeshSphere = BuildSphereMesh(16);
+        MeshCylinder = BuildCylinderMesh(16);
+        MeshPlane = BuildPlaneMesh();
     }
 
     public unsafe SceneExtractor(SceneDefinition scene)
     {
-        Meshes[_keyAnalyticBox] = new() { Parts = _meshBox, MeshType = MeshType.AnalyticShape };
-        Meshes[_keyAnalyticSphere] = new() { Parts = _meshSphere, MeshType = MeshType.AnalyticShape };
-        Meshes[_keyAnalyticCylinder] = new() { Parts = _meshCylinder, MeshType = MeshType.AnalyticShape };
-        Meshes[_keyAnalyticPlaneSingle] = new() { Parts = _meshPlane, MeshType = MeshType.AnalyticPlane };
-        Meshes[_keyAnalyticPlaneDouble] = new() { Parts = _meshPlane, MeshType = MeshType.AnalyticPlane };
-        Meshes[_keyMeshCylinder] = new() { Parts = _meshCylinder, MeshType = MeshType.CylinderMesh };
+        Meshes[_keyAnalyticBox] = new() { Parts = MeshBox, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticSphere] = new() { Parts = MeshSphere, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticCylinder] = new() { Parts = MeshCylinder, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticPlaneSingle] = new() { Parts = MeshPlane, MeshType = MeshType.AnalyticPlane };
+        Meshes[_keyAnalyticPlaneDouble] = new() { Parts = MeshPlane, MeshType = MeshType.AnalyticPlane };
+        Meshes[_keyMeshCylinder] = new() { Parts = MeshCylinder, MeshType = MeshType.CylinderMesh };
         foreach (var path in scene.MeshPaths.Values)
             AddMesh(path, MeshType.FileMesh);
 
@@ -212,7 +212,7 @@ public class SceneExtractor
         mesh.Instances.Add(instance);
     }
 
-    private static AABB CalculateBoxBounds(ref Matrix4x3 world)
+    public static AABB CalculateBoxBounds(ref readonly Matrix4x3 world)
     {
         var res = new AABB() { Min = new(float.MaxValue), Max = new(float.MinValue) };
         for (int i = 0; i < 8; ++i)
@@ -224,7 +224,7 @@ public class SceneExtractor
         return res;
     }
 
-    private static AABB CalculateSphereBounds(ulong id, ref Matrix4x3 world)
+    public static AABB CalculateSphereBounds(ulong id, ref readonly Matrix4x3 world)
     {
         var scale = world.Row0.Length(); // note: a lot of code assumes it's uniform...
         if (Math.Abs(scale - world.Row1.Length()) > 0.1 || Math.Abs(scale - world.Row2.Length()) > 0.1)
@@ -233,7 +233,7 @@ public class SceneExtractor
         return new AABB() { Min = world.Row3 - vscale, Max = world.Row3 + vscale };
     }
 
-    private static AABB CalculateMeshBounds(Mesh mesh, ref Matrix4x3 world)
+    public static AABB CalculateMeshBounds(Mesh mesh, ref readonly Matrix4x3 world)
     {
         var res = new AABB() { Min = new(float.MaxValue), Max = new(float.MinValue) };
         foreach (var part in mesh.Parts)
@@ -248,7 +248,7 @@ public class SceneExtractor
         return res;
     }
 
-    private static AABB CalculatePlaneBounds(ref Matrix4x3 world)
+    public static AABB CalculatePlaneBounds(ref readonly Matrix4x3 world)
     {
         var res = new AABB() { Min = new(float.MaxValue), Max = new(float.MinValue) };
         for (int i = 0; i < 4; ++i)
@@ -260,7 +260,7 @@ public class SceneExtractor
         return res;
     }
 
-    private unsafe void FillFromFileNode(List<MeshPart> parts, MeshPCB.FileNode* node)
+    public static unsafe void FillFromFileNode(List<MeshPart> parts, MeshPCB.FileNode* node)
     {
         if (node == null)
             return;
@@ -269,7 +269,7 @@ public class SceneExtractor
         FillFromFileNode(parts, node->Child2);
     }
 
-    private unsafe MeshPart BuildMeshFromNode(MeshPCB.FileNode* node)
+    public static unsafe MeshPart BuildMeshFromNode(MeshPCB.FileNode* node)
     {
         var part = new MeshPart();
         for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
@@ -289,7 +289,7 @@ public class SceneExtractor
         0xB400,
     ];
 
-    private PrimitiveFlags ExtractMaterialFlags(ulong mat)
+    public static PrimitiveFlags ExtractMaterialFlags(ulong mat)
     {
         var res = PrimitiveFlags.None;
         foreach (var fly in _materialsFlyThrough)
@@ -342,7 +342,7 @@ public class SceneExtractor
         return [mesh];
     }
 
-    private static List<MeshPart> BuildSphereMesh(int numSegments)
+    public static List<MeshPart> BuildSphereMesh(int numSegments)
     {
         var mesh = new MeshPart();
         var angle = 360.Degrees() / numSegments;
@@ -384,7 +384,7 @@ public class SceneExtractor
         return [mesh];
     }
 
-    private static List<MeshPart> BuildCylinderMesh(int numSegments)
+    public static List<MeshPart> BuildCylinderMesh(int numSegments)
     {
         var mesh = new MeshPart();
         var angle = 360.Degrees() / numSegments;
@@ -426,7 +426,7 @@ public class SceneExtractor
         return [mesh];
     }
 
-    private static List<MeshPart> BuildPlaneMesh()
+    public static List<MeshPart> BuildPlaneMesh()
     {
         var mesh = new MeshPart();
         mesh.Vertices.Add(new(-1, +1, 0));

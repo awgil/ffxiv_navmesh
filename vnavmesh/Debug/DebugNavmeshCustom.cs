@@ -22,7 +22,7 @@ class DebugNavmeshCustom : IDisposable
         public bool LoadExisting = true;
 
         public override int Version => 1;
-        public override bool IsFlyingSupported(SceneDefinition definition) => Flyable;
+        public override bool IsFlyingSupported(uint terr) => Flyable;
 
         private static NavmeshCustomization? Existing => NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType) is { } t && t.Version > 0 ? t : null;
 
@@ -175,16 +175,14 @@ class DebugNavmeshCustom : IDisposable
     private DebugExtractedCollision? _drawExtracted;
     private HeightfieldComparison? _globalHFC;
     private PerTile[,]? _debugTiles;
-    private TileManager _tiles;
     private NavmeshManager _manager;
 
     private Vector3 _dest = new();
 
     private string _configDirectory;
 
-    public DebugNavmeshCustom(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, TileManager tiles, string configDir)
+    public DebugNavmeshCustom(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, string configDir)
     {
-        _tiles = tiles;
         _dd = dd;
         _coll = coll;
         _manager = manager;
@@ -202,11 +200,6 @@ class DebugNavmeshCustom : IDisposable
 
     public void Draw()
     {
-        if (ImGui.Button("Replace with mesh from tile manager") && _tiles.Mesh != null)
-        {
-            _manager.ReplaceMesh(new(1, _tiles.Mesh, null));
-        }
-
         using (var nsettings = _tree.Node("Navmesh properties"))
         {
             if (nsettings.Opened)
@@ -234,7 +227,7 @@ class DebugNavmeshCustom : IDisposable
             ImGui.TextUnformatted($"State: {_navmesh.CurrentState}");
         }
 
-        _drawExtracted ??= new(_tiles, _tree, _dd, _coll, _configDirectory);
+        _drawExtracted ??= new(_navmesh.Scene!, _navmesh.Extractor!, _tree, _dd, _coll, _configDirectory);
         _drawExtracted.Draw();
 
         if (_navmesh.CurrentState != AsyncBuilder.State.Ready)

@@ -44,7 +44,7 @@ public class NavmeshBuilder
     public NavmeshBuilder(SceneDefinition scene, NavmeshCustomization customization)
     {
         Settings = customization.Settings;
-        var flyable = customization.IsFlyingSupported(scene);
+        var flyable = customization.IsFlyingSupported(scene.TerritoryID);
         this.customization = customization;
 
         // load all meshes

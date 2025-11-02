@@ -1,5 +1,4 @@
-﻿using Dalamud.Game.ClientState;
-using Dalamud.Plugin.Services;
+﻿using Dalamud.Plugin.Services;
 using DotRecast.Core;
 using DotRecast.Detour;
 using DotRecast.Recast;
@@ -16,21 +15,47 @@ public sealed class TileManager : IDisposable
 {
     public readonly SceneTracker Scene;
     public static readonly Vector3 BoundsMin = new(-1024);
-    public static readonly Vector3 BoundsMax = new(-1024);
+    public static readonly Vector3 BoundsMax = new(1024);
+
+    private readonly CancellationTokenSource?[,] _cancel = new CancellationTokenSource[16, 16];
+    private readonly SemaphoreSlim _sem = new(12);
 
     public DtNavMesh? Mesh;
 
     public TileManager()
     {
-        Scene = new();
+        var customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
+        Scene = new(customization.Settings.NumTiles[0]);
+
         Scene.TileChanged += OnTileChange;
-        Scene.OnPluginInit();
         Service.ClientState.ZoneInit += OnZoneInit;
+
+        Scene.Reload(true);
+        Mesh = new(MakeParams(), 6);
+    }
+
+    private DtNavMeshParams MakeParams() => new()
+    {
+        orig = BoundsMin.SystemToRecast(),
+        tileWidth = (BoundsMax.X - BoundsMin.X) / Scene.NumTilesInRow,
+        tileHeight = (BoundsMax.Z - BoundsMin.Z) / Scene.NumTilesInRow,
+        maxTiles = Scene.NumTiles,
+        maxPolys = 1 << DtNavMesh.DT_POLY_BITS
+    };
+
+    private void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
+    {
+        foreach (var cts in _cancel)
+            cts?.Cancel();
+
+        var customization = NavmeshCustomizationRegistry.ForTerritory(obj.TerritoryType.RowId);
+        Scene.NumTilesInRow = customization.Settings.NumTiles[0];
+        Scene.Reload(false);
+        Mesh = new(MakeParams(), 6);
     }
 
     public void Dispose()
     {
-        Service.ClientState.ZoneInit -= OnZoneInit;
         Scene.Dispose();
     }
 
@@ -39,32 +64,29 @@ public sealed class TileManager : IDisposable
         Scene.Tick(framework);
     }
 
-    private void OnZoneInit(ZoneInitEventArgs obj)
-    {
-        var navmeshParams = new DtNavMeshParams
-        {
-            orig = BoundsMin.SystemToRecast(),
-            tileWidth = (BoundsMax.X - BoundsMin.X) / Scene.NumTilesInRow,
-            tileHeight = (BoundsMax.Z - BoundsMin.Z) / Scene.NumTilesInRow,
-            maxTiles = Scene.NumTiles,
-            maxPolys = 1 << DtNavMesh.DT_POLY_BITS
-        };
-        Mesh = new DtNavMesh(navmeshParams, 6);
-    }
-
     public volatile int NumTasks;
 
-    private void OnTileChange(List<SceneTracker.ChangedTile> obj)
+    private void OnTileChange(List<SceneTracker.Tile> obj)
     {
         foreach (var tile in obj)
         {
+            _cancel[tile.X, tile.Z]?.Cancel();
+            var source = _cancel[tile.X, tile.Z] = new CancellationTokenSource();
             Task.Run(() =>
             {
                 Interlocked.Add(ref NumTasks, 1);
-                Service.Log.Debug($"spawning rebuild for {tile.X}x{tile.Z}");
-                RebuildTile(tile.X, tile.Z, tile.SortedIds);
-                Interlocked.Add(ref NumTasks, -1);
-            });
+                _sem.Wait(source.Token);
+                try
+                {
+                    Service.Log.Debug($"spawning rebuild for {tile.X}x{tile.Z}");
+                    RebuildTile(tile);
+                }
+                finally
+                {
+                    _sem.Release();
+                    Interlocked.Add(ref NumTasks, -1);
+                }
+            }, source.Token);
         }
     }
 
@@ -72,33 +94,21 @@ public sealed class TileManager : IDisposable
 
     private void OnTileBuilt(int x, int z, (DtMeshData?, RcBuilderResult) tileData)
     {
-        if (tileData.Item1 == null)
+        if (tileData.Item1 == null || Mesh == null)
             return;
 
         lock (locked)
         {
-            if (Mesh == null)
-            {
-                var navmeshParams = new DtNavMeshParams
-                {
-                    orig = BoundsMin.SystemToRecast(),
-                    tileWidth = (BoundsMax.X - BoundsMin.X) / Scene.NumTilesInRow,
-                    tileHeight = (BoundsMax.Z - BoundsMin.Z) / Scene.NumTilesInRow,
-                    maxTiles = Scene.NumTiles,
-                    maxPolys = 1 << DtNavMesh.DT_POLY_BITS
-                };
-                Mesh = new DtNavMesh(navmeshParams, 6);
-            }
             Mesh.UpdateTile(tileData.Item1, 0);
             Service.Log.Debug($"added tile {x}x{z} to mesh");
         }
     }
 
-    private void RebuildTile(int x, int z, SortedSet<ulong> ids)
+    private void RebuildTile(SceneTracker.Tile tile)
     {
         var customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
-        var builder = new TileBuilder(x, z, ids, customization);
-        OnTileBuilt(x, z, builder.Build(Scene));
+        var builder = new TileBuilder(tile, customization, customization.IsFlyingSupported(Service.ClientState.TerritoryType));
+        OnTileBuilt(tile.X, tile.Z, builder.Build());
     }
 }
 
@@ -111,11 +121,9 @@ public sealed class TileBuilder
     public int NumTilesX;
     public int NumTilesZ;
 
-    public int TileX;
-    public int TileZ;
-    public SortedSet<ulong> Keys;
-
-    private readonly NavmeshCustomization customization;
+    public SceneTracker.Tile Tile;
+    public int TileX => Tile.X;
+    public int TileZ => Tile.Z;
 
     private readonly int _walkableClimbVoxels;
     private readonly int _walkableHeightVoxels;
@@ -132,15 +140,11 @@ public sealed class TileBuilder
     private readonly DtNavMesh navmesh;
     private readonly VoxelMap? volume;
 
-    public TileBuilder(int X, int Z, SortedSet<ulong> Keys, NavmeshCustomization customization)
+    public TileBuilder(SceneTracker.Tile tile, NavmeshCustomization customization, bool flyable)
     {
-        TileX = X;
-        TileZ = Z;
-        this.Keys = Keys;
+        Tile = tile;
 
         Settings = customization.Settings;
-        var flyable = false; // customization.IsFlyingSupported(scene);
-        this.customization = customization;
 
         var NumTilesX = Settings.NumTiles[0];
         var NumTilesZ = NumTilesX;
@@ -182,7 +186,7 @@ public sealed class TileBuilder
         }
     }
 
-    public (DtMeshData?, RcBuilderResult) Build(SceneTracker tracker)
+    public (DtMeshData?, RcBuilderResult) Build()
     {
         var timer = Timer.Create();
 
@@ -198,8 +202,9 @@ public sealed class TileBuilder
         var shf = new RcHeightfield(_tileSizeXVoxels, _tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), Settings.CellSize, Settings.CellHeight, _borderSizeVoxels);
         var vox = volume != null ? new Voxelizer(_voxelizerNumX, _voxelizerNumY, _voxelizerNumZ) : null;
         var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, _walkableHeightVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), vox, Telemetry);
-        rasterizer.RasterizeFiltered(tracker.Meshes.Values, SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true, Keys);
-        rasterizer.RasterizeFiltered(tracker.Meshes.Values, SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, Keys);
+
+        rasterizer.RasterizeFlat(Tile.Objects.Values, SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true);
+        rasterizer.RasterizeFlat(Tile.Objects.Values, SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true);
 
         // 2. perform a bunch of postprocessing on a heightfield
         if (Settings.Filtering.HasFlag(NavmeshSettings.Filter.LowHangingObstacles))

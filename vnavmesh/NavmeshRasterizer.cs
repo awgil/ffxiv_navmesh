@@ -3,6 +3,7 @@ using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 
 namespace Navmesh;
@@ -137,28 +138,25 @@ public class NavmeshRasterizer
         }
     }
 
-    public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold) => RasterizeFiltered(geom.Meshes.Values, types, perMeshInteriors, solidBelowNonManifold, null);
-
-    public void RasterizeFiltered(IEnumerable<SceneExtractor.Mesh> meshes, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold, SortedSet<ulong>? filter)
+    public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold)
     {
-        foreach (var mesh in meshes)
+        RasterizeFlat(geom.Meshes.SelectMany(kv => kv.Value.Instances.Select(i => (kv.Value, i))), types, perMeshInteriors, solidBelowNonManifold);
+    }
+
+    public void RasterizeFlat(IEnumerable<(SceneExtractor.Mesh, SceneExtractor.MeshInstance)> instances, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold)
+    {
+        foreach (var (mesh, instance) in instances)
         {
             if ((mesh.MeshType & types) == SceneExtractor.MeshType.None)
                 continue;
 
-            foreach (var instance in mesh.Instances)
+            if (RasterizeMesh(mesh, instance, out var minY) && perMeshInteriors)
             {
-                if (filter?.Contains(instance.Id) == false)
-                    continue;
-
-                if (RasterizeMesh(mesh, instance, out var minY) && perMeshInteriors)
-                {
-                    int z0 = Math.Clamp((int)((instance.WorldBounds.Min.Z - _heightfield.bmin.Z) * _invCellXZ), 0, _heightfield.height - 1);
-                    int z1 = Math.Clamp((int)((instance.WorldBounds.Max.Z - _heightfield.bmin.Z) * _invCellXZ), 0, _heightfield.height - 1);
-                    int x0 = Math.Clamp((int)((instance.WorldBounds.Min.X - _heightfield.bmin.X) * _invCellXZ), 0, _heightfield.width - 1);
-                    int x1 = Math.Clamp((int)((instance.WorldBounds.Max.X - _heightfield.bmin.X) * _invCellXZ), 0, _heightfield.width - 1);
-                    FillInterior(z0, z1, x0, x1, solidBelowNonManifold ? minY : _maxY);
-                }
+                int z0 = Math.Clamp((int)((instance.WorldBounds.Min.Z - _heightfield.bmin.Z) * _invCellXZ), 0, _heightfield.height - 1);
+                int z1 = Math.Clamp((int)((instance.WorldBounds.Max.Z - _heightfield.bmin.Z) * _invCellXZ), 0, _heightfield.height - 1);
+                int x0 = Math.Clamp((int)((instance.WorldBounds.Min.X - _heightfield.bmin.X) * _invCellXZ), 0, _heightfield.width - 1);
+                int x1 = Math.Clamp((int)((instance.WorldBounds.Max.X - _heightfield.bmin.X) * _invCellXZ), 0, _heightfield.width - 1);
+                FillInterior(z0, z1, x0, x1, solidBelowNonManifold ? minY : _maxY);
             }
         }
 

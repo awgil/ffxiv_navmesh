@@ -1,5 +1,4 @@
-﻿using Dalamud.Game.ClientState;
-using Dalamud.Hooking;
+﻿using Dalamud.Hooking;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
@@ -35,14 +34,12 @@ public sealed class SceneTracker : IDisposable
     public readonly List<string> Terrains = [];
     public readonly Dictionary<uint, (Transform transform, Vector3 bbMin, Vector3 bbMax)> AnalyticShapes = [];
 
-    public readonly Dictionary<uint, string> MeshPaths = [];
-    public readonly Dictionary<string, SceneExtractor.Mesh> MeshesByPath;
+    private readonly Dictionary<uint, string> MeshPaths = [];
+    private readonly Dictionary<string, SceneExtractor.Mesh> Meshes;
 
-    public readonly Dictionary<ulong, BgPart> BgParts = [];
-    public readonly Dictionary<ulong, CollisionBox> Colliders = [];
+    public readonly Dictionary<ulong, Instance> LayoutObjects = [];
 
-    public record struct BgPart(ulong Key, string Path, Matrix4x3 Transform, AABB Bounds, ulong MaterialId, ulong MaterialMask);
-    public record struct CollisionBox(ulong Key, string Path, Matrix4x3 Transform, AABB Bounds, ulong MaterialId, ulong MaterialMask);
+    public record struct Instance(ulong Key, string Path, Matrix4x3 Transform, AABB Bounds, ulong MaterialId, ulong MaterialMask);
 
     private unsafe delegate void BgPartsSetActiveDelegate(BgPartsLayoutInstance* thisPtr, byte active);
     private readonly Hook<BgPartsSetActiveDelegate> _bgPartsSetActiveHook;
@@ -65,34 +62,35 @@ public sealed class SceneTracker : IDisposable
 
     public const double DebounceMS = 500.0;
 
+    public class Tile(int x, int Z)
+    {
+        public int X = x;
+        public int Z = Z;
+        public Dictionary<ulong, (SceneExtractor.Mesh, SceneExtractor.MeshInstance)> Objects = [];
+        public double Timer = 0;
+    }
+
     // initialized by NumTilesInRow setter
-    private SortedSet<ulong>[,] _cacheKeys = null!;
-    public double[,] Timers { get; private set; } = null!;
+    public Tile[,] Tiles { get; set; } = null!;
 
-    public SortedSet<ulong> this[int x, int z] => _cacheKeys[x, z] ??= [];
-
-    public event Action<List<ChangedTile>> TileChanged = delegate { };
+    public event Action<List<Tile>> TileChanged = delegate { };
 
     public record struct ChangedTile(int X, int Z, SortedSet<ulong> SortedIds);
 
-    public unsafe SceneTracker()
+    public unsafe SceneTracker(int numTilesInRow)
     {
         Meshes = MeshesGlobal.ToDictionary();
-
-        Service.ClientState.ZoneInit += OnZoneInit;
 
         _bgPartsSetActiveHook = Service.Hook.HookFromSignature<BgPartsSetActiveDelegate>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B D9 0F B6 C2 ", BgPartsSetActiveDetour);
         _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxSetActiveDelegate>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
         _bgPartsSetActiveHook.Enable();
         _triggerBoxSetActiveHook.Enable();
 
-        NumTilesInRow = 16;
+        NumTilesInRow = numTilesInRow;
     }
 
     public void Dispose()
     {
-        Service.ClientState.ZoneInit -= OnZoneInit;
-
         _bgPartsSetActiveHook.Dispose();
         _triggerBoxSetActiveHook.Dispose();
     }
@@ -101,17 +99,19 @@ public sealed class SceneTracker : IDisposable
     {
         var tick = framework.UpdateDelta.TotalMilliseconds;
 
-        List<ChangedTile> tilesChanged = [];
-        for (var i = 0; i < Timers.GetLength(0); i++)
+        List<Tile> tilesChanged = [];
+        for (var i = 0; i < Tiles.GetLength(0); i++)
         {
-            for (var j = 0; j < Timers.GetLength(1); j++)
+            for (var j = 0; j < Tiles.GetLength(1); j++)
             {
-                ref var cnt = ref Timers[i, j];
-                var pos = cnt > 0;
-                cnt -= tick;
+                var cnt = Tiles[i, j];
+                if (cnt == null)
+                    continue;
+                var pos = cnt.Timer > 0;
+                cnt.Timer -= tick;
 
-                if (pos && cnt <= 0)
-                    tilesChanged.Add(new(i, j, [.. _cacheKeys[i, j]]));
+                if (pos && cnt.Timer <= 0)
+                    tilesChanged.Add(cnt);
             }
         }
 
@@ -119,25 +119,19 @@ public sealed class SceneTracker : IDisposable
             TileChanged.Invoke(tilesChanged);
     }
 
-    public void OnPluginInit() => Reload(true);
-
-    private unsafe void OnZoneInit(ZoneInitEventArgs args) => Reload(false);
-
     private void RebuildCache()
     {
-        _cacheKeys = new SortedSet<ulong>[NumTilesInRow, NumTilesInRow];
-        Timers = new double[NumTilesInRow, NumTilesInRow];
+        Tiles = new Tile[NumTilesInRow, NumTilesInRow];
     }
 
-    private unsafe void Reload(bool pluginInit)
+    public unsafe void Reload(bool firstTimeInit)
     {
         RebuildCache();
         Terrains.Clear();
-        BgParts.Clear();
-        Colliders.Clear();
+        LayoutObjects.Clear();
 
-        FillFromLayout(LayoutWorld.Instance()->GlobalLayout, pluginInit);
-        FillFromLayout(LayoutWorld.Instance()->ActiveLayout, pluginInit);
+        FillFromLayout(LayoutWorld.Instance()->GlobalLayout, firstTimeInit);
+        FillFromLayout(LayoutWorld.Instance()->ActiveLayout, firstTimeInit);
     }
 
     private unsafe void FillFromLayout(LayoutManager* layout, bool pluginInit)
@@ -216,7 +210,7 @@ public sealed class SceneTracker : IDisposable
         var key = (ulong)thisPtr->Id.InstanceKey << 32 | thisPtr->SubId;
         if (active)
         {
-            if (BgParts.ContainsKey(key))
+            if (LayoutObjects.ContainsKey(key))
                 return;
 
             ulong mat = ((ulong)thisPtr->CollisionMaterialIdHigh << 32) | thisPtr->CollisionMaterialIdLow;
@@ -236,16 +230,16 @@ public sealed class SceneTracker : IDisposable
                 switch ((FileLayerGroupAnalyticCollider.Type)shape.transform.Type)
                 {
                     case FileLayerGroupAnalyticCollider.Type.Box:
-                        AddBgPart(key, new BgPart(key, _keyAnalyticBox, resultingTransform, SceneExtractor.CalculateBoxBounds(ref resultingTransform), mat, matMask));
+                        AddObject(key, new Instance(key, _keyAnalyticBox, resultingTransform, SceneExtractor.CalculateBoxBounds(ref resultingTransform), mat, matMask));
                         break;
                     case FileLayerGroupAnalyticCollider.Type.Sphere:
-                        AddBgPart(key, new BgPart(key, _keyAnalyticSphere, resultingTransform, SceneExtractor.CalculateSphereBounds(key, ref resultingTransform), mat, matMask));
+                        AddObject(key, new Instance(key, _keyAnalyticSphere, resultingTransform, SceneExtractor.CalculateSphereBounds(key, ref resultingTransform), mat, matMask));
                         break;
                     case FileLayerGroupAnalyticCollider.Type.Cylinder:
-                        AddBgPart(key, new BgPart(key, _keyMeshCylinder, resultingTransform, SceneExtractor.CalculateBoxBounds(ref resultingTransform), mat, matMask));
+                        AddObject(key, new Instance(key, _keyMeshCylinder, resultingTransform, SceneExtractor.CalculateBoxBounds(ref resultingTransform), mat, matMask));
                         break;
                     case FileLayerGroupAnalyticCollider.Type.Plane:
-                        AddBgPart(key, new BgPart(key, _keyAnalyticPlaneSingle, resultingTransform, SceneExtractor.CalculatePlaneBounds(ref resultingTransform), mat, matMask));
+                        AddObject(key, new Instance(key, _keyAnalyticPlaneSingle, resultingTransform, SceneExtractor.CalculatePlaneBounds(ref resultingTransform), mat, matMask));
                         break;
                 }
             }
@@ -264,12 +258,12 @@ public sealed class SceneTracker : IDisposable
                 var t2 = new Matrix4x3(transform.Compose());
                 var bounds = SceneExtractor.CalculateMeshBounds(mesh, ref t2);
 
-                AddBgPart(key, new BgPart(key, path, t2, bounds, mat, matMask));
+                AddObject(key, new Instance(key, path, t2, bounds, mat, matMask));
             }
         }
         else
         {
-            RemoveBgPart(key);
+            RemoveObject(key);
         }
     }
 
@@ -285,7 +279,7 @@ public sealed class SceneTracker : IDisposable
         var key = (ulong)thisPtr->Id.InstanceKey << 32 | thisPtr->SubId;
         if (active)
         {
-            if (Colliders.ContainsKey(key))
+            if (LayoutObjects.ContainsKey(key))
                 return;
 
             string? path = null;
@@ -302,16 +296,16 @@ public sealed class SceneTracker : IDisposable
             switch (cast->TriggerBoxLayoutInstance.Type)
             {
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Box:
-                    AddCollider(key, new CollisionBox(key, _keyAnalyticBox, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask));
+                    AddObject(key, new(key, _keyAnalyticBox, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask));
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Sphere:
-                    AddCollider(key, new CollisionBox(key, _keyAnalyticSphere, transform, SceneExtractor.CalculateSphereBounds(key, ref transform), mat, matMask));
+                    AddObject(key, new(key, _keyAnalyticSphere, transform, SceneExtractor.CalculateSphereBounds(key, ref transform), mat, matMask));
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Cylinder:
-                    AddCollider(key, new CollisionBox(key, _keyAnalyticCylinder, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask));
+                    AddObject(key, new(key, _keyAnalyticCylinder, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask));
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Plane:
-                    AddCollider(key, new CollisionBox(key, _keyAnalyticPlaneSingle, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask));
+                    AddObject(key, new(key, _keyAnalyticPlaneSingle, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask));
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Mesh:
                     if (mesh == null)
@@ -319,73 +313,54 @@ public sealed class SceneTracker : IDisposable
                         Service.Log.Warning($"Mesh-type collider found with path CRC {cast->PcbPathCrc}, but no matching mesh exists! This is a bug");
                         return;
                     }
-                    AddCollider(key, new CollisionBox(key, path!, transform, SceneExtractor.CalculateMeshBounds(mesh!, ref transform), mat, matMask));
+                    AddObject(key, new(key, path!, transform, SceneExtractor.CalculateMeshBounds(mesh!, ref transform), mat, matMask));
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.PlaneTwoSided:
-                    AddCollider(key, new CollisionBox(key, _keyAnalyticPlaneDouble, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask));
+                    AddObject(key, new(key, _keyAnalyticPlaneDouble, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask));
                     break;
             }
         }
         else
         {
-            RemoveCollider(key);
+            RemoveObject(key);
         }
     }
 
-    private void AddBgPart(ulong key, BgPart part)
+    private void AddObject(ulong key, Instance part)
     {
-        BgParts[key] = part;
+        LayoutObjects[key] = part;
         var t = part.Transform;
         var b = part.Bounds;
-        SceneExtractor.AddInstance(Meshes[part.Path], part.Key, ref t, ref b, part.MaterialId, part.MaterialMask);
-        AddKeyWithBounds(key, part.Bounds);
+        var mesh = Meshes[part.Path];
+        AddMeshInstance(mesh, SceneExtractor.AddInstance(mesh, part.Key, ref t, ref b, part.MaterialId, part.MaterialMask));
     }
 
-    private void RemoveBgPart(ulong key)
+    private void RemoveObject(ulong key)
     {
-        if (BgParts.TryGetValue(key, out var part))
+        if (LayoutObjects.TryGetValue(key, out var part))
         {
-            BgParts.Remove(key);
-            RemoveKeyWithBounds(key, part.Bounds);
-            Meshes[part.Path].Instances.RemoveAll(i => i.Id == key);
+            LayoutObjects.Remove(key);
+            RemoveMeshInstance(key, part.Bounds);
         }
     }
 
-    private void AddCollider(ulong key, CollisionBox box)
+    private void AddMeshInstance(SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance)
     {
-        Colliders[key] = box;
-        var t = box.Transform;
-        var b = box.Bounds;
-        SceneExtractor.AddInstance(Meshes[box.Path], box.Key, ref t, ref b, box.MaterialId, box.MaterialMask);
-        AddKeyWithBounds(key, box.Bounds);
-    }
-
-    private void RemoveCollider(ulong key)
-    {
-        if (Colliders.TryGetValue(key, out var box))
-        {
-            Colliders.Remove(key);
-            RemoveKeyWithBounds(key, box.Bounds);
-            Meshes[box.Path].Instances.RemoveAll(i => i.Id == key);
-        }
-    }
-
-    private void AddKeyWithBounds(ulong key, AABB bounds)
-    {
-        var (tileBoundsMin, tileBoundsMax) = GetTiles(bounds);
+        var (tileBoundsMin, tileBoundsMax) = GetTiles(instance.WorldBounds);
         for (var i = tileBoundsMin.Item1; i <= tileBoundsMax.Item1; i++)
         {
             if (i < 0 || i >= NumTilesInRow) continue;
             for (var j = tileBoundsMin.Item2; j <= tileBoundsMax.Item2; j++)
             {
                 if (j < 0 || j >= NumTilesInRow) continue;
-                this[i, j].Add(key);
-                Timers[i, j] = DebounceMS;
+                Tiles[i, j] ??= new(i, j);
+                Tiles[i, j].Objects.Add(instance.Id, (mesh, instance));
+                Tiles[i, j].Timer = DebounceMS;
             }
         }
     }
 
-    private void RemoveKeyWithBounds(ulong key, AABB bounds)
+    private void RemoveMeshInstance(ulong key, AABB bounds)
     {
         var (tileBoundsMin, tileBoundsMax) = GetTiles(bounds);
         for (var i = tileBoundsMin.Item1; i <= tileBoundsMax.Item1; i++)
@@ -394,8 +369,8 @@ public sealed class SceneTracker : IDisposable
             for (var j = tileBoundsMin.Item2; j <= tileBoundsMax.Item2; j++)
             {
                 if (j < 0 || j >= NumTilesInRow) continue;
-                this[i, j].Remove(key);
-                Timers[i, j] = DebounceMS;
+                Tiles[i, j].Objects.Remove(key);
+                Tiles[i, j].Timer = DebounceMS;
             }
         }
     }

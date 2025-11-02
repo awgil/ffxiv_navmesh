@@ -206,10 +206,11 @@ public class SceneExtractor
         return mesh;
     }
 
-    public static void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId, ulong matMask)
+    public static MeshInstance AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId, ulong matMask)
     {
         var instance = new MeshInstance(id, worldTransform, worldBounds, ExtractMaterialFlags(matMask & matId), ExtractMaterialFlags(matMask & ~matId));
         mesh.Instances.Add(instance);
+        return instance;
     }
 
     public static AABB CalculateBoxBounds(ref readonly Matrix4x3 world)

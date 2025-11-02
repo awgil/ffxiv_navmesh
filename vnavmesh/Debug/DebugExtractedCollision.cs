@@ -1,25 +1,29 @@
-﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+﻿using Dalamud.Bindings.ImGui;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using Navmesh.Render;
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Numerics;
 
 namespace Navmesh.Debug;
 
 public class DebugExtractedCollision : IDisposable
 {
-    private TileManager _tiles;
-    private SceneTracker _scene;
+    private SceneDefinition _scene;
+    private SceneExtractor _extractor;
     private UITree _tree;
     private DebugDrawer _dd;
     private DebugGameCollision _coll;
     private EffectMesh.Data? _visu;
     private string _configDirectory;
 
-    public DebugExtractedCollision(TileManager tiles, UITree tree, DebugDrawer dd, DebugGameCollision coll, string configDir)
+    public DebugExtractedCollision(SceneDefinition scene, SceneExtractor extractor, UITree tree, DebugDrawer dd, DebugGameCollision coll, string configDir)
     {
-        _tiles = tiles;
-        _scene = tiles.Scene;
+        _scene = scene;
+        _extractor = extractor;
         _tree = tree;
         _dd = dd;
         _coll = coll;
@@ -34,6 +38,7 @@ public class DebugExtractedCollision : IDisposable
     public void Draw()
     {
         DrawDefinition();
+        DrawExtractor();
     }
 
     private unsafe void DrawDefinition()
@@ -53,68 +58,6 @@ public class DebugExtractedCollision : IDisposable
             }
         }
 
-        using (var np = _tree.Node($"BGParts ({_scene.BgParts.Count})###bgparts", _scene.BgParts.Count == 0))
-        {
-            if (np.Opened)
-            {
-                foreach (var (key, part) in _scene.BgParts)
-                {
-                    var coll = FindCollider(InstanceType.BgPart, key);
-                    using var n = _tree.Node($"[{key:X16}] {part.Transform.Row3} {part.Path}###{key:X}");
-                    if (n.SelectedOrHovered)
-                    {
-                        _dd.DrawWorldAABB(part.Bounds, 0xff0000ff);
-                        if (coll != null)
-                            _coll.VisualizeCollider(coll, default, default);
-                    }
-                }
-            }
-        }
-
-        using (var nc = _tree.Node($"Colliders ({_scene.Colliders.Count})##colliders", _scene.Colliders.Count == 0))
-        {
-            if (nc.Opened)
-            {
-                foreach (var (key, part) in _scene.Colliders)
-                {
-                    var collider = FindCollider(InstanceType.CollisionBox, key);
-                    using var n = _tree.Node($"[{key:X16}] {part.Transform.Row3} {part.MaterialId:X}###{key:X}");
-                    if (n.SelectedOrHovered)
-                    {
-                        _dd.DrawWorldAABB(part.Bounds, 0xff0000ff);
-                        if (collider != null)
-                            _coll.VisualizeCollider(collider, default, default);
-                    }
-                }
-            }
-        }
-
-        using (var nk = _tree.Node($"Tile caches##tilecache"))
-        {
-            if (nk.Opened)
-            {
-                for (var i = 0; i < _scene.NumTilesInRow; i++)
-                {
-                    for (var j = 0; j < _scene.NumTilesInRow; j++)
-                    {
-                        if (_scene[i, j].Count == 0)
-                            continue;
-
-                        double minStale = 2000.0;
-                        double maxStale = 10000.0;
-
-                        var staleness = -(_scene.Timers[i, j] - SceneTracker.DebounceMS);
-                        var alpha = 0xff - (byte)(Math.Max(0, Math.Min(maxStale, staleness) - minStale) / (maxStale - minStale) * 0x80);
-
-                        var color = (uint)alpha << 24 | 0xFFFFFF;
-
-                        _tree.LeafNode($"[{i}x{j}] {_scene[i, j].Count} ({staleness * 0.001f:f2}s old)##ck{i}", color);
-                    }
-                }
-            }
-        }
-
-        /*
         using (var np = _tree.Node($"BGParts ({_scene.BgParts.Count})###bgparts", _scene.BgParts.Count == 0))
         {
             if (np.Opened)
@@ -170,7 +113,6 @@ public class DebugExtractedCollision : IDisposable
                 }
             }
         }
-        */
     }
 
     private void DrawTransform(string tag, Transform transform)
@@ -181,6 +123,182 @@ public class DebugExtractedCollision : IDisposable
     }
 
     private string _meshFilter = "";
+
+    private void DrawExtractor()
+    {
+        using var nr = _tree.Node("Extracted geometry");
+        if (nr.SelectedOrHovered)
+            Visualize();
+        if (!nr.Opened)
+            return;
+
+        ImGui.InputText("Filter", ref _meshFilter);
+
+        if (ImGui.Button("Export to DotRecast obj file"))
+            ExportMesh();
+
+        int meshIndex = 0;
+        foreach (var (name, mesh) in _extractor.Meshes)
+        {
+            if (_meshFilter.Length > 0 && !name.Contains(_meshFilter, StringComparison.InvariantCultureIgnoreCase))
+            {
+                meshIndex++;
+                continue;
+            }
+
+            using var nm = _tree.Node($"{name}: flags={mesh.MeshType}");
+            if (nm.SelectedOrHovered)
+                VisualizeMeshInstances(meshIndex);
+
+            if (nm.Opened)
+            {
+                using (var np = _tree.Node($"Parts ({mesh.Parts.Count})###parts", mesh.Parts.Count == 0))
+                {
+                    if (np.Opened)
+                    {
+                        int partIndex = 0;
+                        foreach (var p in mesh.Parts)
+                        {
+                            using var npi = _tree.Node(partIndex.ToString());
+                            if (npi.SelectedOrHovered)
+                                VisualizeMeshPart(mesh, meshIndex, partIndex);
+
+                            if (npi.Opened)
+                            {
+                                using (var nv = _tree.Node($"Vertices ({p.Vertices.Count})###verts"))
+                                {
+                                    if (nv.Opened)
+                                    {
+                                        int j = 0;
+                                        foreach (var v in p.Vertices)
+                                            if (_tree.LeafNode($"{j++}: {v:f3}").SelectedOrHovered)
+                                                VisualizeVertex(mesh, v);
+                                    }
+                                }
+
+                                using (var nt = _tree.Node($"Primitives ({p.Primitives.Count})###prims"))
+                                {
+                                    if (nt.Opened)
+                                    {
+                                        int j = 0;
+                                        foreach (var t in p.Primitives)
+                                        {
+                                            var v1 = p.Vertices[t.V1];
+                                            var v2 = p.Vertices[t.V2];
+                                            var v3 = p.Vertices[t.V3];
+                                            if (_tree.LeafNode($"{j++}: {t.V1}x{t.V2}x{t.V3} ({v1:f3} x {v2:f3} x {v3:f3}) ({t.Flags})").SelectedOrHovered)
+                                                VisualizeTriangle(mesh, v1, v2, v3);
+                                        }
+                                    }
+                                }
+                            }
+
+                            ++partIndex;
+                        }
+                    }
+                }
+
+                using (var ni = _tree.Node($"Instances ({mesh.Instances.Count})###instances", mesh.Instances.Count == 0))
+                {
+                    if (ni.Opened)
+                    {
+                        int instIndex = 0;
+                        foreach (var i in mesh.Instances)
+                        {
+                            if (_tree.LeafNode($"{instIndex}: {i.WorldBounds.Min:f3}-{i.WorldBounds.Max:f3}, R0 = {i.WorldTransform.Row0:f3}, R1 = {i.WorldTransform.Row1:f3}, R2 = {i.WorldTransform.Row2:f3}, R3 = {i.WorldTransform.Row3:f3}, {i.WorldBounds.Min:f3} - {i.WorldBounds.Max:f3} (+: {i.ForceSetPrimFlags}, -: {i.ForceClearPrimFlags})").SelectedOrHovered)
+                                VisualizeMeshInstance(meshIndex, instIndex);
+                            ++instIndex;
+                        }
+                    }
+                }
+            }
+
+            ++meshIndex;
+        }
+    }
+
+    private EffectMesh.Data GetOrInitVisualizer()
+    {
+        if (_visu == null)
+        {
+            int nv = 0, np = 0, ni = 0;
+            foreach (var mesh in _extractor.Meshes.Values)
+            {
+                foreach (var part in mesh.Parts)
+                {
+                    nv += part.Vertices.Count;
+                    np += part.Primitives.Count;
+                }
+                ni += mesh.Instances.Count;
+            }
+
+            _visu = new(_dd.RenderContext, nv, np, ni, false);
+            using var builder = _visu.Map(_dd.RenderContext);
+
+            var timer = Timer.Create();
+            nv = np = ni = 0;
+            foreach (var mesh in _extractor.Meshes.Values)
+            {
+                var color = MeshColor(mesh);
+                int nvm = 0, npm = 0;
+                foreach (var part in mesh.Parts)
+                {
+                    foreach (var v in part.Vertices)
+                        builder.AddVertex(v);
+                    foreach (var p in part.Primitives)
+                        builder.AddTriangle(nvm + p.V1, nvm + p.V3, nvm + p.V2); // dx winding
+                    nvm += part.Vertices.Count;
+                    npm += part.Primitives.Count;
+                }
+                foreach (var inst in mesh.Instances)
+                {
+                    builder.AddInstance(new(inst.WorldTransform, color));
+                }
+                builder.AddMesh(nv, np, npm, ni, mesh.Instances.Count);
+                nv += nvm;
+                np += npm;
+                ni += mesh.Instances.Count;
+            }
+            Service.Log.Debug($"mesh visualization build time: {timer.Value().TotalMilliseconds:f3}ms");
+        }
+        return _visu;
+    }
+
+    private void Visualize()
+    {
+        _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVisualizer());
+    }
+
+    private void VisualizeMeshInstances(int meshIndex)
+    {
+        _dd.EffectMesh?.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(), meshIndex);
+    }
+
+    private void VisualizeMeshPart(SceneExtractor.Mesh mesh, int meshIndex, int partIndex)
+    {
+        if (_dd.EffectMesh == null)
+            return;
+        var visu = GetOrInitVisualizer();
+        var visuMesh = visu.Meshes[meshIndex];
+        visuMesh.FirstPrimitive += mesh.Parts.Take(partIndex).Sum(part => part.Primitives.Count);
+        visuMesh.NumPrimitives = mesh.Parts[partIndex].Primitives.Count;
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
+        visu.Bind(_dd.RenderContext);
+        visu.DrawManual(_dd.RenderContext, visuMesh);
+    }
+
+    private void VisualizeMeshInstance(int meshIndex, int instIndex)
+    {
+        if (_dd.EffectMesh == null)
+            return;
+        var visu = GetOrInitVisualizer();
+        var visuMesh = visu.Meshes[meshIndex];
+        visuMesh.FirstInstance += instIndex;
+        visuMesh.NumInstances = 1;
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
+        visu.Bind(_dd.RenderContext);
+        visu.DrawManual(_dd.RenderContext, visuMesh);
+    }
 
     private void VisualizeVertex(SceneExtractor.Mesh mesh, Vector3 v)
     {
@@ -207,4 +325,41 @@ public class DebugExtractedCollision : IDisposable
         mesh.MeshType.HasFlag(SceneExtractor.MeshType.Terrain) ? new(0, 1, 0, 0.55f) :
         mesh.MeshType.HasFlag(SceneExtractor.MeshType.FileMesh) ? new(1, 1, 0, 0.55f) :
         new(1, 0, 0, 0.55f);
+
+    private void ExportMesh()
+    {
+        var key = NavmeshManager.GetCacheKey(_scene);
+        var outFile = new FileInfo($"{_configDirectory}/export/{key}.obj");
+
+        var verts = new List<Vector3>();
+        var polys = new List<SceneExtractor.Primitive>();
+
+        foreach (var mesh in _extractor.Meshes.Values)
+        {
+
+            foreach (var inst in mesh.Instances)
+            {
+                var transform = inst.WorldTransform;
+
+                foreach (var part in mesh.Parts)
+                {
+                    var voff = verts.Count;
+
+                    verts.AddRange(part.Vertices.Select(transform.TransformCoordinate));
+                    polys.AddRange(part.Primitives.Select(p => new SceneExtractor.Primitive(p.V1 + voff, p.V2 + voff, p.V3 + voff, p.Flags)));
+                }
+            }
+        }
+
+        using var stream = outFile.OpenWrite();
+        using var writer = new StreamWriter(stream);
+
+        foreach (var v in verts)
+            writer.WriteLine($"v {v.X:f6} {v.Y:f6} {v.Z:f6}");
+
+        foreach (var p in polys)
+            writer.WriteLine($"f {p.V1 + 1} {p.V2 + 1} {p.V3 + 1}");
+
+        Service.Log.Debug($"wrote DotRecast geom file to {outFile}");
+    }
 }

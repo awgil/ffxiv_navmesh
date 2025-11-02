@@ -13,23 +13,24 @@ public class MainWindow : Window, IDisposable
     private DebugGameCollision _debugGameColl;
     private DebugNavmeshManager _debugNavmeshManager;
     private DebugNavmeshCustom _debugNavmeshCustom;
-    private TileManager _tileManager;
     private DebugLayout _debugLayout;
+    private DebugTileManager _debugTiles;
     private string _configDirectory;
 
     public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, TileManager tileManager, string configDir) : base("Navmesh")
     {
-        _tileManager = tileManager;
         _path = path;
         _configDirectory = configDir;
         _debugGameColl = new(_dd);
         _debugNavmeshManager = new(_dd, _debugGameColl, manager, path, move, dtr);
-        _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _tileManager, _configDirectory);
+        _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _configDirectory);
         _debugLayout = new(_dd, _debugGameColl);
+        _debugTiles = new(tileManager, _dd, _debugGameColl);
     }
 
     public void Dispose()
     {
+        _debugTiles.Dispose();
         _debugLayout.Dispose();
         _debugNavmeshCustom.Dispose();
         _debugNavmeshManager.Dispose();
@@ -85,6 +86,9 @@ public class MainWindow : Window, IDisposable
                 using (var tab = ImRaii.TabItem("Navmesh custom"))
                     if (tab)
                         _debugNavmeshCustom.Draw();
+                using (var tab = ImRaii.TabItem("Tiles"))
+                    if (tab)
+                        _debugTiles.Draw();
             }
         }
     }

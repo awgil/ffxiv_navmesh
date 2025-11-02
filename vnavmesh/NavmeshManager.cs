@@ -114,6 +114,7 @@ public sealed class NavmeshManager : IDisposable
 
     internal void ReplaceMesh(Navmesh mesh)
     {
+        _currentCTS = new();
         Log($"Mesh replaced");
         Navmesh = mesh;
         Query = new(Navmesh);

@@ -31,48 +31,36 @@ public sealed class SceneTracker : IDisposable
         [_keyMeshCylinder] = new() { Parts = SceneExtractor.MeshCylinder, MeshType = SceneExtractor.MeshType.CylinderMesh }
     };
 
-    public readonly List<string> Terrains = [];
     public readonly Dictionary<uint, (Transform transform, Vector3 bbMin, Vector3 bbMax)> AnalyticShapes = [];
 
     private readonly Dictionary<uint, string> MeshPaths = [];
     private readonly Dictionary<string, SceneExtractor.Mesh> Meshes;
 
-    public readonly Dictionary<ulong, Instance> LayoutObjects = [];
+    private readonly Dictionary<ulong, AABB> _allObjects = [];
 
-    public record struct Instance(ulong Key, string Path, Matrix4x3 Transform, AABB Bounds, ulong MaterialId, ulong MaterialMask);
+    public record struct Instance(ulong Key, string Path, Matrix4x3 Transform, AABB Bounds, ulong MaterialId, ulong MaterialMask, InstanceType Type);
 
-    private unsafe delegate void BgPartsSetActiveDelegate(BgPartsLayoutInstance* thisPtr, byte active);
-    private readonly Hook<BgPartsSetActiveDelegate> _bgPartsSetActiveHook;
-    private unsafe delegate void TriggerBoxSetActiveDelegate(TriggerBoxLayoutInstance* thisPtr, byte active);
-    private readonly Hook<TriggerBoxSetActiveDelegate> _triggerBoxSetActiveHook;
+    private readonly Hook<BgPartsLayoutInstance.Delegates.SetActive> _bgPartsSetActiveHook;
+    private readonly Hook<TriggerBoxLayoutInstance.Delegates.SetActive> _triggerBoxSetActiveHook;
+    private readonly Hook<LayoutManager.Delegates.Initialize> _layoutManagerInitHook;
 
-    public int NumTilesInRow
-    {
-        get;
-        set
-        {
-            var rebuildColliders = field != value;
-            field = value;
-            if (rebuildColliders)
-                RebuildCache();
-        }
-    }
+    public int NumTilesInRow;
     public int NumTiles => NumTilesInRow * NumTilesInRow;
     public int TileLength => 2048 / NumTilesInRow;
 
-    public const double DebounceMS = 500.0;
+    public double DebounceMS = 500.0;
 
     public class Tile(int x, int Z)
     {
         public int X = x;
         public int Z = Z;
-        public Dictionary<ulong, (SceneExtractor.Mesh, SceneExtractor.MeshInstance)> Objects = [];
+        public Dictionary<ulong, (SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type)> Objects = [];
         public double Timer = 0;
     }
 
-    // initialized by NumTilesInRow setter
-    public Tile[,] Tiles { get; set; } = null!;
+    public Tile[,] Tiles { get; private set; }
 
+    public event Action LayoutChanged = delegate { };
     public event Action<List<Tile>> TileChanged = delegate { };
 
     public record struct ChangedTile(int X, int Z, SortedSet<ulong> SortedIds);
@@ -81,16 +69,27 @@ public sealed class SceneTracker : IDisposable
     {
         Meshes = MeshesGlobal.ToDictionary();
 
-        _bgPartsSetActiveHook = Service.Hook.HookFromSignature<BgPartsSetActiveDelegate>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B D9 0F B6 C2 ", BgPartsSetActiveDetour);
-        _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxSetActiveDelegate>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
+        _bgPartsSetActiveHook = Service.Hook.HookFromSignature<BgPartsLayoutInstance.Delegates.SetActive>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B D9 0F B6 C2 ", BgPartsSetActiveDetour);
+        _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxLayoutInstance.Delegates.SetActive>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
+        _layoutManagerInitHook = Service.Hook.HookFromSignature<LayoutManager.Delegates.Initialize>("41 54 48 83 EC 50 48 89 5C 24 ?? ", LayoutManagerInitDetour);
+
         _bgPartsSetActiveHook.Enable();
         _triggerBoxSetActiveHook.Enable();
+        _layoutManagerInitHook.Enable();
 
         NumTilesInRow = numTilesInRow;
+        Tiles = new Tile[numTilesInRow, numTilesInRow];
+
+        var world = LayoutWorld.Instance();
+        if (world->ActiveLayout != null)
+            InitLayout(world->ActiveLayout);
+        if (world->GlobalLayout != null)
+            InitLayout(world->GlobalLayout);
     }
 
     public void Dispose()
     {
+        _layoutManagerInitHook.Dispose();
         _bgPartsSetActiveHook.Dispose();
         _triggerBoxSetActiveHook.Dispose();
     }
@@ -119,25 +118,39 @@ public sealed class SceneTracker : IDisposable
             TileChanged.Invoke(tilesChanged);
     }
 
-    private void RebuildCache()
+    public unsafe void Clear()
     {
         Tiles = new Tile[NumTilesInRow, NumTilesInRow];
+        _allObjects.Clear();
     }
 
-    public unsafe void Reload(bool firstTimeInit)
+    private unsafe string GetCollisionMeshPathByCrc(uint crc, LayoutManager* layout)
     {
-        RebuildCache();
-        Terrains.Clear();
-        LayoutObjects.Clear();
+        if (MeshPaths.TryGetValue(crc, out var path))
+            return path;
 
-        FillFromLayout(LayoutWorld.Instance()->GlobalLayout, firstTimeInit);
-        FillFromLayout(LayoutWorld.Instance()->ActiveLayout, firstTimeInit);
+        return MeshPaths[crc] = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref layout->CrcToPath, crc));
     }
 
-    private unsafe void FillFromLayout(LayoutManager* layout, bool pluginInit)
+    private SceneExtractor.Mesh GetMeshByPath(string path, SceneExtractor.MeshType meshType)
     {
-        if (layout == null || layout->InitState != 7 || layout->FestivalStatus is > 0 and < 5)
-            return;
+        if (Meshes.TryGetValue(path, out var mesh))
+            return mesh;
+
+        return LoadFileMesh(path, meshType);
+    }
+
+    private unsafe void LayoutManagerInitDetour(LayoutManager* mgr)
+    {
+        _layoutManagerInitHook.Original(mgr);
+        InitLayout(mgr);
+    }
+
+    private unsafe void InitLayout(LayoutManager* layout)
+    {
+        LayoutChanged.Invoke();
+
+        var terrid = layout->TerritoryTypeId;
 
         foreach (var (k, v) in layout->Terrains)
         {
@@ -149,8 +162,9 @@ public sealed class SceneTracker : IDisposable
                     var header = (ColliderStreamed.FileHeader*)data;
                     foreach (ref var entry in new Span<ColliderStreamed.FileEntry>(header + 1, header->NumMeshes))
                     {
-                        var mesh = LoadFileMesh($"{terr}/tr{entry.MeshId:d4}.pcb", SceneExtractor.MeshType.Terrain);
-                        SceneExtractor.AddInstance(mesh, 0, ref Matrix4x3.Identity, ref entry.Bounds, 0, 0);
+                        var path = $"{terr}/tr{entry.MeshId:d4}.pcb";
+                        var mesh = GetMeshByPath(path, SceneExtractor.MeshType.Terrain);
+                        AddObject(path, new SceneExtractor.MeshInstance(0xFFFF000000000000u | ((ulong)terrid << 32) | ((ulong)(long)entry.MeshId), Matrix4x3.Identity, entry.Bounds, (ulong)0, 0), default);
                     }
                 }
             }
@@ -158,9 +172,6 @@ public sealed class SceneTracker : IDisposable
 
         foreach (var (k, v) in layout->CrcToAnalyticShapeData)
             AnalyticShapes[k.Key] = (v.Transform, v.BoundsMin, v.BoundsMax);
-
-        if (!pluginInit)
-            return;
 
         // trigger add events for existing colliders
         var bgParts = LayoutUtils.FindPtr(ref layout->InstancesByType, InstanceType.BgPart);
@@ -193,16 +204,16 @@ public sealed class SceneTracker : IDisposable
         return Meshes[path] = mesh;
     }
 
-    private unsafe void BgPartsSetActiveDetour(BgPartsLayoutInstance* thisPtr, byte active)
+    private unsafe void BgPartsSetActiveDetour(BgPartsLayoutInstance* thisPtr, bool active)
     {
         _bgPartsSetActiveHook.Original(thisPtr, active);
-        SetActive(thisPtr, active == 1);
+        SetActive(thisPtr, active);
     }
 
-    private unsafe void TriggerBoxSetActiveDetour(TriggerBoxLayoutInstance* thisPtr, byte active)
+    private unsafe void TriggerBoxSetActiveDetour(TriggerBoxLayoutInstance* thisPtr, bool active)
     {
         _triggerBoxSetActiveHook.Original(thisPtr, active);
-        SetActive(thisPtr, active == 1);
+        SetActive(thisPtr, active);
     }
 
     private unsafe void SetActive(BgPartsLayoutInstance* thisPtr, bool active)
@@ -210,7 +221,7 @@ public sealed class SceneTracker : IDisposable
         var key = (ulong)thisPtr->Id.InstanceKey << 32 | thisPtr->SubId;
         if (active)
         {
-            if (LayoutObjects.ContainsKey(key))
+            if (_allObjects.ContainsKey(key))
                 return;
 
             ulong mat = ((ulong)thisPtr->CollisionMaterialIdHigh << 32) | thisPtr->CollisionMaterialIdLow;
@@ -230,35 +241,29 @@ public sealed class SceneTracker : IDisposable
                 switch ((FileLayerGroupAnalyticCollider.Type)shape.transform.Type)
                 {
                     case FileLayerGroupAnalyticCollider.Type.Box:
-                        AddObject(key, new Instance(key, _keyAnalyticBox, resultingTransform, SceneExtractor.CalculateBoxBounds(ref resultingTransform), mat, matMask));
+                        AddObject(_keyAnalyticBox, new(key, resultingTransform, SceneExtractor.CalculateBoxBounds(ref resultingTransform), mat, matMask), InstanceType.BgPart);
                         break;
                     case FileLayerGroupAnalyticCollider.Type.Sphere:
-                        AddObject(key, new Instance(key, _keyAnalyticSphere, resultingTransform, SceneExtractor.CalculateSphereBounds(key, ref resultingTransform), mat, matMask));
+                        AddObject(_keyAnalyticSphere, new(key, resultingTransform, SceneExtractor.CalculateSphereBounds(key, ref resultingTransform), mat, matMask), InstanceType.BgPart);
                         break;
                     case FileLayerGroupAnalyticCollider.Type.Cylinder:
-                        AddObject(key, new Instance(key, _keyMeshCylinder, resultingTransform, SceneExtractor.CalculateBoxBounds(ref resultingTransform), mat, matMask));
+                        AddObject(_keyMeshCylinder, new(key, resultingTransform, SceneExtractor.CalculateBoxBounds(ref resultingTransform), mat, matMask), InstanceType.BgPart);
                         break;
                     case FileLayerGroupAnalyticCollider.Type.Plane:
-                        AddObject(key, new Instance(key, _keyAnalyticPlaneSingle, resultingTransform, SceneExtractor.CalculatePlaneBounds(ref resultingTransform), mat, matMask));
+                        AddObject(_keyAnalyticPlaneSingle, new(key, resultingTransform, SceneExtractor.CalculatePlaneBounds(ref resultingTransform), mat, matMask), InstanceType.BgPart);
                         break;
                 }
             }
             else if (thisPtr->CollisionMeshPathCrc != 0)
             {
-                if (!MeshPaths.TryGetValue(thisPtr->CollisionMeshPathCrc, out var path))
-                {
-                    path = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref thisPtr->Layout->CrcToPath, thisPtr->CollisionMeshPathCrc));
-                    MeshPaths[thisPtr->CollisionMeshPathCrc] = path;
-                }
-
-                if (!Meshes.TryGetValue(path, out var mesh))
-                    mesh = LoadFileMesh(path, SceneExtractor.MeshType.FileMesh);
+                var path = GetCollisionMeshPathByCrc(thisPtr->CollisionMeshPathCrc, thisPtr->Layout);
+                var mesh = GetMeshByPath(path, SceneExtractor.MeshType.FileMesh);
 
                 var transform = *thisPtr->GetTransformImpl();
                 var t2 = new Matrix4x3(transform.Compose());
                 var bounds = SceneExtractor.CalculateMeshBounds(mesh, ref t2);
 
-                AddObject(key, new Instance(key, path, t2, bounds, mat, matMask));
+                AddObject(path, new(key, t2, bounds, mat, matMask), InstanceType.BgPart);
             }
         }
         else
@@ -273,39 +278,41 @@ public sealed class SceneTracker : IDisposable
             return;
 
         var cast = (CollisionBoxLayoutInstance*)thisPtr;
+        if ((cast->MaterialIdLow & 0x410) == 0x400)
+            return;
+
         ulong mat = ((ulong)cast->MaterialIdHigh << 32) | cast->MaterialIdLow;
         ulong matMask = ((ulong)cast->MaterialMaskHigh << 32) | cast->MaterialMaskLow;
 
         var key = (ulong)thisPtr->Id.InstanceKey << 32 | thisPtr->SubId;
         if (active)
         {
-            if (LayoutObjects.ContainsKey(key))
+            if (_allObjects.ContainsKey(key))
                 return;
 
             string? path = null;
             SceneExtractor.Mesh? mesh = null;
 
-            if (cast->PcbPathCrc != 0 && !MeshPaths.ContainsKey(cast->PcbPathCrc))
+            if (cast->PcbPathCrc != 0)
             {
-                path = MeshPaths[cast->PcbPathCrc] = LayoutUtils.ReadString(LayoutUtils.FindPtr(ref thisPtr->Layout->CrcToPath, cast->PcbPathCrc));
-                if (!Meshes.TryGetValue(path, out mesh))
-                    mesh = LoadFileMesh(path, SceneExtractor.MeshType.FileMesh);
+                path = GetCollisionMeshPathByCrc(cast->PcbPathCrc, thisPtr->Layout);
+                mesh = GetMeshByPath(path, SceneExtractor.MeshType.FileMesh);
             }
 
             var transform = new Matrix4x3(cast->Transform.Compose());
             switch (cast->TriggerBoxLayoutInstance.Type)
             {
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Box:
-                    AddObject(key, new(key, _keyAnalyticBox, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask));
+                    AddObject(_keyAnalyticBox, new(key, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask), InstanceType.CollisionBox);
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Sphere:
-                    AddObject(key, new(key, _keyAnalyticSphere, transform, SceneExtractor.CalculateSphereBounds(key, ref transform), mat, matMask));
+                    AddObject(_keyAnalyticSphere, new(key, transform, SceneExtractor.CalculateSphereBounds(key, ref transform), mat, matMask), InstanceType.CollisionBox);
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Cylinder:
-                    AddObject(key, new(key, _keyAnalyticCylinder, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask));
+                    AddObject(_keyAnalyticCylinder, new(key, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask), InstanceType.CollisionBox);
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Plane:
-                    AddObject(key, new(key, _keyAnalyticPlaneSingle, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask));
+                    AddObject(_keyAnalyticPlaneSingle, new(key, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask), InstanceType.CollisionBox);
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Mesh:
                     if (mesh == null)
@@ -313,10 +320,10 @@ public sealed class SceneTracker : IDisposable
                         Service.Log.Warning($"Mesh-type collider found with path CRC {cast->PcbPathCrc}, but no matching mesh exists! This is a bug");
                         return;
                     }
-                    AddObject(key, new(key, path!, transform, SceneExtractor.CalculateMeshBounds(mesh!, ref transform), mat, matMask));
+                    AddObject(path!, new(key, transform, SceneExtractor.CalculateMeshBounds(mesh!, ref transform), mat, matMask), InstanceType.CollisionBox);
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.PlaneTwoSided:
-                    AddObject(key, new(key, _keyAnalyticPlaneDouble, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask));
+                    AddObject(_keyAnalyticPlaneDouble, new(key, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask), InstanceType.CollisionBox);
                     break;
             }
         }
@@ -326,25 +333,22 @@ public sealed class SceneTracker : IDisposable
         }
     }
 
-    private void AddObject(ulong key, Instance part)
+    private void AddObject(string path, SceneExtractor.MeshInstance part, InstanceType type)
     {
-        LayoutObjects[key] = part;
-        var t = part.Transform;
-        var b = part.Bounds;
-        var mesh = Meshes[part.Path];
-        AddMeshInstance(mesh, SceneExtractor.AddInstance(mesh, part.Key, ref t, ref b, part.MaterialId, part.MaterialMask));
+        _allObjects[part.Id] = part.WorldBounds;
+        AddMeshInstance(Meshes[path], part, type);
     }
 
     private void RemoveObject(ulong key)
     {
-        if (LayoutObjects.TryGetValue(key, out var part))
+        if (_allObjects.TryGetValue(key, out var part))
         {
-            LayoutObjects.Remove(key);
-            RemoveMeshInstance(key, part.Bounds);
+            _allObjects.Remove(key);
+            RemoveMeshInstance(key, part);
         }
     }
 
-    private void AddMeshInstance(SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance)
+    private void AddMeshInstance(SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance, InstanceType type)
     {
         var (tileBoundsMin, tileBoundsMax) = GetTiles(instance.WorldBounds);
         for (var i = tileBoundsMin.Item1; i <= tileBoundsMax.Item1; i++)
@@ -354,7 +358,7 @@ public sealed class SceneTracker : IDisposable
             {
                 if (j < 0 || j >= NumTilesInRow) continue;
                 Tiles[i, j] ??= new(i, j);
-                Tiles[i, j].Objects.Add(instance.Id, (mesh, instance));
+                Tiles[i, j].Objects[instance.Id] = (mesh, instance, type);
                 Tiles[i, j].Timer = DebounceMS;
             }
         }

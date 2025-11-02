@@ -227,9 +227,6 @@ class DebugNavmeshCustom : IDisposable
             ImGui.TextUnformatted($"State: {_navmesh.CurrentState}");
         }
 
-        _drawExtracted ??= new(_navmesh.Scene!, _navmesh.Extractor!, _tree, _dd, _coll, _configDirectory);
-        _drawExtracted.Draw();
-
         if (_navmesh.CurrentState != AsyncBuilder.State.Ready)
             return;
 
@@ -246,6 +243,9 @@ class DebugNavmeshCustom : IDisposable
         var navmesh = _navmesh.Navmesh!;
         navmesh.CalcTileLoc((Service.ClientState.LocalPlayer?.Position ?? default).SystemToRecast(), out var playerTileX, out var playerTileZ);
         _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
+
+        _drawExtracted ??= new(_navmesh.Scene!, _navmesh.Extractor!, _tree, _dd, _coll, _configDirectory);
+        _drawExtracted.Draw();
         var intermediates = _navmesh.Intermediates;
         if (intermediates != null)
         {

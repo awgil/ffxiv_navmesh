@@ -44,6 +44,8 @@ public class SceneExtractor
 
     public class MeshInstance(ulong id, Matrix4x3 worldTransform, AABB worldBounds, PrimitiveFlags forceSetPrimFlags, PrimitiveFlags forceClearPrimFlags)
     {
+        public MeshInstance(ulong id, Matrix4x3 transform, AABB bounds, ulong setFlags, ulong clearFlags) : this(id, transform, bounds, ExtractMaterialFlags(setFlags), ExtractMaterialFlags(clearFlags)) { }
+
         public ulong Id = id;
         public Matrix4x3 WorldTransform = worldTransform;
         public AABB WorldBounds = worldBounds;

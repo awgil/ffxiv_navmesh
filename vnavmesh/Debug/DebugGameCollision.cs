@@ -575,14 +575,6 @@ public unsafe class DebugGameCollision : IDisposable
                 }
                 break;
         }
-
-        if (coll != null)
-        {
-            Vector3 trans;
-            coll->GetTranslation(&trans);
-
-            _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, trans, 0xFFFF00FF);
-        }
     }
 
     private void VisualizeColliderMesh(ColliderMesh* coll, Vector4 color, BitMask filterId, BitMask filterMask)

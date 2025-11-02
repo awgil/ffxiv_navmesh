@@ -5,6 +5,7 @@ using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,19 +19,25 @@ public sealed class TileManager : IDisposable
     public static readonly Vector3 BoundsMax = new(1024);
 
     private readonly CancellationTokenSource?[,] _cancel = new CancellationTokenSource[16, 16];
+    public readonly Task?[,] Tasks = new Task?[16, 16];
     private readonly SemaphoreSlim _sem = new(12);
+
+    public NavmeshCustomization Customization = new();
+
+    private readonly NavmeshManager _manager;
 
     public DtNavMesh? Mesh;
 
-    public TileManager()
+    public TileManager(NavmeshManager manager)
     {
-        var customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
-        Scene = new(customization.Settings.NumTiles[0]);
+        _manager = manager;
+
+        Customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
+        Scene = new(Customization.Settings.NumTiles[0]);
 
         Scene.TileChanged += OnTileChange;
         Service.ClientState.ZoneInit += OnZoneInit;
 
-        Scene.Reload(true);
         Mesh = new(MakeParams(), 6);
     }
 
@@ -45,17 +52,23 @@ public sealed class TileManager : IDisposable
 
     private void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
     {
-        foreach (var cts in _cancel)
-            cts?.Cancel();
+        foreach (var c in _cancel)
+            c?.Cancel();
 
-        var customization = NavmeshCustomizationRegistry.ForTerritory(obj.TerritoryType.RowId);
-        Scene.NumTilesInRow = customization.Settings.NumTiles[0];
-        Scene.Reload(false);
+        Customization = NavmeshCustomizationRegistry.ForTerritory(obj.TerritoryType.RowId);
+        Scene.NumTilesInRow = Customization.Settings.NumTiles[0];
+        Scene.Clear();
         Mesh = new(MakeParams(), 6);
     }
 
     public void Dispose()
     {
+        foreach (var c in _cancel)
+        {
+            c?.Cancel();
+            c?.Dispose();
+        }
+
         Scene.Dispose();
     }
 
@@ -72,43 +85,53 @@ public sealed class TileManager : IDisposable
         {
             _cancel[tile.X, tile.Z]?.Cancel();
             var source = _cancel[tile.X, tile.Z] = new CancellationTokenSource();
-            Task.Run(() =>
+            Tasks[tile.X, tile.Z] = Task.Run(() =>
             {
                 Interlocked.Add(ref NumTasks, 1);
-                _sem.Wait(source.Token);
+
+                // nested try: semaphore wait could throw if this tile build is canceled, but we should always decrement NumTasks
                 try
                 {
-                    Service.Log.Debug($"spawning rebuild for {tile.X}x{tile.Z}");
-                    RebuildTile(tile);
+                    _sem.Wait(source.Token);
+                    try
+                    {
+                        RebuildTile(tile, source.Token);
+                    }
+                    finally
+                    {
+                        _sem.Release();
+                    }
                 }
                 finally
                 {
-                    _sem.Release();
                     Interlocked.Add(ref NumTasks, -1);
                 }
-            }, source.Token);
+            }, source.Token).ContinueWith(t =>
+            {
+                if (NumTasks == 0 && Mesh != null)
+                {
+                    Service.Log.Debug($"all tiles done, replacing mesh");
+                    _manager.ReplaceMesh(new(Customization.Version, Mesh, null));
+                }
+            });
         }
     }
 
     private readonly Lock locked = new();
 
-    private void OnTileBuilt(int x, int z, (DtMeshData?, RcBuilderResult) tileData)
+    private void RebuildTile(SceneTracker.Tile tile, CancellationToken token)
     {
-        if (tileData.Item1 == null || Mesh == null)
+        var customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
+        var builder = new TileBuilder(tile, customization, customization.IsFlyingSupported(Service.ClientState.TerritoryType));
+        var (data, _) = builder.Build(token);
+        if (data == null || Mesh == null)
             return;
 
         lock (locked)
         {
-            Mesh.UpdateTile(tileData.Item1, 0);
-            Service.Log.Debug($"added tile {x}x{z} to mesh");
+            Mesh.UpdateTile(data, 0);
+            Service.Log.Debug($"added tile {tile.X}x{tile.Z}");
         }
-    }
-
-    private void RebuildTile(SceneTracker.Tile tile)
-    {
-        var customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
-        var builder = new TileBuilder(tile, customization, customization.IsFlyingSupported(Service.ClientState.TerritoryType));
-        OnTileBuilt(tile.X, tile.Z, builder.Build());
     }
 }
 
@@ -186,7 +209,7 @@ public sealed class TileBuilder
         }
     }
 
-    public (DtMeshData?, RcBuilderResult) Build()
+    public (DtMeshData?, RcBuilderResult) Build(CancellationToken token)
     {
         var timer = Timer.Create();
 
@@ -203,8 +226,10 @@ public sealed class TileBuilder
         var vox = volume != null ? new Voxelizer(_voxelizerNumX, _voxelizerNumY, _voxelizerNumZ) : null;
         var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, _walkableHeightVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), vox, Telemetry);
 
-        rasterizer.RasterizeFlat(Tile.Objects.Values, SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true);
-        rasterizer.RasterizeFlat(Tile.Objects.Values, SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true);
+        rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Item1, o.Item2)), SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true);
+        rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Item1, o.Item2)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true);
+
+        token.ThrowIfCancellationRequested();
 
         // 2. perform a bunch of postprocessing on a heightfield
         if (Settings.Filtering.HasFlag(NavmeshSettings.Filter.LowHangingObstacles))

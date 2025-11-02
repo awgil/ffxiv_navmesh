@@ -17,45 +17,25 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
 
     public void Draw()
     {
-        using (var np = _tree.Node($"Objects ({Scene.LayoutObjects.Count})###bgparts", Scene.LayoutObjects.Count == 0))
+        using (var nt = _tree.Node($"Tasks: {_tiles.NumTasks}###tasks"))
         {
-            if (np.Opened)
+            if (nt.Opened)
             {
-                foreach (var (key, part) in Scene.LayoutObjects)
+                for (var i = 0; i < _tiles.Tasks.GetLength(0); i++)
                 {
-                    var coll = FindCollider(InstanceType.BgPart, key);
-                    using var n = _tree.Node($"[{key:X16}] {part.Transform.Row3} {part.Path}###{key:X}");
-                    if (n.SelectedOrHovered)
+                    for (var j = 0; j < _tiles.Tasks.GetLength(1); j++)
                     {
-                        _dd.DrawWorldAABB(part.Bounds, 0xff0000ff);
-                        if (coll != null)
-                            _coll.VisualizeCollider(coll, default, default);
+                        var task = _tiles.Tasks[i, j];
+                        if (task == null || task.Status == System.Threading.Tasks.TaskStatus.RanToCompletion)
+                            continue;
+
+                        _tree.LeafNode($"[{i:d2}x{j:d2}] {task.Status}");
                     }
                 }
             }
         }
 
-        /*
-        using (var nc = _tree.Node($"Colliders ({_scene.Colliders.Count})##colliders", _scene.Colliders.Count == 0))
-        {
-            if (nc.Opened)
-            {
-                foreach (var (key, part) in _scene.Colliders)
-                {
-                    var collider = FindCollider(InstanceType.CollisionBox, key);
-                    using var n = _tree.Node($"[{key:X16}] {part.Transform.Row3} {part.MaterialId:X}###{key:X}");
-                    if (n.SelectedOrHovered)
-                    {
-                        _dd.DrawWorldAABB(part.Bounds, 0xff0000ff);
-                        if (collider != null)
-                            _coll.VisualizeCollider(collider, default, default);
-                    }
-                }
-            }
-        }
-        */
-
-        using (var nk = _tree.Node($"Tile caches##tilecache"))
+        using (var nk = _tree.Node($"Tiles###tiles"))
         {
             if (nk.Opened)
             {
@@ -63,20 +43,44 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
                 {
                     for (var j = 0; j < Scene.NumTilesInRow; j++)
                     {
-                        if (Scene.Tiles[i, j].Objects is not { } obj || obj.Count == 0)
+                        var tile = Scene.Tiles[i, j];
+                        if (tile?.Objects is not { } obj || obj.Count == 0)
                             continue;
 
-                        double minStale = 2000.0;
-                        double maxStale = 10000.0;
-
-                        var staleness = -(Scene.Tiles[i, j].Timer - SceneTracker.DebounceMS);
-                        var alpha = 0xff - (byte)(Math.Max(0, Math.Min(maxStale, staleness) - minStale) / (maxStale - minStale) * 0x80);
-
-                        var color = (uint)alpha << 24 | 0xFFFFFF;
-
-                        _tree.LeafNode($"[{i}x{j}] {Scene.Tiles[i, j].Objects.Count} ({staleness * 0.001f:f2}s old)##ck{i}", color);
+                        DrawTile(tile);
                     }
                 }
+            }
+        }
+    }
+
+    private void DrawTile(SceneTracker.Tile tile)
+    {
+        double minStale = 2000.0;
+        double maxStale = 10000.0;
+
+        var staleness = -(tile.Timer - Scene.DebounceMS);
+        var alpha = 0xff - (byte)(Math.Max(0, Math.Min(maxStale, staleness) - minStale) / (maxStale - minStale) * 0x80);
+
+        var color = (uint)alpha << 24 | 0xFFFFFF;
+
+        using var node = _tree.Node($"[{tile.X}x{tile.Z}] {tile.Objects.Count} ({staleness * 0.001f:f2}s old)###tile{tile.X}_{tile.Z}", false, color);
+        if (!node.Opened)
+            return;
+
+        foreach (var (key, obj) in tile.Objects)
+        {
+            var typestr = obj.Type.ToString();
+            if (typestr == "0")
+                typestr = "Terrain (no collider)";
+            var n2 = _tree.LeafNode($"[{key:X16}] {typestr}");
+            if (n2.SelectedOrHovered && obj.Type != default)
+            {
+                _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, obj.Instance.WorldTransform.Row3, 0xFFFF00FF);
+
+                var coll = FindCollider(obj.Type, key);
+                if (coll != null)
+                    _coll.VisualizeCollider(coll, default, default);
             }
         }
     }

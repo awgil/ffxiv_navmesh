@@ -79,6 +79,9 @@ public sealed class TileManager : IDisposable
 
     public volatile int NumTasks;
 
+
+    // TODO: the debounce needs to be done here (so we can cancel ongoing build tasks), not in SceneTracker
+    // otherwise if SceneTracker modifies a tile, the event won't be triggered for 500ms (or whatever) so the tile build task will fail due to enumerating a modified collection instead of being canceled
     private void OnTileChange(List<SceneTracker.Tile> obj)
     {
         foreach (var tile in obj)
@@ -95,6 +98,7 @@ public sealed class TileManager : IDisposable
                     _sem.Wait(source.Token);
                     try
                     {
+                        Service.Log.Debug($"kicking off build for tile {tile.X}x{tile.Z}");
                         RebuildTile(tile, source.Token);
                     }
                     finally
@@ -226,10 +230,16 @@ public sealed class TileBuilder
         var vox = volume != null ? new Voxelizer(_voxelizerNumX, _voxelizerNumY, _voxelizerNumZ) : null;
         var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, _walkableHeightVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), vox, Telemetry);
 
-        rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Item1, o.Item2)), SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true);
-        rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Item1, o.Item2)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true);
-
-        token.ThrowIfCancellationRequested();
+        try
+        {
+            rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true, token);
+            rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, token);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Service.Log.Warning(ex, $"while building mesh tile {TileX}x{TileZ}");
+            throw;
+        }
 
         // 2. perform a bunch of postprocessing on a heightfield
         if (Settings.Filtering.HasFlag(NavmeshSettings.Filter.LowHangingObstacles))

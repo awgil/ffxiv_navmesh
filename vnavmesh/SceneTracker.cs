@@ -278,26 +278,18 @@ public sealed class SceneTracker : IDisposable
             return;
 
         var cast = (CollisionBoxLayoutInstance*)thisPtr;
-        if ((cast->MaterialIdLow & 0x410) == 0x400)
-            return;
-
-        ulong mat = ((ulong)cast->MaterialIdHigh << 32) | cast->MaterialIdLow;
-        ulong matMask = ((ulong)cast->MaterialMaskHigh << 32) | cast->MaterialMaskLow;
-
         var key = (ulong)thisPtr->Id.InstanceKey << 32 | thisPtr->SubId;
+
         if (active)
         {
-            if (_allObjects.ContainsKey(key))
+            if ((cast->MaterialIdLow & 0x410) == 0x400)
                 return;
 
-            string? path = null;
-            SceneExtractor.Mesh? mesh = null;
+            ulong mat = ((ulong)cast->MaterialIdHigh << 32) | cast->MaterialIdLow;
+            ulong matMask = ((ulong)cast->MaterialMaskHigh << 32) | cast->MaterialMaskLow;
 
-            if (cast->PcbPathCrc != 0)
-            {
-                path = GetCollisionMeshPathByCrc(cast->PcbPathCrc, thisPtr->Layout);
-                mesh = GetMeshByPath(path, SceneExtractor.MeshType.FileMesh);
-            }
+            if (_allObjects.ContainsKey(key))
+                return;
 
             var transform = new Matrix4x3(cast->Transform.Compose());
             switch (cast->TriggerBoxLayoutInstance.Type)
@@ -315,12 +307,12 @@ public sealed class SceneTracker : IDisposable
                     AddObject(_keyAnalyticPlaneSingle, new(key, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask), InstanceType.CollisionBox);
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.Mesh:
-                    if (mesh == null)
+                    if (cast->PcbPathCrc != 0)
                     {
-                        Service.Log.Warning($"Mesh-type collider found with path CRC {cast->PcbPathCrc}, but no matching mesh exists! This is a bug");
-                        return;
+                        var path = GetCollisionMeshPathByCrc(cast->PcbPathCrc, thisPtr->Layout);
+                        var mesh = GetMeshByPath(path, SceneExtractor.MeshType.FileMesh);
+                        AddObject(path, new(key, transform, SceneExtractor.CalculateMeshBounds(mesh, ref transform), mat, matMask), InstanceType.CollisionBox);
                     }
-                    AddObject(path!, new(key, transform, SceneExtractor.CalculateMeshBounds(mesh!, ref transform), mat, matMask), InstanceType.CollisionBox);
                     break;
                 case FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer.ColliderType.PlaneTwoSided:
                     AddObject(_keyAnalyticPlaneDouble, new(key, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask), InstanceType.CollisionBox);

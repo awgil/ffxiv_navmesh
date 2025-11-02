@@ -55,15 +55,13 @@ public sealed class SceneTracker : IDisposable
         public int X = x;
         public int Z = Z;
         public Dictionary<ulong, (SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type)> Objects = [];
-        public double Timer = 0;
     }
 
     public Tile[,] Tiles { get; private set; }
 
-    public event Action LayoutChanged = delegate { };
-    public event Action<List<Tile>> TileChanged = delegate { };
+    public Tile CloneTile(int x, int z) => new(x, z) { Objects = new(Tiles[x, z].Objects) };
 
-    public record struct ChangedTile(int X, int Z, SortedSet<ulong> SortedIds);
+    public event Action<int, int> TileChanged = delegate { };
 
     public unsafe SceneTracker(int numTilesInRow)
     {
@@ -79,7 +77,10 @@ public sealed class SceneTracker : IDisposable
 
         NumTilesInRow = numTilesInRow;
         Tiles = new Tile[numTilesInRow, numTilesInRow];
+    }
 
+    public unsafe void Init()
+    {
         var world = LayoutWorld.Instance();
         if (world->ActiveLayout != null)
             InitLayout(world->ActiveLayout);
@@ -92,30 +93,6 @@ public sealed class SceneTracker : IDisposable
         _layoutManagerInitHook.Dispose();
         _bgPartsSetActiveHook.Dispose();
         _triggerBoxSetActiveHook.Dispose();
-    }
-
-    public void Tick(Dalamud.Plugin.Services.IFramework framework)
-    {
-        var tick = framework.UpdateDelta.TotalMilliseconds;
-
-        List<Tile> tilesChanged = [];
-        for (var i = 0; i < Tiles.GetLength(0); i++)
-        {
-            for (var j = 0; j < Tiles.GetLength(1); j++)
-            {
-                var cnt = Tiles[i, j];
-                if (cnt == null)
-                    continue;
-                var pos = cnt.Timer > 0;
-                cnt.Timer -= tick;
-
-                if (pos && cnt.Timer <= 0)
-                    tilesChanged.Add(cnt);
-            }
-        }
-
-        if (tilesChanged.Count > 0)
-            TileChanged.Invoke(tilesChanged);
     }
 
     public unsafe void Clear()
@@ -148,8 +125,6 @@ public sealed class SceneTracker : IDisposable
 
     private unsafe void InitLayout(LayoutManager* layout)
     {
-        LayoutChanged.Invoke();
-
         var terrid = layout->TerritoryTypeId;
 
         foreach (var (k, v) in layout->Terrains)
@@ -351,7 +326,7 @@ public sealed class SceneTracker : IDisposable
                 if (j < 0 || j >= NumTilesInRow) continue;
                 Tiles[i, j] ??= new(i, j);
                 Tiles[i, j].Objects[instance.Id] = (mesh, instance, type);
-                Tiles[i, j].Timer = DebounceMS;
+                TileChanged.Invoke(i, j);
             }
         }
     }
@@ -366,7 +341,7 @@ public sealed class SceneTracker : IDisposable
             {
                 if (j < 0 || j >= NumTilesInRow) continue;
                 Tiles[i, j].Objects.Remove(key);
-                Tiles[i, j].Timer = DebounceMS;
+                TileChanged.Invoke(i, j);
             }
         }
     }

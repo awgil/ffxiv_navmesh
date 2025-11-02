@@ -59,7 +59,7 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
         double minStale = 2000.0;
         double maxStale = 10000.0;
 
-        var staleness = -(tile.Timer - Scene.DebounceMS);
+        var staleness = -(_tiles.GetTimer(tile.X, tile.Z) - Scene.DebounceMS);
         var alpha = 0xff - (byte)(Math.Max(0, Math.Min(maxStale, staleness) - minStale) / (maxStale - minStale) * 0x80);
 
         var color = (uint)alpha << 24 | 0xFFFFFF;

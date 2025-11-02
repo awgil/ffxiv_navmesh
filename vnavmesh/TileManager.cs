@@ -19,7 +19,11 @@ public sealed class TileManager : IDisposable
     public static readonly Vector3 BoundsMax = new(1024);
 
     private readonly CancellationTokenSource?[,] _cancel = new CancellationTokenSource[16, 16];
+    private double[,] _timers = new double[16, 16];
     public readonly Task?[,] Tasks = new Task?[16, 16];
+
+    public volatile int NumTasks;
+    private readonly Lock locked = new();
     private readonly SemaphoreSlim _sem = new(12);
 
     public NavmeshCustomization Customization = new();
@@ -28,16 +32,30 @@ public sealed class TileManager : IDisposable
 
     public DtNavMesh? Mesh;
 
+    public double GetTimer(int x, int z) => _timers[x, z];
+
+    private bool _debounce;
+
     public TileManager(NavmeshManager manager)
     {
         _manager = manager;
 
         Customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
         Scene = new(Customization.Settings.NumTiles[0]);
+        Scene.TileChanged += (x, z) =>
+        {
+            _cancel[x, z]?.Cancel();
+            if (_debounce)
+                _timers[x, z] = Scene.DebounceMS;
+            else
+                // currently initialized layout should be loaded with no delay
+                BuildTile(x, z);
+        };
 
-        Scene.TileChanged += OnTileChange;
+        Scene.Init();
+        _debounce = true;
+
         Service.ClientState.ZoneInit += OnZoneInit;
-
         Mesh = new(MakeParams(), 6);
     }
 
@@ -58,6 +76,7 @@ public sealed class TileManager : IDisposable
         Customization = NavmeshCustomizationRegistry.ForTerritory(obj.TerritoryType.RowId);
         Scene.NumTilesInRow = Customization.Settings.NumTiles[0];
         Scene.Clear();
+        _timers = new double[Scene.NumTilesInRow, Scene.NumTilesInRow];
         Mesh = new(MakeParams(), 6);
     }
 
@@ -74,59 +93,64 @@ public sealed class TileManager : IDisposable
 
     public void Update(IFramework framework)
     {
-        Scene.Tick(framework);
-    }
+        var dt = framework.UpdateDelta.TotalMilliseconds;
 
-    public volatile int NumTasks;
-
-
-    // TODO: the debounce needs to be done here (so we can cancel ongoing build tasks), not in SceneTracker
-    // otherwise if SceneTracker modifies a tile, the event won't be triggered for 500ms (or whatever) so the tile build task will fail due to enumerating a modified collection instead of being canceled
-    private void OnTileChange(List<SceneTracker.Tile> obj)
-    {
-        foreach (var tile in obj)
+        for (var i = 0; i < _timers.GetLength(0); i++)
         {
-            _cancel[tile.X, tile.Z]?.Cancel();
-            var source = _cancel[tile.X, tile.Z] = new CancellationTokenSource();
-            Tasks[tile.X, tile.Z] = Task.Run(() =>
+            for (var j = 0; j < _timers.GetLength(1); j++)
             {
-                Interlocked.Add(ref NumTasks, 1);
-
-                // nested try: semaphore wait could throw if this tile build is canceled, but we should always decrement NumTasks
-                try
-                {
-                    _sem.Wait(source.Token);
-                    try
-                    {
-                        Service.Log.Debug($"kicking off build for tile {tile.X}x{tile.Z}");
-                        RebuildTile(tile, source.Token);
-                    }
-                    finally
-                    {
-                        _sem.Release();
-                    }
-                }
-                finally
-                {
-                    Interlocked.Add(ref NumTasks, -1);
-                }
-            }, source.Token).ContinueWith(t =>
-            {
-                if (NumTasks == 0 && Mesh != null)
-                {
-                    Service.Log.Debug($"all tiles done, replacing mesh");
-                    _manager.ReplaceMesh(new(Customization.Version, Mesh, null));
-                }
-            });
+                var wasPositive = _timers[i, j] > 0;
+                _timers[i, j] -= dt;
+                if (wasPositive && _timers[i, j] <= 0)
+                    BuildTile(i, j);
+            }
         }
     }
 
-    private readonly Lock locked = new();
+    private void BuildTile(int x, int z)
+    {
+        var cancel = _cancel[x, z] = new CancellationTokenSource();
+        Tasks[x, z] = Task.Run(() =>
+        {
+            Interlocked.Add(ref NumTasks, 1);
 
-    private void RebuildTile(SceneTracker.Tile tile, CancellationToken token)
+            try
+            {
+                _sem.Wait(cancel.Token);
+                try
+                {
+                    RebuildTile(x, z, cancel.Token);
+                    cancel.Token.ThrowIfCancellationRequested();
+                }
+                finally
+                {
+                    _sem.Release();
+                }
+            }
+            finally
+            {
+                Interlocked.Add(ref NumTasks, -1);
+            }
+        }, cancel.Token).ContinueWith(t =>
+        {
+            if (NumTasks == 0 && Mesh != null)
+            {
+                Service.Log.Debug($"all tiles done, replacing mesh");
+                _manager.ReplaceMesh(new(Customization.Version, Mesh, null));
+            }
+        });
+    }
+
+    private void RebuildTile(int x, int z, CancellationToken token)
     {
         var customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
-        var builder = new TileBuilder(tile, customization, customization.IsFlyingSupported(Service.ClientState.TerritoryType));
+
+        var contents = Scene.CloneTile(x, z);
+        var cacheKey = SceneTracker.GetHashFromKeys([.. contents.Objects.Keys]);
+
+        Service.Log.Debug($"kicking off build for tile {x}x{z} - key is {cacheKey}");
+
+        var builder = new TileBuilder(x, z, [.. contents.Objects.Values.Select(v => (v.Mesh, v.Instance))], customization, customization.IsFlyingSupported(Service.ClientState.TerritoryType));
         var (data, _) = builder.Build(token);
         if (data == null || Mesh == null)
             return;
@@ -134,7 +158,7 @@ public sealed class TileManager : IDisposable
         lock (locked)
         {
             Mesh.UpdateTile(data, 0);
-            Service.Log.Debug($"added tile {tile.X}x{tile.Z}");
+            Service.Log.Debug($"added tile {x}x{z}");
         }
     }
 }
@@ -148,9 +172,9 @@ public sealed class TileBuilder
     public int NumTilesX;
     public int NumTilesZ;
 
-    public SceneTracker.Tile Tile;
-    public int TileX => Tile.X;
-    public int TileZ => Tile.Z;
+    public List<(SceneExtractor.Mesh, SceneExtractor.MeshInstance)> Tile;
+    public int TileX;
+    public int TileZ;
 
     private readonly int _walkableClimbVoxels;
     private readonly int _walkableHeightVoxels;
@@ -167,9 +191,11 @@ public sealed class TileBuilder
     private readonly DtNavMesh navmesh;
     private readonly VoxelMap? volume;
 
-    public TileBuilder(SceneTracker.Tile tile, NavmeshCustomization customization, bool flyable)
+    public TileBuilder(int x, int z, List<(SceneExtractor.Mesh, SceneExtractor.MeshInstance)> tile, NavmeshCustomization customization, bool flyable)
     {
         Tile = tile;
+        TileX = x;
+        TileZ = z;
 
         Settings = customization.Settings;
 
@@ -230,16 +256,8 @@ public sealed class TileBuilder
         var vox = volume != null ? new Voxelizer(_voxelizerNumX, _voxelizerNumY, _voxelizerNumZ) : null;
         var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, _walkableHeightVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), vox, Telemetry);
 
-        try
-        {
-            rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true, token);
-            rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, token);
-        }
-        catch (InvalidOperationException ex)
-        {
-            Service.Log.Warning(ex, $"while building mesh tile {TileX}x{TileZ}");
-            throw;
-        }
+        rasterizer.RasterizeFlat(Tile, SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true, token);
+        rasterizer.RasterizeFlat(Tile, SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, token);
 
         // 2. perform a bunch of postprocessing on a heightfield
         if (Settings.Filtering.HasFlag(NavmeshSettings.Filter.LowHangingObstacles))

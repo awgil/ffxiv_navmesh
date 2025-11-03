@@ -60,6 +60,7 @@ public sealed class SceneTracker : IDisposable
     public int TileUnits => 2048 / RowLength;
 
     public uint Territory { get; private set; }
+    public List<uint> FestivalLayers = [];
 
     public class Tile(int x, int Z)
     {
@@ -88,10 +89,10 @@ public sealed class SceneTracker : IDisposable
             throw new InvalidOperationException("Initialize() called before setting a valid tile count");
 
         var world = LayoutWorld.Instance();
-        if (world->ActiveLayout != null)
-            InitLayout(world->ActiveLayout);
         if (world->GlobalLayout != null)
             InitLayout(world->GlobalLayout);
+        if (world->ActiveLayout != null)
+            InitLayout(world->ActiveLayout);
 
         for (var i = 0; i < Tiles.GetLength(0); i++)
             for (var j = 0; j < Tiles.GetLength(1); j++)
@@ -136,8 +137,12 @@ public sealed class SceneTracker : IDisposable
 
     private unsafe void InitLayout(LayoutManager* layout)
     {
-        if (layout->TerritoryTypeId != 0)
-            Territory = layout->TerritoryTypeId;
+        Territory = layout->TerritoryTypeId;
+
+        FestivalLayers.Clear();
+        foreach (var (k, v) in layout->Layers)
+            if (v.Value->FestivalId != 0)
+                FestivalLayers.Add(((uint)v.Value->FestivalSubId << 16) | v.Value->FestivalId);
 
         foreach (var (k, v) in layout->Terrains)
         {

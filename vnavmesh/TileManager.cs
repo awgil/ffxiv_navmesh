@@ -169,6 +169,7 @@ public sealed class TileManager : IDisposable
         if (NumTasks == 0 && Mesh != null)
         {
             Log("all tiles done, replacing mesh");
+            Customization.CustomizeMesh(Mesh, Scene.FestivalLayers);
             _manager.ReplaceMesh(new(Customization.Version, Mesh, Volume));
         }
     }

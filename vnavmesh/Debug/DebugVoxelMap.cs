@@ -177,5 +177,9 @@ public class DebugVoxelMap : IDisposable
         }
     }
 
-    private void VisualizeCell((Vector3 min, Vector3 max) bounds) => _dd.DrawWorldAABB((bounds.min + bounds.max) * 0.5f, (bounds.max - bounds.min) * 0.5f, 0xff0080ff, 1);
+    private void VisualizeCell((Vector3 min, Vector3 max) bounds)
+    {
+        _dd.DrawWorldAABB((bounds.min + bounds.max) * 0.5f, (bounds.max - bounds.min) * 0.5f, 0xff0080ff, 1);
+        _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, (bounds.min + bounds.max) * 0.5f, 0xFF0080ff, 1);
+    }
 }

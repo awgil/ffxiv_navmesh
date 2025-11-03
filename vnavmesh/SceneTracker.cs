@@ -4,6 +4,7 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -36,7 +37,7 @@ public sealed class SceneTracker : IDisposable
     private readonly Dictionary<uint, string> MeshPaths = [];
     private readonly Dictionary<string, SceneExtractor.Mesh> Meshes;
 
-    private readonly Dictionary<ulong, AABB> _allObjects = [];
+    private readonly ConcurrentDictionary<ulong, AABB> _allObjects = [];
 
     public record struct Instance(ulong Key, string Path, Matrix4x3 Transform, AABB Bounds, ulong MaterialId, ulong MaterialMask, InstanceType Type);
 
@@ -44,13 +45,21 @@ public sealed class SceneTracker : IDisposable
     private readonly Hook<TriggerBoxLayoutInstance.Delegates.SetActive> _triggerBoxSetActiveHook;
     private readonly Hook<LayoutManager.Delegates.Initialize> _layoutManagerInitHook;
 
-    public int NumTilesInRow;
-    public int NumTiles => NumTilesInRow * NumTilesInRow;
-    public int TileLength => 2048 / NumTilesInRow;
+    public Tile?[,] Tiles { get; private set; } = new Tile?[0, 0];
+    public int RowLength
+    {
+        get;
+        set
+        {
+            field = value;
+            _allObjects.Clear();
+            Tiles = new Tile?[value, value];
+        }
+    } = 0;
+    public int NumTiles => RowLength * RowLength;
+    public int TileUnits => 2048 / RowLength;
 
     public uint Territory { get; private set; }
-
-    public double DebounceMS = 500.0;
 
     public class Tile(int x, int Z)
     {
@@ -59,35 +68,41 @@ public sealed class SceneTracker : IDisposable
         public Dictionary<ulong, (SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type)> Objects = [];
     }
 
-    public Tile[,] Tiles { get; private set; }
+    public record struct TileChangedEventArgs(int X, int Z, bool Init);
+    public event Action<TileChangedEventArgs> TileChanged = delegate { };
 
-    public Tile CloneTile(int x, int z) => new(x, z) { Objects = new(Tiles[x, z].Objects) };
-
-    public event Action<int, int> TileChanged = delegate { };
-
-    public unsafe SceneTracker(int numTilesInRow)
+    public unsafe SceneTracker()
     {
         Meshes = MeshesGlobal.ToDictionary();
 
         _bgPartsSetActiveHook = Service.Hook.HookFromSignature<BgPartsLayoutInstance.Delegates.SetActive>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B D9 0F B6 C2 ", BgPartsSetActiveDetour);
         _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxLayoutInstance.Delegates.SetActive>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
         _layoutManagerInitHook = Service.Hook.HookFromSignature<LayoutManager.Delegates.Initialize>("41 54 48 83 EC 50 48 89 5C 24 ?? ", LayoutManagerInitDetour);
-
-        _bgPartsSetActiveHook.Enable();
-        _triggerBoxSetActiveHook.Enable();
-        _layoutManagerInitHook.Enable();
-
-        NumTilesInRow = numTilesInRow;
-        Tiles = new Tile[numTilesInRow, numTilesInRow];
     }
 
-    public unsafe void Init()
+    private bool _initialized;
+
+    public unsafe void Initialize()
     {
+        if (RowLength == 0)
+            throw new InvalidOperationException("Initialize() called before setting a valid tile count");
+
         var world = LayoutWorld.Instance();
         if (world->ActiveLayout != null)
             InitLayout(world->ActiveLayout);
         if (world->GlobalLayout != null)
             InitLayout(world->GlobalLayout);
+
+        for (var i = 0; i < Tiles.GetLength(0); i++)
+            for (var j = 0; j < Tiles.GetLength(1); j++)
+                if (Tiles[i, j]?.Objects.Count > 0)
+                    TileChanged.Invoke(new(i, j, true));
+
+        _initialized = true;
+
+        _bgPartsSetActiveHook.Enable();
+        _triggerBoxSetActiveHook.Enable();
+        _layoutManagerInitHook.Enable();
     }
 
     public void Dispose()
@@ -95,12 +110,6 @@ public sealed class SceneTracker : IDisposable
         _layoutManagerInitHook.Dispose();
         _bgPartsSetActiveHook.Dispose();
         _triggerBoxSetActiveHook.Dispose();
-    }
-
-    public unsafe void Clear()
-    {
-        Tiles = new Tile[NumTilesInRow, NumTilesInRow];
-        _allObjects.Clear();
     }
 
     private unsafe string GetCollisionMeshPathByCrc(uint crc, LayoutManager* layout)
@@ -127,7 +136,8 @@ public sealed class SceneTracker : IDisposable
 
     private unsafe void InitLayout(LayoutManager* layout)
     {
-        Territory = layout->TerritoryTypeId;
+        if (layout->TerritoryTypeId != 0)
+            Territory = layout->TerritoryTypeId;
 
         foreach (var (k, v) in layout->Terrains)
         {
@@ -304,17 +314,14 @@ public sealed class SceneTracker : IDisposable
 
     private void AddObject(string path, SceneExtractor.MeshInstance part, InstanceType type)
     {
-        _allObjects[part.Id] = part.WorldBounds;
-        AddMeshInstance(Meshes[path], part, type);
+        if (_allObjects.TryAdd(part.Id, part.WorldBounds))
+            AddMeshInstance(Meshes[path], part, type);
     }
 
     private void RemoveObject(ulong key)
     {
-        if (_allObjects.TryGetValue(key, out var part))
-        {
-            _allObjects.Remove(key);
+        if (_allObjects.Remove(key, out var part))
             RemoveMeshInstance(key, part);
-        }
     }
 
     private void AddMeshInstance(SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance, InstanceType type)
@@ -322,13 +329,14 @@ public sealed class SceneTracker : IDisposable
         var (tileBoundsMin, tileBoundsMax) = GetTiles(instance.WorldBounds);
         for (var i = tileBoundsMin.Item1; i <= tileBoundsMax.Item1; i++)
         {
-            if (i < 0 || i >= NumTilesInRow) continue;
+            if (i < 0 || i >= RowLength) continue;
             for (var j = tileBoundsMin.Item2; j <= tileBoundsMax.Item2; j++)
             {
-                if (j < 0 || j >= NumTilesInRow) continue;
-                Tiles[i, j] ??= new(i, j);
-                Tiles[i, j].Objects[instance.Id] = (mesh, instance, type);
-                TileChanged.Invoke(i, j);
+                if (j < 0 || j >= RowLength) continue;
+                var tile = Tiles[i, j] ??= new(i, j);
+                tile.Objects[instance.Id] = (mesh, instance, type);
+                if (_initialized)
+                    TileChanged.Invoke(new(i, j, false));
             }
         }
     }
@@ -338,12 +346,13 @@ public sealed class SceneTracker : IDisposable
         var (tileBoundsMin, tileBoundsMax) = GetTiles(bounds);
         for (var i = tileBoundsMin.Item1; i <= tileBoundsMax.Item1; i++)
         {
-            if (i < 0 || i >= NumTilesInRow) continue;
+            if (i < 0 || i >= RowLength) continue;
             for (var j = tileBoundsMin.Item2; j <= tileBoundsMax.Item2; j++)
             {
-                if (j < 0 || j >= NumTilesInRow) continue;
-                Tiles[i, j].Objects.Remove(key);
-                TileChanged.Invoke(i, j);
+                if (j < 0 || j >= RowLength) continue;
+                Tiles[i, j]?.Objects.Remove(key);
+                if (_initialized)
+                    TileChanged.Invoke(new(i, j, false));
             }
         }
     }
@@ -353,7 +362,7 @@ public sealed class SceneTracker : IDisposable
         var min = box.Min - new Vector3(-1024);
         var max = box.Max - new Vector3(-1024);
 
-        return (((int)min.X / TileLength, (int)min.Z / TileLength), ((int)max.X / TileLength, (int)max.Z / TileLength));
+        return (((int)min.X / TileUnits, (int)min.Z / TileUnits), ((int)max.X / TileUnits, (int)max.Z / TileUnits));
     }
 
     public static string GetHashFromKeys(SortedSet<ulong> keys)

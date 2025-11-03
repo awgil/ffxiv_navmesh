@@ -1,5 +1,4 @@
-﻿using Dalamud.Plugin.Services;
-using DotRecast.Core;
+﻿using DotRecast.Core;
 using DotRecast.Detour;
 using DotRecast.Recast;
 using Navmesh.NavVolume;
@@ -8,7 +7,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,182 +14,242 @@ namespace Navmesh;
 
 public sealed class TileManager : IDisposable
 {
-    public readonly SceneTracker Scene;
+    public readonly SceneTracker Scene = new();
     public static readonly Vector3 BoundsMin = new(-1024);
     public static readonly Vector3 BoundsMax = new(1024);
 
-    private readonly CancellationTokenSource?[,] _cancel = new CancellationTokenSource[16, 16];
-    private double[,] _timers = new double[16, 16];
-    public readonly Task?[,] Tasks = new Task?[16, 16];
+    public double DebounceMs = 500.0;
+
+    public sealed class BuildTask(CancellationTokenSource cts)
+    {
+        private readonly CancellationTokenSource _cts = cts;
+        public static BuildTask Spawn(Func<CancellationToken, Task> task)
+        {
+            var cts = new CancellationTokenSource();
+            Task.Run(async () => await task(cts.Token), cts.Token);
+            return new(cts);
+        }
+
+        public void Cancel() => _cts.Cancel();
+    }
+
+    public BuildTask?[,] Tasks { get; private set; } = new BuildTask?[16, 16];
+    public VoxelMap?[,] Submaps = new VoxelMap?[16, 16];
 
     public volatile int NumTasks;
     private readonly Lock locked = new();
     private readonly SemaphoreSlim _sem = new(12);
 
-    public NavmeshCustomization Customization = new();
+    public NavmeshCustomization Customization
+    {
+        get;
+        set
+        {
+            field = value;
+
+            // update tile grid
+            Scene.RowLength = value.Settings.NumTiles[0];
+            foreach (var t in Tasks)
+                t?.Cancel();
+            Tasks = new BuildTask?[Scene.RowLength, Scene.RowLength];
+
+            RecreateMesh();
+        }
+    } = new();
 
     private readonly NavmeshManager _manager;
 
     public DtNavMesh? Mesh;
-
-    internal double GetTimer(int x, int z) => _timers[x, z];
-
-    private bool _debounce;
+    public VoxelMap? Volume;
 
     public TileManager(NavmeshManager manager)
     {
         _manager = manager;
 
-        Customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
-        Scene = new(Customization.Settings.NumTiles[0]);
-        Scene.TileChanged += (x, z) =>
-        {
-            _cancel[x, z]?.Cancel();
-            if (_debounce)
-                _timers[x, z] = Scene.DebounceMS;
-            else
-                // currently initialized layout (on plugin load) should be loaded without delay
-                BuildTile(x, z);
-        };
-
-        Scene.Init();
-        _debounce = true;
-
         Service.ClientState.ZoneInit += OnZoneInit;
-        Mesh = new(MakeParams(), 6);
+
+        Customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
+
+        Scene.TileChanged += OnTileChanged;
+        Scene.Initialize();
     }
 
-    private DtNavMeshParams MakeParams() => new()
-    {
-        orig = BoundsMin.SystemToRecast(),
-        tileWidth = (BoundsMax.X - BoundsMin.X) / Scene.NumTilesInRow,
-        tileHeight = (BoundsMax.Z - BoundsMin.Z) / Scene.NumTilesInRow,
-        maxTiles = Scene.NumTiles,
-        maxPolys = 1 << DtNavMesh.DT_POLY_BITS
-    };
-
-    private void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
-    {
-        CancelAll();
-
-        Customization = NavmeshCustomizationRegistry.ForTerritory(obj.TerritoryType.RowId);
-        Scene.NumTilesInRow = Customization.Settings.NumTiles[0];
-        Scene.Clear();
-        _timers = new double[Scene.NumTilesInRow, Scene.NumTilesInRow];
-        Mesh = new(MakeParams(), 6);
-    }
+    private void OnTileChanged(SceneTracker.TileChangedEventArgs obj) => QueueTile(obj.X, obj.Z, true, obj.Init ? 0 : DebounceMs);
 
     public void Dispose()
     {
-        CancelAll();
+        Scene.TileChanged -= OnTileChanged;
+
+        foreach (var t in Tasks)
+            t?.Cancel();
+
         Scene.Dispose();
+        Service.ClientState.ZoneInit -= OnZoneInit;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void CancelAll()
+    private void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
     {
-        foreach (var c in _cancel)
-            c?.Cancel();
+        Customization = NavmeshCustomizationRegistry.ForTerritory(obj.TerritoryType.RowId);
     }
 
-    public void Update(IFramework framework)
+    private void RecreateMesh()
     {
-        var dt = framework.UpdateDelta.TotalMilliseconds;
-
-        for (var i = 0; i < _timers.GetLength(0); i++)
+        // recreate mesh/volume
+        Mesh = new(new()
         {
-            for (var j = 0; j < _timers.GetLength(1); j++)
-            {
-                var wasPositive = _timers[i, j] > 0;
-                _timers[i, j] -= dt;
-                if (wasPositive && _timers[i, j] <= 0)
-                    BuildTile(i, j);
-            }
-        }
+            orig = BoundsMin.SystemToRecast(),
+            tileWidth = (BoundsMax.X - BoundsMin.X) / Scene.RowLength,
+            tileHeight = (BoundsMax.Z - BoundsMin.Z) / Scene.RowLength,
+            maxTiles = Scene.NumTiles,
+            maxPolys = 1 << DtNavMesh.DT_POLY_BITS
+        }, 6);
+        Volume = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
     }
 
-    private void BuildTile(int x, int z)
+    public void Rebuild()
     {
-        var cancel = _cancel[x, z] = new CancellationTokenSource();
-        Tasks[x, z] = Task.Run(() =>
-        {
-            Interlocked.Add(ref NumTasks, 1);
+        RecreateMesh();
 
-            try
-            {
-                _sem.Wait(cancel.Token);
-                try
-                {
-                    RebuildTile(x, z, cancel.Token);
-                    cancel.Token.ThrowIfCancellationRequested();
-                }
-                finally
-                {
-                    _sem.Release();
-                }
-            }
-            finally
-            {
-                Interlocked.Add(ref NumTasks, -1);
-            }
-        }, cancel.Token).ContinueWith(t =>
+        for (var i = 0; i < Scene.RowLength; i++)
+            for (var j = 0; j < Scene.RowLength; j++)
+                QueueTile(i, j, false, 0);
+    }
+
+    private void QueueTile(int x, int z, bool allowCache, double debounce)
+    {
+        Tasks[x, z]?.Cancel();
+        Tasks[x, z] = BuildTask.Spawn(async tok =>
         {
-            if (NumTasks == 0 && Mesh != null)
-            {
-                Service.Log.Debug($"all tiles done, replacing mesh");
-                _manager.ReplaceMesh(new(Customization.Version, Mesh, null));
-            }
+            if (debounce > 0)
+                await Task.Delay(TimeSpan.FromMilliseconds(debounce), tok);
+            await BuildTile(x, z, allowCache, tok);
         });
     }
 
-    private void RebuildTile(int x, int z, CancellationToken token)
+    private async Task BuildTile(int x, int z, bool allowCache, CancellationToken token)
     {
-        var data = LoadOrBuildTile(x, z, token);
+        Interlocked.Add(ref NumTasks, 1);
 
-        if (data == null || Mesh == null)
-            return;
-
-        lock (locked)
+        try
         {
-            Mesh.UpdateTile(data, 0);
-            Service.Log.Debug($"added tile {x}x{z}");
+            await _sem.WaitAsync(token);
+            try
+            {
+                var (tile, vox) = LoadOrBuildTile(x, z, allowCache, token);
+                if (Mesh != null)
+                {
+                    lock (locked)
+                    {
+                        if (tile != null)
+                            Mesh.UpdateTile(tile, 0);
+                        if (vox != null && Volume != null)
+                        {
+                            Submaps[x, z] = vox;
+                            MergeTile(Volume, x, z, vox);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ex is not OperationCanceledException)
+                    Log(ex, $"while building tile {x}x{z}");
+                throw;
+            }
+            finally
+            {
+                _sem.Release();
+            }
+        }
+        finally
+        {
+            Interlocked.Add(ref NumTasks, -1);
+        }
+
+        if (NumTasks == 0 && Mesh != null)
+        {
+            Log("all tiles done, replacing mesh");
+            _manager.ReplaceMesh(new(Customization.Version, Mesh, Volume));
         }
     }
 
-    private DtMeshData? LoadOrBuildTile(int x, int z, CancellationToken token)
+    private static void MergeTile(VoxelMap parent, int x, int z, VoxelMap child)
     {
+        var subdivisionShift = parent.RootTile.Subdivision.Count;
+
+        for (ushort i = 0; i < child.RootTile.Contents.Length; i++)
+        {
+            var contents = child.RootTile.Contents[i];
+
+            if ((contents & VoxelMap.VoxelOccupiedBit) == 0)
+                continue; // empty
+
+            // TODO: this would skip volume contents that extend outside the current tile, but i'm pretty sure that's not necessary assuming the voxelizer respects the RcHeightfield bounds?
+            //var v = child.RootTile.LevelDesc.IndexToVoxel(i);
+            //if (v.x != x || v.z != z)
+            //    continue;
+
+            if ((contents & VoxelMap.VoxelIdMask) != VoxelMap.VoxelIdMask)
+                contents += (ushort)subdivisionShift;
+
+            parent.RootTile.Contents[i] = contents;
+        }
+        parent.RootTile.Subdivision.AddRange(child.RootTile.Subdivision);
+    }
+
+    private (DtMeshData?, VoxelMap?) LoadOrBuildTile(int x, int z, bool allowCache, CancellationToken token)
+    {
+        Log($"kicking off build for tile {x}x{z}");
         var customization = NavmeshCustomizationRegistry.ForTerritory(Scene.Territory);
 
-        var contents = Scene.CloneTile(x, z);
+        var contents = Scene.Tiles[x, z]!;
         var cacheKey = SceneTracker.GetHashFromKeys([.. contents.Objects.Keys]);
 
-        DtMeshData? data = null;
+        var dir = new DirectoryInfo($"{_manager.CacheDir}/z{Scene.Territory}");
+        var cacheFile = new FileInfo(dir.FullName + $"/{x:d2}-{z:d2}-{cacheKey}");
 
-        Service.Log.Debug($"kicking off build for tile {x}x{z} - key is {cacheKey}");
-
-        var dir = new DirectoryInfo($"{_manager.CacheDir}/{Service.ClientState.TerritoryType}");
-        var cacheFile = new FileInfo(dir.FullName + $"/{x:X2}-{z:X2}-{cacheKey}");
-
-        if (!dir.Exists) dir.Create();
-
-        if (cacheFile.Exists)
+        try
         {
-            Service.Log.Debug($"loading tile {x}x{z} from cache");
-            using var stream = cacheFile.OpenRead();
-            using var reader = new BinaryReader(stream);
-            data = Navmesh.DeserializeSingleTile(reader, customization.Version);
-            return data;
+            if (cacheFile.Exists && allowCache)
+            {
+                using var stream = cacheFile.OpenRead();
+                using var reader = new BinaryReader(stream);
+                var data = Navmesh.DeserializeSingleTile(reader, customization.Version);
+                Log($"loaded tile {x}x{z} from cache");
+                return data;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log(ex, "unable to load tile from cache");
         }
 
         var builder = new TileBuilder(x, z, [.. contents.Objects.Values.Select(v => (v.Mesh, v.Instance))], customization, customization.IsFlyingSupported(Service.ClientState.TerritoryType));
-        data = builder.Build(token).Item1;
+        var (tile, vox, _) = builder.Build(token);
 
-        Service.Log.Debug($"writing tile {x}x{z} to cache");
-        using var wstream = cacheFile.Open(FileMode.Create, FileAccess.Write, FileShare.None);
-        using var writer = new BinaryWriter(wstream);
-        Navmesh.SerializeSingleTile(writer, data, customization.Version);
-        return data;
+        VoxelMap? map = null;
+        if (vox != null)
+        {
+            map = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
+            map.Build(vox, x, z);
+        }
+
+        token.ThrowIfCancellationRequested();
+
+        {
+            if (!dir.Exists)
+                dir.Create();
+
+            using var wstream = cacheFile.Open(FileMode.Create, FileAccess.Write, FileShare.None);
+            using var writer = new BinaryWriter(wstream);
+            Navmesh.SerializeSingleTile(writer, tile, map, customization.Version);
+        }
+
+        return (tile, map);
     }
+
+    public static void Log(string message) => Service.Log.Debug($"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
+    private static void Log(Exception ex, string message) => Service.Log.Warning(ex, $"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
 }
 
 public sealed class TileBuilder
@@ -270,7 +328,7 @@ public sealed class TileBuilder
         }
     }
 
-    public (DtMeshData?, RcBuilderResult) Build(CancellationToken token)
+    public (DtMeshData?, Voxelizer?, RcBuilderResult) Build(CancellationToken token)
     {
         var timer = Timer.Create();
 
@@ -392,8 +450,10 @@ public sealed class TileBuilder
 
         var meshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
 
-        Service.Log.Debug($"built navmesh tile {TileX}x{TileZ} in {timer.Value().TotalMilliseconds}ms");
+        token.ThrowIfCancellationRequested();
 
-        return (meshData, new RcBuilderResult(TileX, TileZ, shf, chf, cset, pmesh, dmesh, Telemetry));
+        TileManager.Log($"built navmesh tile {TileX}x{TileZ} in {timer.Value().TotalMilliseconds}ms");
+
+        return (meshData, vox, new RcBuilderResult(TileX, TileZ, shf, chf, cset, pmesh, dmesh, Telemetry));
     }
 }

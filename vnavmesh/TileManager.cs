@@ -5,8 +5,10 @@ using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -32,7 +34,7 @@ public sealed class TileManager : IDisposable
 
     public DtNavMesh? Mesh;
 
-    public double GetTimer(int x, int z) => _timers[x, z];
+    internal double GetTimer(int x, int z) => _timers[x, z];
 
     private bool _debounce;
 
@@ -48,7 +50,7 @@ public sealed class TileManager : IDisposable
             if (_debounce)
                 _timers[x, z] = Scene.DebounceMS;
             else
-                // currently initialized layout should be loaded with no delay
+                // currently initialized layout (on plugin load) should be loaded without delay
                 BuildTile(x, z);
         };
 
@@ -70,8 +72,7 @@ public sealed class TileManager : IDisposable
 
     private void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
     {
-        foreach (var c in _cancel)
-            c?.Cancel();
+        CancelAll();
 
         Customization = NavmeshCustomizationRegistry.ForTerritory(obj.TerritoryType.RowId);
         Scene.NumTilesInRow = Customization.Settings.NumTiles[0];
@@ -82,13 +83,15 @@ public sealed class TileManager : IDisposable
 
     public void Dispose()
     {
-        foreach (var c in _cancel)
-        {
-            c?.Cancel();
-            c?.Dispose();
-        }
-
+        CancelAll();
         Scene.Dispose();
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void CancelAll()
+    {
+        foreach (var c in _cancel)
+            c?.Cancel();
     }
 
     public void Update(IFramework framework)
@@ -143,15 +146,8 @@ public sealed class TileManager : IDisposable
 
     private void RebuildTile(int x, int z, CancellationToken token)
     {
-        var customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
+        var data = LoadOrBuildTile(x, z, token);
 
-        var contents = Scene.CloneTile(x, z);
-        var cacheKey = SceneTracker.GetHashFromKeys([.. contents.Objects.Keys]);
-
-        Service.Log.Debug($"kicking off build for tile {x}x{z} - key is {cacheKey}");
-
-        var builder = new TileBuilder(x, z, [.. contents.Objects.Values.Select(v => (v.Mesh, v.Instance))], customization, customization.IsFlyingSupported(Service.ClientState.TerritoryType));
-        var (data, _) = builder.Build(token);
         if (data == null || Mesh == null)
             return;
 
@@ -160,6 +156,41 @@ public sealed class TileManager : IDisposable
             Mesh.UpdateTile(data, 0);
             Service.Log.Debug($"added tile {x}x{z}");
         }
+    }
+
+    private DtMeshData? LoadOrBuildTile(int x, int z, CancellationToken token)
+    {
+        var customization = NavmeshCustomizationRegistry.ForTerritory(Scene.Territory);
+
+        var contents = Scene.CloneTile(x, z);
+        var cacheKey = SceneTracker.GetHashFromKeys([.. contents.Objects.Keys]);
+
+        DtMeshData? data = null;
+
+        Service.Log.Debug($"kicking off build for tile {x}x{z} - key is {cacheKey}");
+
+        var dir = new DirectoryInfo($"{_manager.CacheDir}/{Service.ClientState.TerritoryType}");
+        var cacheFile = new FileInfo(dir.FullName + $"/{x:X2}-{z:X2}-{cacheKey}");
+
+        if (!dir.Exists) dir.Create();
+
+        if (cacheFile.Exists)
+        {
+            Service.Log.Debug($"loading tile {x}x{z} from cache");
+            using var stream = cacheFile.OpenRead();
+            using var reader = new BinaryReader(stream);
+            data = Navmesh.DeserializeSingleTile(reader, customization.Version);
+            return data;
+        }
+
+        var builder = new TileBuilder(x, z, [.. contents.Objects.Values.Select(v => (v.Mesh, v.Instance))], customization, customization.IsFlyingSupported(Service.ClientState.TerritoryType));
+        data = builder.Build(token).Item1;
+
+        Service.Log.Debug($"writing tile {x}x{z} to cache");
+        using var wstream = cacheFile.Open(FileMode.Create, FileAccess.Write, FileShare.None);
+        using var writer = new BinaryWriter(wstream);
+        Navmesh.SerializeSingleTile(writer, data, customization.Version);
+        return data;
     }
 }
 

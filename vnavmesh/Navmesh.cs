@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Numerics;
+using System.Text;
 
 namespace Navmesh;
 
@@ -90,7 +91,48 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         writer.Write(opt.maxPolys);
     }
 
-    private static DtMeshData DeserializeMeshTile(BinaryReader reader)
+    public static readonly byte[] TileFull = Encoding.UTF8.GetBytes("tile ");
+    public static readonly byte[] TileEmpty = Encoding.UTF8.GetBytes("empty");
+
+    public static DtMeshData? DeserializeSingleTile(BinaryReader reader, int expectedCustomizationVersion)
+    {
+        var magic = reader.ReadUInt32();
+        var version = reader.ReadUInt32();
+        if (magic != Magic || version != Version)
+            throw new Exception("Incorrect header");
+        var customizationVersion = reader.ReadInt32();
+        if (customizationVersion != expectedCustomizationVersion)
+            throw new Exception("Outdated customization version");
+
+        var bytes = reader.ReadBytes(5);
+        if (bytes.SequenceEqual(TileEmpty))
+            return null;
+
+        if (bytes.SequenceEqual(TileFull))
+            return DeserializeMeshTile(new BinaryReader(new BrotliStream(reader.BaseStream, CompressionMode.Decompress)));
+
+        throw new InvalidDataException($"unrecognized byte sequence in saved mesh tile: {Convert.ToHexString(bytes)}");
+    }
+
+    public static void SerializeSingleTile(BinaryWriter writer, DtMeshData? tile, int customizationVersion)
+    {
+        writer.Write(Magic);
+        writer.Write(Version);
+        writer.Write(customizationVersion);
+
+        if (tile == null)
+        {
+            writer.Write(TileEmpty);
+            return;
+        }
+        else
+        {
+            writer.Write(TileFull);
+            SerializeMeshTile(new BinaryWriter(new BrotliStream(writer.BaseStream, CompressionLevel.Optimal, true)), tile);
+        }
+    }
+
+    public static DtMeshData DeserializeMeshTile(BinaryReader reader)
     {
         var tile = new DtMeshData();
         tile.header = new();
@@ -176,7 +218,7 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         return tile;
     }
 
-    private static void SerializeMeshTile(BinaryWriter writer, DtMeshData tile)
+    public static void SerializeMeshTile(BinaryWriter writer, DtMeshData tile)
     {
         writer.Write(tile.header.x);
         writer.Write(tile.header.y);

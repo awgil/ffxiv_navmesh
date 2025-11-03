@@ -48,6 +48,8 @@ public sealed class SceneTracker : IDisposable
     public int NumTiles => NumTilesInRow * NumTilesInRow;
     public int TileLength => 2048 / NumTilesInRow;
 
+    public uint Territory { get; private set; }
+
     public double DebounceMS = 500.0;
 
     public class Tile(int x, int Z)
@@ -125,7 +127,7 @@ public sealed class SceneTracker : IDisposable
 
     private unsafe void InitLayout(LayoutManager* layout)
     {
-        var terrid = layout->TerritoryTypeId;
+        Territory = layout->TerritoryTypeId;
 
         foreach (var (k, v) in layout->Terrains)
         {
@@ -139,7 +141,7 @@ public sealed class SceneTracker : IDisposable
                     {
                         var path = $"{terr}/tr{entry.MeshId:d4}.pcb";
                         var mesh = GetMeshByPath(path, SceneExtractor.MeshType.Terrain);
-                        AddObject(path, new SceneExtractor.MeshInstance(0xFFFF000000000000u | ((ulong)terrid << 32) | ((ulong)(long)entry.MeshId), Matrix4x3.Identity, entry.Bounds, (ulong)0, 0), default);
+                        AddObject(path, new SceneExtractor.MeshInstance(0xFFFF000000000000u | ((ulong)Territory << 32) | ((ulong)(long)entry.MeshId), Matrix4x3.Identity, entry.Bounds, (ulong)0, 0), default);
                     }
                 }
             }

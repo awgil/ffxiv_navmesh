@@ -33,11 +33,11 @@ public sealed class NavmeshManager : IDisposable
     public bool PathfindInProgress => _numActivePathfinds > 0;
     public int NumQueuedPathfindRequests => _numActivePathfinds > 0 ? _numActivePathfinds - 1 : 0;
 
-    private DirectoryInfo _cacheDir;
+    public DirectoryInfo CacheDir { get; private set; }
 
     public unsafe NavmeshManager(DirectoryInfo cacheDir)
     {
-        _cacheDir = cacheDir;
+        CacheDir = cacheDir;
         cacheDir.Create(); // ensure directory exists
 
         // prepare a task with correct task scheduler that other tasks can be chained off
@@ -261,7 +261,7 @@ public sealed class NavmeshManager : IDisposable
         var layers = scene.FestivalLayers.ToList();
 
         // try reading from cache
-        var cache = new FileInfo($"{_cacheDir.FullName}/{cacheKey}.navmesh");
+        var cache = new FileInfo($"{CacheDir.FullName}/{cacheKey}.navmesh");
         if (allowLoadFromCache && cache.Exists)
         {
             try

@@ -12,7 +12,7 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
     private readonly DebugDrawer _dd = drawer;
     private readonly DebugGameCollision _coll = coll;
 
-    public static readonly Vector2 TileSize = new(64, 64);
+    public static readonly Vector2 TileSize = new(40, 40);
     private readonly DebugVoxelMap?[,] _map = new DebugVoxelMap[16, 16];
 
     public void Dispose() { }

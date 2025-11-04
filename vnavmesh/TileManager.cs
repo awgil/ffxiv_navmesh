@@ -45,7 +45,7 @@ public sealed class TileManager : IDisposable
 
     public volatile int NumTasks;
     private readonly Lock locked = new();
-    private readonly SemaphoreSlim _sem = new(12);
+    private readonly SemaphoreSlim _sem = new(0);
 
     public NavmeshCustomization Customization
     {
@@ -69,6 +69,9 @@ public sealed class TileManager : IDisposable
     public DtNavMesh? Mesh;
     public VoxelMap? Volume;
 
+    private bool _initialized;
+    private int Concurrency;
+
     public TileManager(NavmeshManager manager)
     {
         _manager = manager;
@@ -76,6 +79,8 @@ public sealed class TileManager : IDisposable
         Service.ClientState.ZoneInit += OnZoneInit;
 
         Customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
+        Service.Config.Modified += OnConfigModified;
+        OnConfigModified();
 
         Task.Run(async () =>
         {
@@ -85,8 +90,6 @@ public sealed class TileManager : IDisposable
             _initialized = true;
         });
     }
-
-    private bool _initialized;
 
     public void Dispose()
     {
@@ -105,6 +108,29 @@ public sealed class TileManager : IDisposable
 
         foreach (var t in Scene.GetTileChanges())
             QueueTile(t, true, DebounceMs);
+    }
+
+    private void OnConfigModified()
+    {
+        var oldThreads = Concurrency;
+
+        var maxThreads = Environment.ProcessorCount;
+        var wantedThreads = Service.Config.BuildMaxCores;
+        if (wantedThreads <= 0)
+            Concurrency = maxThreads + wantedThreads;
+        else
+            Concurrency = wantedThreads;
+        Concurrency = Math.Clamp(Concurrency, 1, maxThreads);
+
+        var deltaThreads = Concurrency - oldThreads;
+        if (deltaThreads > 0)
+            _sem.Release(deltaThreads);
+        else if (deltaThreads < 0)
+            Task.Run(async () =>
+            {
+                for (var i = 0; i < -deltaThreads; i++)
+                    await _sem.WaitAsync();
+            });
     }
 
     private void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)

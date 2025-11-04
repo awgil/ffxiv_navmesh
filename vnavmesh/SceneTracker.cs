@@ -66,11 +66,11 @@ public sealed class SceneTracker : IDisposable
     {
         public int X = x;
         public int Z = Z;
-        public Dictionary<ulong, (SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type)> Objects = [];
+        public ConcurrentDictionary<ulong, (SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type)> Objects = [];
+        public bool Changed;
     }
 
-    public record struct TileChangedEventArgs(int X, int Z, bool Init);
-    public event Action<TileChangedEventArgs> TileChanged = delegate { };
+    private bool _anyChanged;
 
     public unsafe SceneTracker()
     {
@@ -80,8 +80,6 @@ public sealed class SceneTracker : IDisposable
         _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxLayoutInstance.Delegates.SetActive>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
         _layoutManagerInitHook = Service.Hook.HookFromSignature<LayoutManager.Delegates.Initialize>("41 54 48 83 EC 50 48 89 5C 24 ?? ", LayoutManagerInitDetour);
     }
-
-    private bool _initialized;
 
     public unsafe void Initialize()
     {
@@ -94,13 +92,6 @@ public sealed class SceneTracker : IDisposable
         if (world->ActiveLayout != null)
             InitLayout(world->ActiveLayout);
 
-        for (var i = 0; i < Tiles.GetLength(0); i++)
-            for (var j = 0; j < Tiles.GetLength(1); j++)
-                if (Tiles[i, j]?.Objects.Count > 0)
-                    TileChanged.Invoke(new(i, j, true));
-
-        _initialized = true;
-
         _bgPartsSetActiveHook.Enable();
         _triggerBoxSetActiveHook.Enable();
         _layoutManagerInitHook.Enable();
@@ -111,6 +102,23 @@ public sealed class SceneTracker : IDisposable
         _layoutManagerInitHook.Dispose();
         _bgPartsSetActiveHook.Dispose();
         _triggerBoxSetActiveHook.Dispose();
+    }
+
+    public IEnumerable<(int X, int Z)> GetTileChanges()
+    {
+        if (!_anyChanged)
+            yield break;
+
+        for (var i = 0; i < Tiles.GetLength(0); i++)
+            for (var j = 0; j < Tiles.GetLength(1); j++)
+            {
+                var t = Tiles[i, j];
+                if (t?.Changed == true)
+                {
+                    t.Changed = false;
+                    yield return (t.X, t.Z);
+                }
+            }
     }
 
     private unsafe string GetCollisionMeshPathByCrc(uint crc, LayoutManager* layout)
@@ -339,9 +347,8 @@ public sealed class SceneTracker : IDisposable
             {
                 if (j < 0 || j >= RowLength) continue;
                 var tile = Tiles[i, j] ??= new(i, j);
-                tile.Objects[instance.Id] = (mesh, instance, type);
-                if (_initialized)
-                    TileChanged.Invoke(new(i, j, false));
+                if (tile.Objects.TryAdd(instance.Id, (mesh, instance, type)))
+                    tile.Changed = _anyChanged = true;
             }
         }
     }
@@ -355,9 +362,9 @@ public sealed class SceneTracker : IDisposable
             for (var j = tileBoundsMin.Item2; j <= tileBoundsMax.Item2; j++)
             {
                 if (j < 0 || j >= RowLength) continue;
-                Tiles[i, j]?.Objects.Remove(key);
-                if (_initialized)
-                    TileChanged.Invoke(new(i, j, false));
+                var tile = Tiles[i, j] ??= new(i, j);
+                if (tile.Objects.Remove(key, out _))
+                    tile.Changed = _anyChanged = true;
             }
         }
     }

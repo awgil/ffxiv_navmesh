@@ -20,16 +20,25 @@ public sealed class TileManager : IDisposable
 
     public double DebounceMs = 500.0;
 
-    public sealed class BuildTask(CancellationTokenSource cts)
+    public sealed class BuildTask
     {
-        private readonly CancellationTokenSource _cts = cts;
+        private readonly CancellationTokenSource _cts;
+        private readonly Task _task;
+
+        private BuildTask(CancellationTokenSource src, Task task)
+        {
+            _cts = src;
+            _task = task;
+        }
+
         public static BuildTask Spawn(Func<CancellationToken, Task> task)
         {
             var cts = new CancellationTokenSource();
-            Task.Run(async () => await task(cts.Token), cts.Token);
-            return new(cts);
+            var stored = Task.Run(async () => await task(cts.Token), cts.Token);
+            return new(cts, stored);
         }
 
+        public TaskStatus Status => _task.Status;
         public void Cancel() => _cts.Cancel();
     }
 
@@ -70,21 +79,27 @@ public sealed class TileManager : IDisposable
 
         Customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
 
-        Scene.TileChanged += OnTileChanged;
-        Scene.Initialize();
+        Task.Run(async () =>
+        {
+            await Service.Framework.Run(() => Scene.Initialize());
+            foreach (var (x, z) in Scene.GetTileChanges())
+                QueueTile(x, z, true, 0);
+        });
     }
-
-    private void OnTileChanged(SceneTracker.TileChangedEventArgs obj) => QueueTile(obj.X, obj.Z, true, obj.Init ? 0 : DebounceMs);
 
     public void Dispose()
     {
-        Scene.TileChanged -= OnTileChanged;
+        Service.ClientState.ZoneInit -= OnZoneInit;
+        Scene.Dispose();
 
         foreach (var t in Tasks)
             t?.Cancel();
+    }
 
-        Scene.Dispose();
-        Service.ClientState.ZoneInit -= OnZoneInit;
+    public void Update()
+    {
+        foreach (var (x, z) in Scene.GetTileChanges())
+            QueueTile(x, z, true, DebounceMs);
     }
 
     private void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
@@ -126,6 +141,8 @@ public sealed class TileManager : IDisposable
         });
     }
 
+    private Exception? _exc;
+
     private async Task BuildTile(int x, int z, bool allowCache, CancellationToken token)
     {
         Interlocked.Add(ref NumTasks, 1);
@@ -153,7 +170,10 @@ public sealed class TileManager : IDisposable
             catch (Exception ex)
             {
                 if (ex is not OperationCanceledException)
+                {
+                    _exc = ex;
                     Log(ex, $"while building tile {x}x{z}");
+                }
                 throw;
             }
             finally
@@ -168,6 +188,12 @@ public sealed class TileManager : IDisposable
 
         if (NumTasks == 0 && Mesh != null)
         {
+            if (_exc != null)
+            {
+                Log(_exc, "a task failed, mesh will be incomplete");
+                _exc = null;
+                return;
+            }
             Log("all tiles done, replacing mesh");
             Customization.CustomizeMesh(Mesh, Scene.FestivalLayers);
             _manager.ReplaceMesh(new(Customization.Version, Mesh, Volume));
@@ -185,7 +211,7 @@ public sealed class TileManager : IDisposable
             if ((contents & VoxelMap.VoxelOccupiedBit) == 0)
                 continue; // empty
 
-            // TODO: this would skip volume contents that extend outside the current tile, but i'm pretty sure that's not necessary assuming the voxelizer respects the RcHeightfield bounds?
+            // TODO: almost positive this isn't necessary
             //var v = child.RootTile.LevelDesc.IndexToVoxel(i);
             //if (v.x != x || v.z != z)
             //    continue;
@@ -200,7 +226,6 @@ public sealed class TileManager : IDisposable
 
     private (DtMeshData?, VoxelMap?) LoadOrBuildTile(int x, int z, bool allowCache, CancellationToken token)
     {
-        Log($"kicking off build for tile {x}x{z}");
         var customization = NavmeshCustomizationRegistry.ForTerritory(Scene.Territory);
 
         var contents = Scene.Tiles[x, z]!;
@@ -215,9 +240,7 @@ public sealed class TileManager : IDisposable
             {
                 using var stream = cacheFile.OpenRead();
                 using var reader = new BinaryReader(stream);
-                var data = Navmesh.DeserializeSingleTile(reader, customization.Version);
-                Log($"loaded tile {x}x{z} from cache");
-                return data;
+                return Navmesh.DeserializeSingleTile(reader, customization.Version);
             }
         }
         catch (Exception ex)

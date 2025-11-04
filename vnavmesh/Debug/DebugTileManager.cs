@@ -1,6 +1,7 @@
 ﻿using Dalamud.Bindings.ImGui;
 using System;
 using System.Numerics;
+using System.Threading.Tasks;
 
 namespace Navmesh.Debug;
 
@@ -21,6 +22,8 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
         if (ImGui.Button("Force rebuild"))
             _tiles.Rebuild();
 
+        ImGui.TextUnformatted($"Tasks: {_tiles.NumTasks}");
+
         using (var nk = _tree.Node($"Tiles ({_tiles.Scene.NumTiles})###tiles"))
         {
             if (nk.Opened)
@@ -30,11 +33,21 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
                 {
                     for (var j = 0; j < len; j++)
                     {
-                        var pos = ImGui.GetCursorPos();
+                        var task = _tiles.Tasks[i, j];
+                        uint col = task == null ? 0 : (task.Status switch
+                        {
+                            TaskStatus.RanToCompletion => 0xff76db3a,
+                            TaskStatus.Faulted or TaskStatus.Canceled => 0xff374bcc,
+                            TaskStatus.Running or TaskStatus.WaitingToRun or TaskStatus.WaitingForActivation => 0xff767676,
+                            _ => 0xff00aeff
+                        });
+
+                        var pos = ImGui.GetCursorScreenPos();
+                        ImGui.GetWindowDrawList().AddRectFilled(pos, pos + TileSize, col);
                         var label = $"{i:d2} {j:d2}";
-                        ImGui.SetCursorPos(pos + (TileSize - ImGui.CalcTextSize(label)) * 0.5f);
+                        ImGui.SetCursorScreenPos(pos + (TileSize - ImGui.CalcTextSize(label)) * 0.5f);
                         ImGui.Text(label);
-                        ImGui.SetCursorPos(pos);
+                        ImGui.SetCursorScreenPos(pos);
                         ImGui.Dummy(TileSize);
                         if (j + 1 < len)
                             ImGui.SameLine();

@@ -1,4 +1,8 @@
 ﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using System;
 using System.Numerics;
 using System.Threading.Tasks;
@@ -11,9 +15,15 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
     private readonly UITree _tree = new();
     private readonly DebugDrawer _dd = drawer;
     private readonly DebugGameCollision _coll = coll;
+    private (int, int) _hovered;
+    private (int, int) _selected = (-1, -1);
+    private SceneTracker Scene => _tiles.Scene;
+
+    (int X, int Z) Focused => _hovered.Item1 >= 0 && _hovered.Item2 >= 0 ? (_hovered.Item1, _hovered.Item2) : _selected;
+    SceneTracker.TileChangeset? FocusedTile => Focused.X >= 0 && Focused.Z >= 0 ? _tiles.Scene._tiles[Focused.X, Focused.Z] : null;
 
     public static readonly Vector2 TileSize = new(40, 40);
-    private readonly DebugVoxelMap?[,] _map = new DebugVoxelMap[16, 16];
+    public static readonly Vector3 BoundsMin = new(-1024);
 
     public void Dispose() { }
 
@@ -24,17 +34,20 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
 
         ImGui.TextUnformatted($"Tasks: {_tiles.NumTasks}");
 
-        using (var nk = _tree.Node($"Tiles ({_tiles.Scene.NumTiles})###tiles"))
+        _hovered = (-1, -1);
+
+        using (var nt = _tree.Node("Tile map"))
         {
-            if (nk.Opened)
+            if (nt.Opened)
             {
+                using var _ = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(0, 0));
                 var len = _tiles.Scene.RowLength;
                 for (var i = 0; i < len; i++)
                 {
                     for (var j = 0; j < len; j++)
                     {
                         var task = _tiles.Tasks[i, j];
-                        uint col = task == null ? 0 : (task.Status switch
+                        uint col = task == null ? 0 : _selected == (i, j) ? 0xffba7917 : (task.Status switch
                         {
                             TaskStatus.RanToCompletion => 0xff76db3a,
                             TaskStatus.Faulted or TaskStatus.Canceled => 0xff374bcc,
@@ -44,11 +57,20 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
 
                         var pos = ImGui.GetCursorScreenPos();
                         ImGui.GetWindowDrawList().AddRectFilled(pos, pos + TileSize, col);
-                        var label = $"{i:d2} {j:d2}";
+                        var label = $"{i:X}{j:X}";
                         ImGui.SetCursorScreenPos(pos + (TileSize - ImGui.CalcTextSize(label)) * 0.5f);
                         ImGui.Text(label);
                         ImGui.SetCursorScreenPos(pos);
                         ImGui.Dummy(TileSize);
+
+                        if (ImGui.IsItemClicked())
+                        {
+                            var ix = (i, j);
+                            _selected = _selected == ix ? (-1, -1) : ix;
+                        }
+                        if (ImGui.IsItemHovered())
+                            _hovered = (i, j);
+
                         if (j + 1 < len)
                             ImGui.SameLine();
                     }
@@ -56,24 +78,25 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
             }
         }
 
-        using (var nv = _tree.Node($"Voxels ({_tiles.Scene.NumTiles})###voxels"))
+        if (FocusedTile is { } tile)
         {
-            if (nv.Opened)
+            var tileMin = BoundsMin + new Vector3(tile.X * Scene.TileUnits, 0, tile.Z * Scene.TileUnits);
+            var tileMax = tileMin + new Vector3(Scene.TileUnits, 2048, Scene.TileUnits);
+
+            _dd.DrawWorldAABB(new AABB() { Min = tileMin, Max = tileMax }, 0xFF0080FF);
+
+            using var nt = _tree.Node($"Tile {tile.X}x{tile.Z} ({tile.Objects.Count} objects)###focused");
+            if (!nt.Opened)
+                return;
+
+            foreach (var (key, obj) in tile.Objects)
             {
-                var len = _tiles.Scene.RowLength;
-                for (var i = 0; i < len; i++)
+                var node = _tree.LeafNode($"[{key:X16}] {obj.Type}");
+                if (node.SelectedOrHovered && obj.Type > 0)
                 {
-                    for (var j = 0; j < len; j++)
-                    {
-                        using (var x = _tree.Node($"[{i}x{j}]", _tiles.Submaps[i, j] == null))
-                        {
-                            if (x.Opened && _tiles.Submaps[i, j] != null)
-                            {
-                                _map[i, j] ??= new(_tiles.Submaps[i, j]!, null, _tree, _dd);
-                                _map[i, j]?.Draw();
-                            }
-                        }
-                    }
+                    var coll = FindCollider(obj.Type, key);
+                    if (coll != null)
+                        _coll.VisualizeCollider(coll, default, default);
                 }
             }
         }
@@ -110,6 +133,7 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
             }
         }
     }
+    */
 
     private unsafe Collider* FindCollider(InstanceType type, ulong key)
     {
@@ -119,5 +143,4 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
         var coll = inst != null ? inst->GetCollider() : null;
         return coll;
     }
-    */
 }

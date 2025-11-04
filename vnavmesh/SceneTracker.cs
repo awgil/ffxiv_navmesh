@@ -45,7 +45,7 @@ public sealed class SceneTracker : IDisposable
     private readonly Hook<TriggerBoxLayoutInstance.Delegates.SetActive> _triggerBoxSetActiveHook;
     private readonly Hook<LayoutManager.Delegates.Initialize> _layoutManagerInitHook;
 
-    public Tile?[,] Tiles { get; private set; } = new Tile?[0, 0];
+    internal TileChangeset?[,] _tiles = new TileChangeset?[0, 0];
     public int RowLength
     {
         get;
@@ -53,7 +53,7 @@ public sealed class SceneTracker : IDisposable
         {
             field = value;
             _allObjects.Clear();
-            Tiles = new Tile?[value, value];
+            _tiles = new TileChangeset?[value, value];
         }
     } = 0;
     public int NumTiles => RowLength * RowLength;
@@ -62,13 +62,16 @@ public sealed class SceneTracker : IDisposable
     public uint Territory { get; private set; }
     public List<uint> FestivalLayers = [];
 
-    public class Tile(int x, int Z)
+    internal class TileChangeset(int x, int z)
     {
         public int X = x;
-        public int Z = Z;
-        public ConcurrentDictionary<ulong, (SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type)> Objects = [];
+        public int Z = z;
+        public ConcurrentDictionary<ulong, LayoutObject> Objects = [];
         public bool Changed;
     }
+
+    public record struct LayoutObject(SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type);
+    public record struct Tile(int X, int Z, SortedSet<ulong> Keys, List<LayoutObject> Objects);
 
     private bool _anyChanged;
 
@@ -104,20 +107,46 @@ public sealed class SceneTracker : IDisposable
         _triggerBoxSetActiveHook.Dispose();
     }
 
-    public IEnumerable<(int X, int Z)> GetTileChanges()
+    public IEnumerable<Tile> GetTileChanges()
     {
         if (!_anyChanged)
             yield break;
 
-        for (var i = 0; i < Tiles.GetLength(0); i++)
-            for (var j = 0; j < Tiles.GetLength(1); j++)
+        for (var i = 0; i < _tiles.GetLength(0); i++)
+            for (var j = 0; j < _tiles.GetLength(1); j++)
             {
-                var t = Tiles[i, j];
+                var t = _tiles[i, j];
                 if (t?.Changed == true)
                 {
                     t.Changed = false;
-                    yield return (t.X, t.Z);
+                    var keys = new SortedSet<ulong>();
+                    var objs = new List<LayoutObject>();
+                    foreach (var (k, v) in t.Objects)
+                    {
+                        keys.Add(k);
+                        objs.Add(v);
+                    }
+                    yield return new(t.X, t.Z, keys, objs);
                 }
+            }
+    }
+
+    public IEnumerable<Tile> GetAllTiles()
+    {
+        for (var i = 0; i < _tiles.GetLength(0); i++)
+            for (var j = 0; j < _tiles.GetLength(1); j++)
+            {
+                var t = _tiles[i, j];
+                if (t == null)
+                    continue;
+                var keys = new SortedSet<ulong>();
+                var objs = new List<LayoutObject>();
+                foreach (var (k, v) in t.Objects)
+                {
+                    keys.Add(k);
+                    objs.Add(v);
+                }
+                yield return new(t.X, t.Z, keys, objs);
             }
     }
 
@@ -346,8 +375,8 @@ public sealed class SceneTracker : IDisposable
             for (var j = tileBoundsMin.Item2; j <= tileBoundsMax.Item2; j++)
             {
                 if (j < 0 || j >= RowLength) continue;
-                var tile = Tiles[i, j] ??= new(i, j);
-                if (tile.Objects.TryAdd(instance.Id, (mesh, instance, type)))
+                var tile = _tiles[i, j] ??= new(i, j);
+                if (tile.Objects.TryAdd(instance.Id, new(mesh, instance, type)))
                     tile.Changed = _anyChanged = true;
             }
         }
@@ -362,7 +391,7 @@ public sealed class SceneTracker : IDisposable
             for (var j = tileBoundsMin.Item2; j <= tileBoundsMax.Item2; j++)
             {
                 if (j < 0 || j >= RowLength) continue;
-                var tile = Tiles[i, j] ??= new(i, j);
+                var tile = _tiles[i, j] ??= new(i, j);
                 if (tile.Objects.Remove(key, out _))
                     tile.Changed = _anyChanged = true;
             }

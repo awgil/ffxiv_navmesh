@@ -339,6 +339,7 @@ public sealed class TileBuilder
         Tile = data;
 
         Settings = customization.Settings;
+        customization.CustomizeTile(data);
 
         var NumTilesX = Settings.NumTiles[0];
         var NumTilesZ = NumTilesX;

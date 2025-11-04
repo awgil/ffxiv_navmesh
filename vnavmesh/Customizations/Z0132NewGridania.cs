@@ -15,6 +15,12 @@ internal class Z0132NewGridania : NavmeshCustomization
                 inst.WorldTransform.M22 *= 2;
     }
 
+    public override void CustomizeTile(SceneTracker.Tile tile)
+    {
+        foreach (var obj in tile.ObjectsByPath("bg/ffxiv/fst_f1/twn/common/collision/f1t0_a0_plnt1.pcb"))
+            obj.Instance.WorldTransform.M22 *= 2;
+    }
+
     public override void CustomizeSettings(DtNavMeshCreateParams config)
     {
         config.AddOffMeshConnection(new(45.03f, -0.13f, 83.1f), new(46.78f, -8.5f, 91.75f));

@@ -80,10 +80,17 @@ public sealed class Plugin : IDalamudPlugin
         Service.CommandManager.AddHandler("/vnavmesh", new CommandInfo(OnCommand) { HelpMessage = cmd.HelpMessage, ShowInHelp = false }); // legacy
 
         Service.Framework.Update += OnUpdate;
+        Service.ClientState.ZoneInit += ClientState_ZoneInit;
+    }
+
+    private void ClientState_ZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
+    {
+        _wndMain.OnZoneChange();
     }
 
     public void Dispose()
     {
+        Service.ClientState.ZoneInit -= ClientState_ZoneInit;
         Service.Framework.Update -= OnUpdate;
 
         Service.CommandManager.RemoveHandler("/vnav");

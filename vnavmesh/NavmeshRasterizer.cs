@@ -202,6 +202,10 @@ public class NavmeshRasterizer
                 var invDiv = _iset != null && v12cross13.Y != 0 ? -1.0f / v12cross13.Y : 0; // see below
 
                 var flags = (p.Flags & ~instance.ForceClearPrimFlags) | instance.ForceSetPrimFlags;
+
+                if (flags.HasFlag(SceneExtractor.PrimitiveFlags.Transparent))
+                    continue;
+
                 bool realSolid = !flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough);
                 bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable)
                     || normal.Y < _walkableNormalThreshold

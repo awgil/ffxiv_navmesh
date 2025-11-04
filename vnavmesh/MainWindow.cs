@@ -38,6 +38,11 @@ public class MainWindow : Window, IDisposable
         _dd.Dispose();
     }
 
+    public void OnZoneChange()
+    {
+        _debugGameColl.Saved = null;
+    }
+
     public void StartFrame()
     {
         _dd.StartFrame();

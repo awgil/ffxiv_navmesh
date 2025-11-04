@@ -25,6 +25,8 @@ public class NavmeshCustomization
     // this is a customization point to add or remove colliders in the scene
     public virtual void CustomizeScene(SceneExtractor scene) { }
 
+    public virtual void CustomizeTile(SceneTracker.Tile tile) { }
+
     public virtual void CustomizeSettings(DtNavMeshCreateParams config) { }
 
     public virtual void CustomizeMesh(DtNavMesh mesh, List<uint> festivalLayers) { }

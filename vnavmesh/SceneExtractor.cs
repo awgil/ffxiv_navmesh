@@ -31,7 +31,7 @@ public class SceneExtractor
         FlyThrough = 1 << 1, // this primitive should not be present in voxel map
         Unlandable = 1 << 2, // this primitive can't be landed on (fly->walk transition)
         ForceWalkable = 1 << 3, // this primitive can be walked on, even though it isn't landable
-        Fishable = 1 << 4, // player can fish if they have line of sight on this primitive
+        Transparent = 1 << 4, // no collision at all, skipped by rasterizer
     }
 
     public record struct Primitive(int V1, int V2, int V3, PrimitiveFlags Flags, ulong Material = 0);
@@ -55,6 +55,7 @@ public class SceneExtractor
 
     public class Mesh
     {
+        public required string Path;
         public List<MeshPart> Parts = [];
         public List<MeshInstance> Instances = [];
         public MeshType MeshType;
@@ -84,12 +85,12 @@ public class SceneExtractor
 
     public unsafe SceneExtractor(SceneDefinition scene)
     {
-        Meshes[_keyAnalyticBox] = new() { Parts = MeshBox, MeshType = MeshType.AnalyticShape };
-        Meshes[_keyAnalyticSphere] = new() { Parts = MeshSphere, MeshType = MeshType.AnalyticShape };
-        Meshes[_keyAnalyticCylinder] = new() { Parts = MeshCylinder, MeshType = MeshType.AnalyticShape };
-        Meshes[_keyAnalyticPlaneSingle] = new() { Parts = MeshPlane, MeshType = MeshType.AnalyticPlane };
-        Meshes[_keyAnalyticPlaneDouble] = new() { Parts = MeshPlane, MeshType = MeshType.AnalyticPlane };
-        Meshes[_keyMeshCylinder] = new() { Parts = MeshCylinder, MeshType = MeshType.CylinderMesh };
+        Meshes[_keyAnalyticBox] = new() { Path = _keyAnalyticBox, Parts = MeshBox, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticSphere] = new() { Path = _keyAnalyticSphere, Parts = MeshSphere, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticCylinder] = new() { Path = _keyAnalyticCylinder, Parts = MeshCylinder, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticPlaneSingle] = new() { Path = _keyAnalyticPlaneSingle, Parts = MeshPlane, MeshType = MeshType.AnalyticPlane };
+        Meshes[_keyAnalyticPlaneDouble] = new() { Path = _keyAnalyticPlaneDouble, Parts = MeshPlane, MeshType = MeshType.AnalyticPlane };
+        Meshes[_keyMeshCylinder] = new() { Path = _keyMeshCylinder, Parts = MeshCylinder, MeshType = MeshType.CylinderMesh };
         foreach (var path in scene.MeshPaths.Values)
             AddMesh(path, MeshType.FileMesh);
 
@@ -190,7 +191,7 @@ public class SceneExtractor
 
     private unsafe Mesh AddMesh(string path, MeshType type)
     {
-        var mesh = new Mesh();
+        var mesh = new Mesh() { Path = path };
         var f = Service.DataManager.GetFile(path);
         if (f != null)
         {
@@ -286,29 +287,22 @@ public class SceneExtractor
         0x100000, // generally set on the invisible walls surrounding walkable areas that can be flown from
         0x1000000, // if this bit is set, flying upwards into the surface will trigger dive -> fly (or swim) transition
         0x800000, // not really sure what this is, appears on invisible roof of divable zones
-
-        // 0xBC00 can be dived into, but 0xB800 cannot. both allow fishing
-        // 0x400 is some kind of generic "this collider is conditionally active" flag, but it's set on zone walls, so we can't skip it
-        0xB400,
     ];
 
     public static PrimitiveFlags ExtractMaterialFlags(ulong mat)
     {
         var res = PrimitiveFlags.None;
-        foreach (var fly in _materialsFlyThrough)
-            if ((mat & fly) == fly)
-                res |= PrimitiveFlags.FlyThrough;
 
         if ((mat & 0x200000) != 0)
             res |= PrimitiveFlags.Unlandable;
 
-        // 0x11 is set on all the invisible walls surrounding every zone; some are not marked as unlandable so we can't just use that
-        // some regular terrain materials have 0x10 set as well (see flowers in il mheg) which is why we check for both bits here
-        if ((mat & 0x1F) == 0x11)
-            res |= PrimitiveFlags.Unlandable | PrimitiveFlags.ForceUnwalkable;
+        // fly-through objects, like planes placed on railings
+        if ((mat & 0x100000) != 0)
+            res |= PrimitiveFlags.FlyThrough;
 
-        if ((mat & 0x8000) != 0)
-            res |= PrimitiveFlags.Fishable;
+        // these colliders are toggled by scripts
+        if ((mat & 0x400) != 0)
+            res |= PrimitiveFlags.Transparent;
 
         return res;
     }

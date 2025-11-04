@@ -38,7 +38,7 @@ public unsafe class DebugGameCollision : IDisposable
     private delegate bool RaycastDelegate(SceneWrapper* self, RaycastHit* result, ulong layerMask, RaycastParams* param);
     private Hook<RaycastDelegate>? _raycastHook;
 
-    private RaycastHit? _savedHit;
+    public RaycastHit? Saved;
 
     public DebugGameCollision(DebugDrawer dd)
     {
@@ -71,8 +71,8 @@ public unsafe class DebugGameCollision : IDisposable
                     _raycastHook.Disable();
         }
 
-        if (_savedHit != null && ImGui.Button("Reset remembered raycast hit"))
-            _savedHit = null;
+        if (Saved != null && ImGui.Button("Reset remembered raycast hit"))
+            Saved = null;
 
         var module = Framework.Instance()->BGCollisionModule;
         ImGui.TextUnformatted($"Module: {(nint)module:X}->{(nint)module->SceneManager:X} ({module->SceneManager->NumScenes} scenes, {module->LoadInProgressCounter} loads)");
@@ -306,8 +306,8 @@ public unsafe class DebugGameCollision : IDisposable
 
     private RaycastHit? GetRaycastHit(SceneWrapper* s, int index, Vector2 screenPos)
     {
-        if (_savedHit != null)
-            return _savedHit;
+        if (Saved != null)
+            return Saved;
 
         var clipPos = new Vector3(2 * screenPos.X / _dd.ViewportSize.X - 1, 1 - 2 * screenPos.Y / _dd.ViewportSize.Y, 1);
         Matrix4x4.Invert(_dd.ViewProj, out var invViewProj);
@@ -322,8 +322,8 @@ public unsafe class DebugGameCollision : IDisposable
         var arg = new RaycastParams() { Origin = &sphere, Direction = &dir, MaxDistance = &maxDist, MaterialFilter = &filter };
         if (s->Raycast(&res, _shownLayers.Raw, &arg))
         {
-            if (_savedHit == null && ImGui.GetIO().KeyShift)
-                _savedHit = res;
+            if (Saved == null && ImGui.GetIO().KeyShift)
+                Saved = res;
 
             return res;
         }

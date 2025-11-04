@@ -5,7 +5,6 @@ using System.Collections;
 using System.IO;
 using System.IO.Compression;
 using System.Numerics;
-using System.Text;
 
 namespace Navmesh;
 
@@ -92,9 +91,6 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         writer.Write(opt.maxPolys);
     }
 
-    public static readonly byte[] TileFull = Encoding.UTF8.GetBytes("tile ");
-    public static readonly byte[] TileEmpty = Encoding.UTF8.GetBytes("empty");
-
     public static (DtMeshData?, VoxelMap?) DeserializeSingleTile(BinaryReader reader, int expectedCustomizationVersion)
     {
         var magic = reader.ReadUInt32();
@@ -112,9 +108,7 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         if (compressedReader.ReadBoolean())
             tile = DeserializeMeshTile(compressedReader);
 
-        var vox = DeserializeVolume(compressedReader);
-
-        return (tile, vox);
+        return (tile, DeserializeVolume(compressedReader));
     }
 
     public static void SerializeSingleTile(BinaryWriter writer, DtMeshData? tile, VoxelMap? vox, int customizationVersion)

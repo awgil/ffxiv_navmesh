@@ -24,12 +24,12 @@ public sealed class SceneTracker : IDisposable
 
     public static readonly Dictionary<string, SceneExtractor.Mesh> MeshesGlobal = new()
     {
-        [_keyAnalyticBox] = new() { Parts = SceneExtractor.MeshBox, MeshType = SceneExtractor.MeshType.AnalyticShape },
-        [_keyAnalyticSphere] = new() { Parts = SceneExtractor.MeshSphere, MeshType = SceneExtractor.MeshType.AnalyticShape },
-        [_keyAnalyticCylinder] = new() { Parts = SceneExtractor.MeshCylinder, MeshType = SceneExtractor.MeshType.AnalyticShape },
-        [_keyAnalyticPlaneSingle] = new() { Parts = SceneExtractor.MeshPlane, MeshType = SceneExtractor.MeshType.AnalyticPlane },
-        [_keyAnalyticPlaneDouble] = new() { Parts = SceneExtractor.MeshPlane, MeshType = SceneExtractor.MeshType.AnalyticPlane },
-        [_keyMeshCylinder] = new() { Parts = SceneExtractor.MeshCylinder, MeshType = SceneExtractor.MeshType.CylinderMesh }
+        [_keyAnalyticBox] = new() { Path = _keyAnalyticBox, Parts = SceneExtractor.MeshBox, MeshType = SceneExtractor.MeshType.AnalyticShape },
+        [_keyAnalyticSphere] = new() { Path = _keyAnalyticSphere, Parts = SceneExtractor.MeshSphere, MeshType = SceneExtractor.MeshType.AnalyticShape },
+        [_keyAnalyticCylinder] = new() { Path = _keyAnalyticCylinder, Parts = SceneExtractor.MeshCylinder, MeshType = SceneExtractor.MeshType.AnalyticShape },
+        [_keyAnalyticPlaneSingle] = new() { Path = _keyAnalyticPlaneSingle, Parts = SceneExtractor.MeshPlane, MeshType = SceneExtractor.MeshType.AnalyticPlane },
+        [_keyAnalyticPlaneDouble] = new() { Path = _keyAnalyticPlaneDouble, Parts = SceneExtractor.MeshPlane, MeshType = SceneExtractor.MeshType.AnalyticPlane },
+        [_keyMeshCylinder] = new() { Path = _keyMeshCylinder, Parts = SceneExtractor.MeshCylinder, MeshType = SceneExtractor.MeshType.CylinderMesh }
     };
 
     public readonly Dictionary<uint, (Transform transform, Vector3 bbMin, Vector3 bbMax)> AnalyticShapes = [];
@@ -71,7 +71,11 @@ public sealed class SceneTracker : IDisposable
     }
 
     public record struct LayoutObject(SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type);
-    public record struct Tile(int X, int Z, SortedSet<ulong> Keys, List<LayoutObject> Objects);
+    public record struct Tile(int X, int Z, SortedSet<ulong> Keys, List<LayoutObject> Objects)
+    {
+        public readonly IEnumerable<LayoutObject> ObjectsByMesh(Func<SceneExtractor.Mesh, bool> pathFilter) => Objects.Where(o => pathFilter(o.Mesh));
+        public readonly IEnumerable<LayoutObject> ObjectsByPath(string path) => ObjectsByMesh(s => s.Path == path);
+    }
 
     private bool _anyChanged;
 
@@ -81,6 +85,8 @@ public sealed class SceneTracker : IDisposable
 
         _bgPartsSetActiveHook = Service.Hook.HookFromSignature<BgPartsLayoutInstance.Delegates.SetActive>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B D9 0F B6 C2 ", BgPartsSetActiveDetour);
         _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxLayoutInstance.Delegates.SetActive>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
+
+        // note that this is NOT LayoutManager::Initialize, that function seems to never get called. this is some other random function in the pipeline that runs when InitState == 6
         _layoutManagerInitHook = Service.Hook.HookFromSignature<LayoutManager.Delegates.Initialize>("41 54 48 83 EC 50 48 89 5C 24 ?? ", LayoutManagerInitDetour);
     }
 
@@ -218,7 +224,7 @@ public sealed class SceneTracker : IDisposable
 
     private unsafe SceneExtractor.Mesh LoadFileMesh(string path, SceneExtractor.MeshType type)
     {
-        var mesh = new SceneExtractor.Mesh();
+        var mesh = new SceneExtractor.Mesh() { Path = path };
         var f = Service.DataManager.GetFile(path);
         if (f != null)
         {
@@ -311,9 +317,6 @@ public sealed class SceneTracker : IDisposable
 
         if (active)
         {
-            if ((cast->MaterialIdLow & 0x410) == 0x400)
-                return;
-
             ulong mat = ((ulong)cast->MaterialIdHigh << 32) | cast->MaterialIdLow;
             ulong matMask = ((ulong)cast->MaterialMaskHigh << 32) | cast->MaterialMaskLow;
 

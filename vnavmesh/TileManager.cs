@@ -60,7 +60,6 @@ public sealed class TileManager : IDisposable
     public VoxelMap? Volume;
 
     private int Concurrency;
-    private uint LastLoadedZone;
 
     private bool _initialized;
 
@@ -96,7 +95,8 @@ public sealed class TileManager : IDisposable
 
     public void OnZoneChange(SceneTracker scene)
     {
-        LastLoadedZone = scene.LastLoadedZone;
+        foreach (var t in Tasks)
+            t?.Cancel();
         Tasks = new BuildTask?[scene.RowLength, scene.RowLength];
         Intermediates = new RcBuilderResult?[scene.RowLength, scene.RowLength];
         Mesh = new(new()
@@ -162,7 +162,7 @@ public sealed class TileManager : IDisposable
         if (tile.Zone == 0)
             return;
 
-        //Tasks[tile.X, tile.Z]?.Cancel();
+        Tasks[tile.X, tile.Z]?.Cancel();
         Tasks[tile.X, tile.Z] = BuildTask.Spawn(async tok =>
         {
             if (debounce > 0)
@@ -192,8 +192,8 @@ public sealed class TileManager : IDisposable
             {
                 var (tile, vox) = LoadOrBuildTile(data, allowCache, token);
 
-                // if tile zone doesn't match current zone, the player changed areas while we were building, so we don't modify the loaded mesh (tile will hopefully still be saved to cache)
-                if (Mesh != null && data.Zone == LastLoadedZone)
+                // if tile zone doesn't match current zone, the player changed areas while we were building, so we don't modify the loaded mesh (tile will still be saved to cache)
+                if (Mesh != null && data.Zone == Scene.LastLoadedZone)
                 {
                     lock (locked)
                     {
@@ -244,7 +244,7 @@ public sealed class TileManager : IDisposable
             }
 
             Log("all tiles done, replacing mesh");
-            Customization.CustomizeMesh(Mesh, Scene.FestivalLayers);
+            Customization.CustomizeMesh(Mesh, Scene.ActiveFestivals.ToList());
             _manager.ReplaceMesh(new(Customization.Version, Mesh, Volume));
         }
     }

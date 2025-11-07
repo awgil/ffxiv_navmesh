@@ -1,5 +1,4 @@
 ﻿using Dalamud.Hooking;
-using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
@@ -11,7 +10,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
-using System.Reactive.Linq;
 using System.Security.Cryptography;
 
 namespace Navmesh;
@@ -47,7 +45,6 @@ public sealed class SceneTracker : IDisposable
 
     private readonly Hook<BgPartsLayoutInstance.Delegates.SetActive> _bgPartsSetActiveHook;
     private readonly Hook<TriggerBoxLayoutInstance.Delegates.SetActive> _triggerBoxSetActiveHook;
-    private readonly Hook<LayoutManager.Delegates.SetActiveFestivals> _setFestivalsHook;
 
     public NavmeshCustomization Customization { get; private set; } = new();
 
@@ -59,7 +56,7 @@ public sealed class SceneTracker : IDisposable
     public int TileUnits => 2048 / RowLength;
 
     public uint LastLoadedZone;
-    public List<uint> FestivalLayers = [];
+    public uint[] ActiveFestivals = new uint[4];
 
     internal class TileChangeset(int x, int z)
     {
@@ -101,7 +98,6 @@ public sealed class SceneTracker : IDisposable
 
         _bgPartsSetActiveHook = Service.Hook.HookFromSignature<BgPartsLayoutInstance.Delegates.SetActive>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B D9 0F B6 C2 ", BgPartsSetActiveDetour);
         _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxLayoutInstance.Delegates.SetActive>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
-        _setFestivalsHook = Service.Hook.HookFromAddress<LayoutManager.Delegates.SetActiveFestivals>(LayoutManager.Addresses.SetActiveFestivals.Value, SetFestivalsDetour);
     }
 
     public unsafe void Initialize(bool emitChangeEvents = true)
@@ -111,6 +107,10 @@ public sealed class SceneTracker : IDisposable
         var world = LayoutWorld.Instance();
         ActivateExistingLayout(world->GlobalLayout);
         ActivateExistingLayout(world->ActiveLayout);
+
+        var festivals = world->ActiveLayout->ActiveFestivals;
+        for (var i = 0; i < festivals.Length; i++)
+            ActiveFestivals[i] = ((uint)festivals[i].Phase << 16) | festivals[i].Id;
 
         _bgPartsSetActiveHook.Enable();
         _triggerBoxSetActiveHook.Enable();
@@ -205,6 +205,8 @@ public sealed class SceneTracker : IDisposable
     private void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
     {
         InitZone(obj.TerritoryType.RowId);
+        for (var i = 0; i < obj.ActiveFestivals.Length; i++)
+            ActiveFestivals[i] = ((uint)obj.ActiveFestivals[i].Unknown1 << 16) | obj.ActiveFestivals[i].Unknown0;
         ZoneChanged.Invoke(this);
     }
 
@@ -295,11 +297,6 @@ public sealed class SceneTracker : IDisposable
     {
         _triggerBoxSetActiveHook.Original(thisPtr, active);
         SetActive(thisPtr, active);
-    }
-
-    private unsafe void SetFestivalsDetour(LayoutManager* thisPtr, GameMain.Festival* festivals)
-    {
-        _setFestivalsHook.Original(thisPtr, festivals);
     }
 
     private unsafe void SetActive(BgPartsLayoutInstance* thisPtr, bool active)

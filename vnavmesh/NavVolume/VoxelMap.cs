@@ -253,9 +253,7 @@ public class VoxelMap
         var ny = Levels[0].NumCellsY;
         var idx = Levels[0].VoxelToIndex(tx, 0, tz);
         for (int ty = 0; ty < ny; ++ty, ++idx)
-        {
             BuildTile(RootTile, idx, 0, ty, 0, voxelizers);
-        }
     }
 
     private void BuildTile(Tile parent, ushort index, int x0, int y0, int z0, Span<Voxelizer> source)

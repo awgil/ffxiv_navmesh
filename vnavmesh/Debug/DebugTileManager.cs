@@ -58,6 +58,8 @@ public sealed unsafe class DebugTileManager : IDisposable
 
     public void Draw()
     {
+        ImGui.TextUnformatted($"zone={Scene.LastLoadedZone}, festivals={string.Join(".", Scene.ActiveFestivals.Select(f => f.ToString("X")))}");
+
         if (ImGui.Button("Force rebuild everything"))
             _tiles.Rebuild();
 

@@ -45,7 +45,8 @@ public sealed class TileManager : IDisposable
     public BuildTask?[,] Tasks { get; private set; } = new BuildTask?[0, 0];
     public RcBuilderResult?[,] Intermediates { get; private set; } = new RcBuilderResult?[0, 0];
 
-    public volatile int NumTasks;
+    // keyed by zone
+    public volatile int[] NumTasks = new int[2048];
 
     private readonly Lock locked = new();
     private readonly SemaphoreSlim _sem = new(0);
@@ -178,12 +179,14 @@ public sealed class TileManager : IDisposable
 
     private async Task BuildTile(SceneTracker.Tile data, bool allowCache, CancellationToken token)
     {
-        Interlocked.Add(ref NumTasks, 1);
+        Interlocked.Add(ref NumTasks[data.Zone], 1);
 
         _numStarted++;
 
         var x = data.X;
         var z = data.Z;
+
+        var thisZoneFinished = false;
 
         try
         {
@@ -220,11 +223,13 @@ public sealed class TileManager : IDisposable
         }
         finally
         {
-            if (Interlocked.Add(ref NumTasks, -1) <= 0)
+            if (Interlocked.Add(ref NumTasks[data.Zone], -1) <= 0)
             {
                 // all tasks finished, reset progress bar and counters
                 _numStarted = _numFinished = 0;
                 _manager.SetProgress(0, 0);
+
+                thisZoneFinished = data.Zone == Scene.LastLoadedZone;
             }
             else
             {
@@ -234,7 +239,7 @@ public sealed class TileManager : IDisposable
             }
         }
 
-        if (NumTasks == 0 && Mesh != null)
+        if (Mesh != null && thisZoneFinished)
         {
             if (_exc != null)
             {
@@ -303,7 +308,7 @@ public sealed class TileManager : IDisposable
         }
 
         var builder = new TileBuilder(data, customization, customization.IsFlyingSupported(data.Zone));
-        var (tile, vox, intermediates) = builder.Build();
+        var (tile, vox, intermediates) = builder.Build(token);
 
         Intermediates[x, z] = intermediates;
 
@@ -311,7 +316,7 @@ public sealed class TileManager : IDisposable
         if (vox != null)
         {
             map = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
-            map.Build(vox, x, z);
+            map.Build(vox, x, z, token);
         }
 
         if (!dir.Exists)
@@ -421,7 +426,7 @@ public sealed class TileBuilder
         }
     }
 
-    public (DtMeshData?, Voxelizer?, RcBuilderResult) Build()
+    public (DtMeshData?, Voxelizer?, RcBuilderResult) Build(CancellationToken token)
     {
         var timer = Timer.Create();
 
@@ -438,8 +443,8 @@ public sealed class TileBuilder
         var vox = volume != null ? new Voxelizer(_voxelizerNumX, _voxelizerNumY, _voxelizerNumZ) : null;
         var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, _walkableHeightVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), vox, Telemetry);
 
-        rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true);
-        rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true);
+        rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true, token);
+        rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, token);
 
         // 2. perform a bunch of postprocessing on a heightfield
         if (Settings.Filtering.HasFlag(NavmeshSettings.Filter.LowHangingObstacles))

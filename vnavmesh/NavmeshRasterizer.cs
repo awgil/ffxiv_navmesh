@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 
 namespace Navmesh;
 
@@ -141,12 +142,14 @@ public class NavmeshRasterizer
     public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold) =>
         RasterizeFlat(geom.Meshes.SelectMany(kv => kv.Value.Instances.Select(i => (kv.Value, i))), types, perMeshInteriors, solidBelowNonManifold);
 
-    public void RasterizeFlat(IEnumerable<(SceneExtractor.Mesh, SceneExtractor.MeshInstance)> instances, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold)
+    public void RasterizeFlat(IEnumerable<(SceneExtractor.Mesh, SceneExtractor.MeshInstance)> instances, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold, CancellationToken? token = null)
     {
         foreach (var (mesh, instance) in instances)
         {
             if ((mesh.MeshType & types) == SceneExtractor.MeshType.None)
                 continue;
+
+            token?.ThrowIfCancellationRequested();
 
             if (RasterizeMesh(mesh, instance, out var minY) && perMeshInteriors)
             {

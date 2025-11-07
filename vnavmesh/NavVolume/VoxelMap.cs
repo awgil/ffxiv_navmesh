@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading;
 
 namespace Navmesh.NavVolume;
 
@@ -238,7 +239,7 @@ public class VoxelMap
         }
     }
 
-    public void Build(Voxelizer vox, int tx, int tz)
+    public void Build(Voxelizer vox, int tx, int tz, CancellationToken? token = null)
     {
         // downsample
         var voxelizers = new Voxelizer[Levels.Length];
@@ -253,7 +254,10 @@ public class VoxelMap
         var ny = Levels[0].NumCellsY;
         var idx = Levels[0].VoxelToIndex(tx, 0, tz);
         for (int ty = 0; ty < ny; ++ty, ++idx)
+        {
             BuildTile(RootTile, idx, 0, ty, 0, voxelizers);
+            token?.ThrowIfCancellationRequested();
+        }
     }
 
     private void BuildTile(Tile parent, ushort index, int x0, int y0, int z0, Span<Voxelizer> source)

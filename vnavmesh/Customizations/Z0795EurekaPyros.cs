@@ -1,4 +1,6 @@
-﻿namespace Navmesh.Customizations;
+﻿using System.Runtime.InteropServices;
+
+namespace Navmesh.Customizations;
 
 [CustomizationTerritory(795)]
 class Z0795EurekaPyros : NavmeshCustomization
@@ -27,5 +29,19 @@ class Z0795EurekaPyros : NavmeshCustomization
                 }
             }
         }
+    }
+
+    public override void CustomizeTile(SceneTracker.Tile tile)
+    {
+        foreach (var obj in tile.ObjectsByMesh(m => m.Path.StartsWith("bg/ex2/05_zon_z3/fld/z3fc/collision/tr")))
+            foreach (var part in obj.Mesh.Parts)
+                foreach (ref var prim in CollectionsMarshal.AsSpan(part.Primitives))
+                {
+                    var v1 = part.Vertices[prim.V1];
+                    var v2 = part.Vertices[prim.V2];
+                    var v3 = part.Vertices[prim.V3];
+                    if (v1.Y < 100 && v2.Y < 100 && v3.Y < 100)
+                        prim.Flags |= SceneExtractor.PrimitiveFlags.ForceUnwalkable;
+                }
     }
 }

@@ -1,4 +1,6 @@
-﻿namespace Navmesh.Customizations;
+﻿using System.Numerics;
+
+namespace Navmesh.Customizations;
 
 [CustomizationTerritory(152)]
 internal class Z0152EastShroud : NavmeshCustomization
@@ -7,6 +9,11 @@ internal class Z0152EastShroud : NavmeshCustomization
 
     public override void CustomizeScene(SceneExtractor scene)
     {
-        scene.InsertCylinderCollider(new System.Numerics.Vector3(2, 2, 2), new(-40, -8, 225), SceneExtractor.PrimitiveFlags.Unlandable);
+        scene.InsertCylinderCollider(new Vector3(2), new(-40, -8, 225), SceneExtractor.PrimitiveFlags.Unlandable);
+    }
+
+    public override void CustomizeTile(SceneTracker.Tile tile)
+    {
+        tile.AddCylinder(new Vector3(2), new(-40, -8, 225), SceneExtractor.PrimitiveFlags.Unlandable);
     }
 }

@@ -14,7 +14,7 @@ namespace Navmesh.Debug;
 
 class DebugNavmeshCustom : IDisposable
 {
-    private record struct HeightfieldComparison(float DurationOld, float DurationNew, bool Identical);
+    public record struct HeightfieldComparison(float DurationOld, float DurationNew, bool Identical);
 
     public class Customization : NavmeshCustomization
     {
@@ -148,7 +148,7 @@ class DebugNavmeshCustom : IDisposable
     }
 
     // TODO: should each debug drawer handle tiled geometry itself?
-    private class PerTile : IDisposable
+    public class PerTile : IDisposable
     {
         public DebugSolidHeightfield? DrawSolidHeightfield;
         public DebugCompactHeightfield? DrawCompactHeightfield;

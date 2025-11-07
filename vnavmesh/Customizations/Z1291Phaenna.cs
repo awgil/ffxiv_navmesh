@@ -188,4 +188,9 @@ internal class Z1291Phaenna : NavmeshCustomization
         addCosmoliner(new(433.635f, -230, 234.168f), new(pi, 1.396f, pi), new(660, -242, 420), new(0, 0.785f, 0));
         #endregion
     }
+
+    public override void CustomizeTile(SceneTracker.Tile tile)
+    {
+        tile.RemoveObjects(l => l.Mesh.Path.EndsWith("a0_drn01.pcb") || l.Mesh.Path.EndsWith("a0_tnk01.pcb"));
+    }
 }

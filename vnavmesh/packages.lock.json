@@ -987,6 +987,15 @@
         "dependencies": {
           "DotRecast.Core": "[1.0.0, )"
         }
+      },
+      "ffxivclientstructs": {
+        "type": "Project",
+        "dependencies": {
+          "InteropGenerator.Runtime": "[1.0.0, )"
+        }
+      },
+      "interopgenerator.runtime": {
+        "type": "Project"
       }
     }
   }

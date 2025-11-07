@@ -321,7 +321,7 @@ public class DebugExtractedCollision : IDisposable
         return coll;
     }
 
-    private Vector4 MeshColor(SceneExtractor.Mesh mesh) =>
+    public static Vector4 MeshColor(SceneExtractor.Mesh mesh) =>
         mesh.MeshType.HasFlag(SceneExtractor.MeshType.Terrain) ? new(0, 1, 0, 0.55f) :
         mesh.MeshType.HasFlag(SceneExtractor.MeshType.FileMesh) ? new(1, 1, 0, 0.55f) :
         new(1, 0, 0, 0.55f);

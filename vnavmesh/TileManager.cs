@@ -1,4 +1,5 @@
-﻿using DotRecast.Core;
+﻿using Dalamud.Game.ClientState.Conditions;
+using DotRecast.Core;
 using DotRecast.Detour;
 using DotRecast.Recast;
 using Navmesh.NavVolume;
@@ -41,73 +42,81 @@ public sealed class TileManager : IDisposable
         public void Cancel() => _cts.Cancel();
     }
 
-    public BuildTask?[,] Tasks { get; private set; } = new BuildTask?[16, 16];
+    public BuildTask?[,] Tasks { get; private set; } = new BuildTask?[0, 0];
+    public RcBuilderResult?[,] Intermediates { get; private set; } = new RcBuilderResult?[0, 0];
 
     public volatile int NumTasks;
+
     private readonly Lock locked = new();
     private readonly SemaphoreSlim _sem = new(0);
 
-    public NavmeshCustomization Customization
-    {
-        get;
-        set
-        {
-            field = value;
-
-            // update tile grid
-            Scene.RowLength = value.Settings.NumTiles[0];
-            foreach (var t in Tasks)
-                t?.Cancel();
-            Tasks = new BuildTask?[Scene.RowLength, Scene.RowLength];
-
-            RecreateMesh();
-        }
-    } = new();
+    public NavmeshCustomization Customization => Scene.Customization;
 
     private readonly NavmeshManager _manager;
+
+    public bool EnableCache = true;
 
     public DtNavMesh? Mesh;
     public VoxelMap? Volume;
 
-    private bool _initialized;
     private int Concurrency;
+    private uint LastLoadedZone;
+
+    private bool _initialized;
 
     public TileManager(NavmeshManager manager)
     {
         _manager = manager;
 
-        Service.ClientState.ZoneInit += OnZoneInit;
-
-        Customization = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
         Service.Config.Modified += OnConfigModified;
         OnConfigModified();
 
+        Scene.ZoneChanged += OnZoneChange;
+
         Task.Run(async () =>
         {
+            // fire change events for all existing layout objects when the plugin loads
             await Service.Framework.Run(() => Scene.Initialize());
+
+            // then, queue currently loaded layout with no delay
             foreach (var t in Scene.GetTileChanges())
-                QueueTile(t, true, 0);
+                QueueTile(t, EnableCache, 0);
+
             _initialized = true;
         });
     }
 
     public void Dispose()
     {
-        Service.ClientState.ZoneInit -= OnZoneInit;
         Scene.Dispose();
 
         foreach (var t in Tasks)
             t?.Cancel();
     }
 
+    public void OnZoneChange(SceneTracker scene)
+    {
+        LastLoadedZone = scene.LastLoadedZone;
+        Tasks = new BuildTask?[scene.RowLength, scene.RowLength];
+        Intermediates = new RcBuilderResult?[scene.RowLength, scene.RowLength];
+        Mesh = new(new()
+        {
+            orig = BoundsMin.SystemToRecast(),
+            tileWidth = (BoundsMax.X - BoundsMin.X) / Scene.RowLength,
+            tileHeight = (BoundsMax.Z - BoundsMin.Z) / Scene.RowLength,
+            maxTiles = Scene.NumTiles,
+            maxPolys = 1 << DtNavMesh.DT_POLY_BITS
+        }, 6);
+        Volume = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
+    }
+
     public void Update()
     {
-        // wait for first scene load
-        if (!_initialized)
+        if (!_initialized || Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
             return;
 
         foreach (var t in Scene.GetTileChanges())
-            QueueTile(t, true, DebounceMs);
+            QueueTile(t, EnableCache, DebounceMs);
     }
 
     private void OnConfigModified()
@@ -133,36 +142,27 @@ public sealed class TileManager : IDisposable
             });
     }
 
-    private void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
-    {
-        Customization = NavmeshCustomizationRegistry.ForTerritory(obj.TerritoryType.RowId);
-    }
+    public void Rebuild() => Scene.Initialize();
 
-    private void RecreateMesh()
+    public void RebuildOne(int x, int z, bool scrapOthers)
     {
-        // recreate mesh/volume
-        Mesh = new(new()
+        if (scrapOthers)
         {
-            orig = BoundsMin.SystemToRecast(),
-            tileWidth = (BoundsMax.X - BoundsMin.X) / Scene.RowLength,
-            tileHeight = (BoundsMax.Z - BoundsMin.Z) / Scene.RowLength,
-            maxTiles = Scene.NumTiles,
-            maxPolys = 1 << DtNavMesh.DT_POLY_BITS
-        }, 6);
-        Volume = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
-    }
+            Scene.Initialize();
+            // clear changeset
+            foreach (var _ in Scene.GetTileChanges()) { }
+        }
 
-    public void Rebuild()
-    {
-        RecreateMesh();
-
-        foreach (var tile in Scene.GetAllTiles())
-            QueueTile(tile, false, 0);
+        if (Scene.GetOneTile(x, z) is { } t)
+            QueueTile(t, false, 0);
     }
 
     private void QueueTile(SceneTracker.Tile tile, bool allowCache, double debounce)
     {
-        Tasks[tile.X, tile.Z]?.Cancel();
+        if (tile.Zone == 0)
+            return;
+
+        //Tasks[tile.X, tile.Z]?.Cancel();
         Tasks[tile.X, tile.Z] = BuildTask.Spawn(async tok =>
         {
             if (debounce > 0)
@@ -173,9 +173,15 @@ public sealed class TileManager : IDisposable
 
     private Exception? _exc;
 
+    private volatile int _numStarted;
+    private volatile int _numFinished;
+
     private async Task BuildTile(SceneTracker.Tile data, bool allowCache, CancellationToken token)
     {
         Interlocked.Add(ref NumTasks, 1);
+
+        _numStarted++;
+
         var x = data.X;
         var z = data.Z;
 
@@ -185,7 +191,9 @@ public sealed class TileManager : IDisposable
             try
             {
                 var (tile, vox) = LoadOrBuildTile(data, allowCache, token);
-                if (Mesh != null)
+
+                // if tile zone doesn't match current zone, the player changed areas while we were building, so we don't modify the loaded mesh (tile will hopefully still be saved to cache)
+                if (Mesh != null && data.Zone == LastLoadedZone)
                 {
                     lock (locked)
                     {
@@ -198,7 +206,7 @@ public sealed class TileManager : IDisposable
             }
             catch (Exception ex)
             {
-                if (ex is not OperationCanceledException)
+                if (ex is not (OperationCanceledException or CustomizationVersionMismatch))
                 {
                     _exc = ex;
                     Log(ex, $"while building tile {x}x{z}");
@@ -212,7 +220,18 @@ public sealed class TileManager : IDisposable
         }
         finally
         {
-            Interlocked.Add(ref NumTasks, -1);
+            if (Interlocked.Add(ref NumTasks, -1) <= 0)
+            {
+                // all tasks finished, reset progress bar and counters
+                _numStarted = _numFinished = 0;
+                _manager.SetProgress(0, 0);
+            }
+            else
+            {
+                // update progress
+                _numFinished++;
+                _manager.SetProgress(_numFinished, _numStarted);
+            }
         }
 
         if (NumTasks == 0 && Mesh != null)
@@ -223,6 +242,7 @@ public sealed class TileManager : IDisposable
                 _exc = null;
                 return;
             }
+
             Log("all tiles done, replacing mesh");
             Customization.CustomizeMesh(Mesh, Scene.FestivalLayers);
             _manager.ReplaceMesh(new(Customization.Version, Mesh, Volume));
@@ -255,14 +275,16 @@ public sealed class TileManager : IDisposable
 
     private (DtMeshData?, VoxelMap?) LoadOrBuildTile(SceneTracker.Tile data, bool allowCache, CancellationToken token)
     {
-        var customization = NavmeshCustomizationRegistry.ForTerritory(Scene.Territory);
+        var customization = data.Customization;
+        customization.CustomizeTile(data);
+        Log($"building tile {data.X}x{data.Z}");
 
-        var cacheKey = SceneTracker.GetHashFromKeys(data.Keys);
+        var cacheKey = data.GetCacheKey();
 
         var x = data.X;
         var z = data.Z;
-        var dir = new DirectoryInfo($"{_manager.CacheDir}/z{Scene.Territory}");
-        var cacheFile = new FileInfo(dir.FullName + $"/{x:d2}-{z:d2}-{cacheKey}");
+        var dir = new DirectoryInfo($"{_manager.CacheDir}/z{data.Zone}");
+        var cacheFile = new FileInfo(dir.FullName + $"/{x:d2}-{z:d2}-{cacheKey}.tile");
 
         try
         {
@@ -270,7 +292,9 @@ public sealed class TileManager : IDisposable
             {
                 using var stream = cacheFile.OpenRead();
                 using var reader = new BinaryReader(stream);
-                return Navmesh.DeserializeSingleTile(reader, customization.Version);
+                var tile2 = Navmesh.DeserializeSingleTile(reader, customization.Version);
+                Log($"loaded tile {data.X}x{data.Z} from cache");
+                return tile2;
             }
         }
         catch (Exception ex)
@@ -278,8 +302,10 @@ public sealed class TileManager : IDisposable
             Log(ex, "unable to load tile from cache");
         }
 
-        var builder = new TileBuilder(data, customization, customization.IsFlyingSupported(Service.ClientState.TerritoryType));
-        var (tile, vox, _) = builder.Build(token);
+        var builder = new TileBuilder(data, customization, customization.IsFlyingSupported(data.Zone));
+        var (tile, vox, intermediates) = builder.Build();
+
+        Intermediates[x, z] = intermediates;
 
         VoxelMap? map = null;
         if (vox != null)
@@ -288,22 +314,35 @@ public sealed class TileManager : IDisposable
             map.Build(vox, x, z);
         }
 
+        if (!dir.Exists)
+            dir.Create();
+
+        SerializeTile(cacheFile, tile, map, customization.Version, data);
+
         token.ThrowIfCancellationRequested();
-
-        {
-            if (!dir.Exists)
-                dir.Create();
-
-            using var wstream = cacheFile.Open(FileMode.Create, FileAccess.Write, FileShare.None);
-            using var writer = new BinaryWriter(wstream);
-            Navmesh.SerializeSingleTile(writer, tile, map, customization.Version);
-        }
 
         return (tile, map);
     }
 
     public static void Log(string message) => Service.Log.Debug($"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
     private static void Log(Exception ex, string message) => Service.Log.Warning(ex, $"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
+
+    private static void SerializeTile(FileInfo cacheFile, DtMeshData? tile, VoxelMap? map, int version, SceneTracker.Tile data)
+    {
+        using (var wstream = cacheFile.Open(FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            using var writer = new BinaryWriter(wstream);
+            Navmesh.SerializeSingleTile(writer, tile, map, version);
+        }
+
+        var objfile = new FileInfo(Path.ChangeExtension(cacheFile.FullName, ".txt"));
+        using (var wstream = objfile.Open(FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            using var writer = new StreamWriter(wstream);
+            foreach (var (key, tileobj) in data.Objects)
+                writer.WriteLine($"{key:X16} {tileobj.Mesh.Path}");
+        }
+    }
 }
 
 public sealed class TileBuilder
@@ -339,6 +378,7 @@ public sealed class TileBuilder
         Tile = data;
 
         Settings = customization.Settings;
+        Settings.NumTiles = [.. customization.Settings.NumTiles];
         customization.CustomizeTile(data);
 
         var NumTilesX = Settings.NumTiles[0];
@@ -381,7 +421,7 @@ public sealed class TileBuilder
         }
     }
 
-    public (DtMeshData?, Voxelizer?, RcBuilderResult) Build(CancellationToken token)
+    public (DtMeshData?, Voxelizer?, RcBuilderResult) Build()
     {
         var timer = Timer.Create();
 
@@ -398,8 +438,8 @@ public sealed class TileBuilder
         var vox = volume != null ? new Voxelizer(_voxelizerNumX, _voxelizerNumY, _voxelizerNumZ) : null;
         var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, _walkableHeightVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), vox, Telemetry);
 
-        rasterizer.RasterizeFlat(Tile.Objects.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true, token);
-        rasterizer.RasterizeFlat(Tile.Objects.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, token);
+        rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true);
+        rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true);
 
         // 2. perform a bunch of postprocessing on a heightfield
         if (Settings.Filtering.HasFlag(NavmeshSettings.Filter.LowHangingObstacles))
@@ -502,8 +542,6 @@ public sealed class TileBuilder
         };
 
         var meshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
-
-        token.ThrowIfCancellationRequested();
 
         TileManager.Log($"built navmesh tile {TileX}x{TileZ} in {timer.Value().TotalMilliseconds}ms");
 

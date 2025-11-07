@@ -290,7 +290,7 @@ public unsafe class DebugGameCollision : IDisposable
             var ac = res.V3 - res.V1;
             var normal = Vector3.Normalize(Vector3.Cross(ab, ac));
             _tree.LeafNode($"Normal: {normal} (slope={Angle.Acos(normal.Y)})");
-            _tree.LeafNode($"Material: {res.Material:X}");
+            _tree.LeafNode($"Material: {res.Material:X} ({(SceneExtractor.MaterialFlags)res.Material})");
             DrawCollider(res.Object);
             VisualizeCollider(res.Object, _materialId, _materialMask);
             _tree.LeafNode($"Vertices: {res.V1}, {res.V2}, {res.V3}");
@@ -341,6 +341,8 @@ public unsafe class DebugGameCollision : IDisposable
 
         var type = coll->GetColliderType();
         var layoutInstance = LayoutUtils.FindInstance(LayoutWorld.Instance()->ActiveLayout, (coll->LayoutObjectId << 32) | (coll->LayoutObjectId >> 32));
+        if (layoutInstance == null)
+            layoutInstance = LayoutUtils.FindInstance(LayoutWorld.Instance()->GlobalLayout, (coll->LayoutObjectId << 32) | (coll->LayoutObjectId >> 32));
         var color = layoutInstance == null || layoutInstance->Id.Type is not InstanceType.BgPart and not InstanceType.CollisionBox ? 0xff00ffff : 0xffffffff;
         if (type == ColliderType.Mesh)
         {
@@ -350,7 +352,7 @@ public unsafe class DebugGameCollision : IDisposable
             else if (collMesh->MeshIsSimple)
                 color = 0xff0000ff;
         }
-        using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, layout-id={coll->LayoutObjectId:X16}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}###{(nint)coll:X}", false, color);
+        using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, layout-id={coll->LayoutObjectId:X16}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}, type={(layoutInstance == null ? "0" : layoutInstance->Id.Type)}###{(nint)coll:X}", false, color);
         if (ImGui.BeginPopupContextItem($"###popup{(nint)coll:X}"))
         {
             ContextCollider(coll);

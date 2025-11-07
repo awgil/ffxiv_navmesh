@@ -121,6 +121,14 @@ public sealed class NavmeshManager : IDisposable
         OnNavmeshChanged?.Invoke(Navmesh, Query);
     }
 
+    internal void SetProgress(int finished, int started)
+    {
+        if (started == 0)
+            _loadTaskProgress = -1;
+        else
+            _loadTaskProgress = (float)finished / started;
+    }
+
     private static bool InCutscene => Service.Condition[ConditionFlag.WatchingCutscene] || Service.Condition[ConditionFlag.OccupiedInCutSceneEvent];
 
     public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, CancellationToken externalCancel = default, float range = 0)

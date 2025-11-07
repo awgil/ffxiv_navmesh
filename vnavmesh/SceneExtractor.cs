@@ -34,7 +34,38 @@ public class SceneExtractor
         Transparent = 1 << 4, // no collision at all, skipped by rasterizer
     }
 
-    public record struct Primitive(int V1, int V2, int V3, PrimitiveFlags Flags, ulong Material = 0);
+    [Flags]
+    public enum MaterialFlags : ulong
+    {
+        Unk0 = 1,
+        Unk1 = 2,
+        Unk2 = 4,
+        Unk3 = 8,
+        Unk4 = 0x10,
+        Unk5 = 0x20,
+        Unk6 = 0x40,
+        Unk7 = 0x80,
+        Unk8 = 0x100,
+        Unk9 = 0x200,
+        Temporary = 0x400,
+        Water = 0x800,
+        Unk12 = 0x1000,
+        Unk13 = 0x2000,
+        Unk14 = 0x4000,
+        Fishable = 0x8000,
+        Unk16 = 0x10000,
+        Unk17 = 0x20000,
+        Unk18 = 0x40000,
+        Unk19 = 0x80000,
+        FlyThrough = 0x100000,
+        NoLand = 0x200000,
+        Swim = 0x400000,
+        DiveDown = 0x800000,
+        DiveUp = 0x1000000,
+        Unk25 = 0x2000000
+    }
+
+    public record struct Primitive(int V1, int V2, int V3, PrimitiveFlags Flags);
 
     public class MeshPart
     {
@@ -44,7 +75,7 @@ public class SceneExtractor
 
     public class MeshInstance(ulong id, Matrix4x3 worldTransform, AABB worldBounds, PrimitiveFlags forceSetPrimFlags, PrimitiveFlags forceClearPrimFlags)
     {
-        public MeshInstance(ulong id, Matrix4x3 transform, AABB bounds, ulong setFlags, ulong clearFlags) : this(id, transform, bounds, ExtractMaterialFlags(setFlags), ExtractMaterialFlags(clearFlags)) { }
+        public MeshInstance(ulong id, Matrix4x3 transform, AABB bounds, ulong matId, ulong matMask) : this(id, transform, bounds, ExtractMaterialFlags(matMask & matId), PrimitiveFlags.None) { }
 
         public ulong Id = id;
         public Matrix4x3 WorldTransform = worldTransform;
@@ -279,30 +310,38 @@ public class SceneExtractor
         for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
             part.Vertices.Add(node->Vertex(i));
         foreach (ref var p in node->Primitives)
-            part.Primitives.Add(new(p.V1, p.V2, p.V3, ExtractMaterialFlags(p.Material), p.Material));
+            part.Primitives.Add(new(p.V1, p.V2, p.V3, ExtractMaterialFlags(p.Material)));
         return part;
     }
 
-    private static ulong[] _materialsFlyThrough = [
-        0x100000, // generally set on the invisible walls surrounding walkable areas that can be flown from
-        0x1000000, // if this bit is set, flying upwards into the surface will trigger dive -> fly (or swim) transition
-        0x800000, // not really sure what this is, appears on invisible roof of divable zones
-    ];
-
     public static PrimitiveFlags ExtractMaterialFlags(ulong mat)
     {
+        var m = (MaterialFlags)mat;
         var res = PrimitiveFlags.None;
 
-        if ((mat & 0x200000) != 0)
-            res |= PrimitiveFlags.Unlandable;
+        // water is only useful for fishing
+        if (m.HasFlag(MaterialFlags.Water))
+            res |= PrimitiveFlags.Transparent;
 
-        // fly-through objects, like planes placed on railings
-        if ((mat & 0x100000) != 0)
+        // all conditional colliders have the Temporary bit set
+        // but to make it annoying, most underwater geometry (seafloor etc) has it set too, so we have to check for two flags
+        if (m.HasFlag(MaterialFlags.Temporary) && !m.HasFlag(MaterialFlags.NoLand))
+            res |= PrimitiveFlags.Transparent;
+
+        // in addition to actual fly-through materials, divable water should be excluded from the volume
+        if (m.HasFlag(MaterialFlags.FlyThrough) || m.HasFlag(MaterialFlags.DiveDown) || m.HasFlag(MaterialFlags.DiveUp))
             res |= PrimitiveFlags.FlyThrough;
 
-        // these colliders are toggled by scripts
-        if ((mat & 0x400) != 0)
-            res |= PrimitiveFlags.Transparent;
+        if (m.HasFlag(MaterialFlags.NoLand))
+            res |= PrimitiveFlags.Unlandable;
+
+        // divable water surfaces have the unlandable bit, so we need to ensure that regular mesh tiles still get generated
+        if (m.HasFlag(MaterialFlags.Swim) || m.HasFlag(MaterialFlags.DiveDown))
+            res |= PrimitiveFlags.ForceWalkable;
+
+        // only object i've seen with this flag set was the yuweyawata hole
+        if (m.HasFlag(MaterialFlags.Unk25))
+            res |= PrimitiveFlags.ForceUnwalkable;
 
         return res;
     }

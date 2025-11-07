@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using System.Threading;
 
 namespace Navmesh;
 
@@ -139,19 +138,15 @@ public class NavmeshRasterizer
         }
     }
 
-    public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold) => Rasterize(geom, types, perMeshInteriors, solidBelowNonManifold, default);
+    public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold) =>
+        RasterizeFlat(geom.Meshes.SelectMany(kv => kv.Value.Instances.Select(i => (kv.Value, i))), types, perMeshInteriors, solidBelowNonManifold);
 
-    public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold, CancellationToken token) =>
-        RasterizeFlat(geom.Meshes.SelectMany(kv => kv.Value.Instances.Select(i => (kv.Value, i))), types, perMeshInteriors, solidBelowNonManifold, token);
-
-    public void RasterizeFlat(IEnumerable<(SceneExtractor.Mesh, SceneExtractor.MeshInstance)> instances, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold, CancellationToken token)
+    public void RasterizeFlat(IEnumerable<(SceneExtractor.Mesh, SceneExtractor.MeshInstance)> instances, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold)
     {
         foreach (var (mesh, instance) in instances)
         {
             if ((mesh.MeshType & types) == SceneExtractor.MeshType.None)
                 continue;
-
-            token.ThrowIfCancellationRequested();
 
             if (RasterizeMesh(mesh, instance, out var minY) && perMeshInteriors)
             {
@@ -202,9 +197,6 @@ public class NavmeshRasterizer
                 var invDiv = _iset != null && v12cross13.Y != 0 ? -1.0f / v12cross13.Y : 0; // see below
 
                 var flags = (p.Flags & ~instance.ForceClearPrimFlags) | instance.ForceSetPrimFlags;
-
-                if (flags.HasFlag(SceneExtractor.PrimitiveFlags.Transparent))
-                    continue;
 
                 bool realSolid = !flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough);
                 bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable)

@@ -8,6 +8,11 @@ using System.Numerics;
 
 namespace Navmesh;
 
+public class CustomizationVersionMismatch(int expected, int actual) : InvalidOperationException
+{
+    public override string Message => $"Expected customization version {expected}, actual {actual}";
+}
+
 // full set of data needed for navigation in the zone
 public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? Volume)
 {
@@ -24,7 +29,7 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
             throw new Exception("Incorrect header");
         var customizationVersion = reader.ReadInt32();
         if (customizationVersion != expectedCustomizationVersion)
-            throw new Exception("Outdated customization version");
+            throw new CustomizationVersionMismatch(expectedCustomizationVersion, customizationVersion);
 
         using var compressedReader = new BinaryReader(new BrotliStream(reader.BaseStream, CompressionMode.Decompress, true));
         var mesh = DeserializeMesh(compressedReader);
@@ -99,7 +104,7 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
             throw new Exception("Incorrect header");
         var customizationVersion = reader.ReadInt32();
         if (customizationVersion != expectedCustomizationVersion)
-            throw new Exception("Outdated customization version");
+            throw new CustomizationVersionMismatch(expectedCustomizationVersion, customizationVersion);
 
         using var compressedReader = new BinaryReader(new BrotliStream(reader.BaseStream, CompressionMode.Decompress));
 

@@ -2,22 +2,26 @@
 using Dalamud.Interface.Utility.Raii;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
-using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+using Navmesh.Render;
 using System;
+using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 
 namespace Navmesh.Debug;
 
-public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawer, DebugGameCollision coll) : IDisposable
+public sealed unsafe class DebugTileManager : IDisposable
 {
-    private readonly TileManager _tiles = tiles;
+    private readonly TileManager _tiles;
     private readonly UITree _tree = new();
-    private readonly DebugDrawer _dd = drawer;
-    private readonly DebugGameCollision _coll = coll;
+    private readonly DebugDrawer _dd;
+    private readonly DebugGameCollision _coll;
     private (int, int) _hovered;
     private (int, int) _selected = (-1, -1);
     private SceneTracker Scene => _tiles.Scene;
+
+    private readonly EffectMesh.Data[,] _drawMeshes = new EffectMesh.Data[16, 16];
+    private readonly DebugNavmeshCustom.PerTile?[,] _perTile = new DebugNavmeshCustom.PerTile?[16, 16];
 
     (int X, int Z) Focused => _hovered.Item1 >= 0 && _hovered.Item2 >= 0 ? (_hovered.Item1, _hovered.Item2) : _selected;
     SceneTracker.TileChangeset? FocusedTile => Focused.X >= 0 && Focused.Z >= 0 ? _tiles.Scene._tiles[Focused.X, Focused.Z] : null;
@@ -25,12 +29,52 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
     public static readonly Vector2 TileSize = new(40, 40);
     public static readonly Vector3 BoundsMin = new(-1024);
 
-    public void Dispose() { }
+    private bool _saveOthers;
+
+    public DebugTileManager(TileManager tiles, DebugDrawer drawer, DebugGameCollision coll)
+    {
+        _tiles = tiles;
+        _dd = drawer;
+        _coll = coll;
+        Service.ClientState.ZoneInit += Clear;
+    }
+
+    public void Dispose()
+    {
+        Service.ClientState.ZoneInit -= Clear;
+    }
+
+    private void Clear(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
+    {
+        _hovered = (-1, -1);
+
+        for (var i = 0; i < _drawMeshes.GetLength(0); i++)
+            for (var j = 0; j < _drawMeshes.GetLength(1); j++)
+            {
+                _drawMeshes[i, j] = null!;
+                _perTile[i, j] = null;
+            }
+    }
 
     public void Draw()
     {
-        if (ImGui.Button("Force rebuild"))
+        if (ImGui.Button("Force rebuild everything"))
             _tiles.Rebuild();
+
+        var pos2 = Service.ClientState.LocalPlayer?.Position ?? new();
+        var tx = (int)((pos2.X + 1024) / Scene.TileUnits);
+        var tz = (int)((pos2.Z + 1024) / Scene.TileUnits);
+
+        ImGui.SameLine();
+        if (ImGui.Button($"Force rebuild tile {tx}x{tz}"))
+        {
+            _tiles.RebuildOne(tx, tz, !_saveOthers);
+            _saveOthers = false;
+        }
+        ImGui.SameLine();
+        ImGui.Checkbox($"Keep other tiles loaded", ref _saveOthers);
+
+        ImGui.Checkbox("Cache enabled", ref _tiles.EnableCache);
 
         ImGui.TextUnformatted($"Tasks: {_tiles.NumTasks}");
 
@@ -42,9 +86,9 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
             {
                 using var _ = ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(0, 0));
                 var len = _tiles.Scene.RowLength;
-                for (var i = 0; i < len; i++)
+                for (var j = 0; j < len; j++)
                 {
-                    for (var j = 0; j < len; j++)
+                    for (var i = 0; i < len; i++)
                     {
                         var task = _tiles.Tasks[i, j];
                         uint col = task == null ? 0 : _selected == (i, j) ? 0xffba7917 : (task.Status switch
@@ -63,15 +107,18 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
                         ImGui.SetCursorScreenPos(pos);
                         ImGui.Dummy(TileSize);
 
-                        if (ImGui.IsItemClicked())
+                        if (task != null)
                         {
-                            var ix = (i, j);
-                            _selected = _selected == ix ? (-1, -1) : ix;
+                            if (ImGui.IsItemClicked())
+                            {
+                                var ix = (i, j);
+                                _selected = _selected == ix ? (-1, -1) : ix;
+                            }
+                            if (ImGui.IsItemHovered())
+                                _hovered = (i, j);
                         }
-                        if (ImGui.IsItemHovered())
-                            _hovered = (i, j);
 
-                        if (j + 1 < len)
+                        if (i + 1 < len)
                             ImGui.SameLine();
                     }
                 }
@@ -80,60 +127,99 @@ public sealed unsafe class DebugTileManager(TileManager tiles, DebugDrawer drawe
 
         if (FocusedTile is { } tile)
         {
-            var tileMin = BoundsMin + new Vector3(tile.X * Scene.TileUnits, 0, tile.Z * Scene.TileUnits);
-            var tileMax = tileMin + new Vector3(Scene.TileUnits, 2048, Scene.TileUnits);
-
-            _dd.DrawWorldAABB(new AABB() { Min = tileMin, Max = tileMax }, 0xFF0080FF);
-
             using var nt = _tree.Node($"Tile {tile.X}x{tile.Z} ({tile.Objects.Count} objects)###focused");
             if (!nt.Opened)
                 return;
 
-            foreach (var (key, obj) in tile.Objects)
+            bool highlightAll = false;
+
+            using (var no = _tree.Node($"Objects {tile.Objects.Count}###objs"))
             {
-                var node = _tree.LeafNode($"[{key:X16}] {obj.Type}");
-                if (node.SelectedOrHovered && obj.Type > 0)
+                if (no.Opened)
                 {
-                    var coll = FindCollider(obj.Type, key);
-                    if (coll != null)
-                        _coll.VisualizeCollider(coll, default, default);
+                    highlightAll = true;
+                    foreach (var (key, obj) in tile.Objects)
+                    {
+                        var node = _tree.LeafNode($"[{key:X16}] {obj.Type} {obj.Instance.ForceSetPrimFlags}");
+                        if (node.SelectedOrHovered && obj.Type > 0)
+                        {
+                            highlightAll = false;
+                            var coll = FindCollider(obj.Type, key);
+                            if (coll != null)
+                                _coll.VisualizeCollider(coll, default, default);
+                        }
+                    }
                 }
             }
+
+            if (highlightAll)
+                _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVisualizer(tile));
+
+            var inter = _tiles.Intermediates[tile.X, tile.Z];
+            if (inter == null)
+                return;
+
+            var debug = _perTile[tile.X, tile.Z] ??= new();
+            debug.DrawSolidHeightfield ??= new(inter.GetSolidHeightfield(), _tree, _dd);
+            debug.DrawSolidHeightfield.Draw();
+            debug.DrawCompactHeightfield ??= new(inter.GetCompactHeightfield(), _tree, _dd);
+            debug.DrawCompactHeightfield.Draw();
+            debug.DrawContourSet ??= new(inter.GetContourSet(), _tree, _dd);
+            debug.DrawContourSet.Draw();
+            debug.DrawPolyMesh ??= new(inter.GetMesh(), _tree, _dd);
+            debug.DrawPolyMesh.Draw();
         }
     }
 
-    /*
-    private void DrawTile(SceneTracker.Tile tile)
+    private EffectMesh.Data GetOrInitVisualizer(SceneTracker.TileChangeset tile)
     {
-        double minStale = 2000.0;
-        double maxStale = 10000.0;
+        ref var visu = ref _drawMeshes[tile.X, tile.Z];
 
-        var staleness = -(_tiles.GetTimer(tile.X, tile.Z) - _tiles.DebounceMs);
-        var alpha = 0xff - (byte)(Math.Max(0, Math.Min(maxStale, staleness) - minStale) / (maxStale - minStale) * 0x80);
+        var objsGrouped = tile.Objects.Values.GroupBy(v => v.Mesh.Path).ToDictionary(d => d.Key, d => d.ToList());
 
-        var color = (uint)alpha << 24 | 0xFFFFFF;
-
-        using var node = _tree.Node($"[{tile.X}x{tile.Z}] {tile.Objects.Count} ({staleness * 0.001f:f2}s old)###tile{tile.X}_{tile.Z}", false, color);
-        if (!node.Opened)
-            return;
-
-        foreach (var (key, obj) in tile.Objects)
+        if (visu == null)
         {
-            var typestr = obj.Type.ToString();
-            if (typestr == "0")
-                typestr = "Terrain (no collider)";
-            var n2 = _tree.LeafNode($"[{key:X16}] {typestr}");
-            if (n2.SelectedOrHovered && obj.Type != default)
+            int nv = 0, np = 0, ni = 0;
+            foreach (var objs in objsGrouped.Values)
             {
-                _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, obj.Instance.WorldTransform.Row3, 0xFFFF00FF);
+                var mesh = objs[0].Mesh;
+                foreach (var part in mesh.Parts)
+                {
+                    nv += part.Vertices.Count;
+                    np += part.Primitives.Count;
+                }
+                ni += objs.Count;
+            }
 
-                var coll = FindCollider(obj.Type, key);
-                if (coll != null)
-                    _coll.VisualizeCollider(coll, default, default);
+            visu = new(_dd.RenderContext, nv, np, ni, false);
+            using var builder = visu.Map(_dd.RenderContext);
+
+            var timer = Timer.Create();
+            nv = np = ni = 0;
+            foreach (var obj in objsGrouped.Values)
+            {
+                var mesh = obj[0].Mesh;
+                var color = DebugExtractedCollision.MeshColor(mesh);
+                int nvm = 0, npm = 0;
+                foreach (var part in mesh.Parts)
+                {
+                    foreach (var v in part.Vertices)
+                        builder.AddVertex(v);
+                    foreach (var p in part.Primitives)
+                        builder.AddTriangle(nvm + p.V1, nvm + p.V3, nvm + p.V2);
+                    nvm += part.Vertices.Count;
+                    npm += part.Primitives.Count;
+                }
+                foreach (var inst in obj)
+                    builder.AddInstance(new(inst.Instance.WorldTransform, color));
+                builder.AddMesh(nv, np, npm, ni, obj.Count);
+                nv += nvm;
+                np += npm;
+                ni += obj.Count;
             }
         }
+        return visu;
     }
-    */
 
     private unsafe Collider* FindCollider(InstanceType type, ulong key)
     {

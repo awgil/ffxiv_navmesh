@@ -7,7 +7,12 @@ class Z0822MtGulg : NavmeshCustomization
 
     public override void CustomizeScene(SceneExtractor scene)
     {
-        //remove entire mesh and all instances
+        // the plane collider blocking b3 is toggled by the director, like most other temporary objects, but doesn't have 0x400 for some reason
         scene.Meshes.Remove("<plane one-sided>");
+    }
+
+    public override void CustomizeTile(SceneTracker.Tile tile)
+    {
+        tile.RemoveObjects(o => o.Mesh.Path == "<plane one-sided>");
     }
 }

@@ -17,4 +17,12 @@ class Z0155CoerthasCentralHighlands : NavmeshCustomization
             foreach (var inst in tower.Instances)
                 inst.ForceSetPrimFlags |= SceneExtractor.PrimitiveFlags.ForceWalkable;
     }
+
+    public override void CustomizeTile(SceneTracker.Tile tile)
+    {
+        tile.AddBox(new Vector3(1.5f, 0.15f, 0.2f), new(-417.5f, 221.5f, -288.8f));
+
+        foreach (var obj in tile.ObjectsByPath("bg/ffxiv/roc_r1/fld/r1f1/collision/r1f1_b7_astr1.pcb"))
+            obj.Instance.ForceSetPrimFlags |= SceneExtractor.PrimitiveFlags.ForceWalkable;
+    }
 }

@@ -90,6 +90,7 @@ public class NavmeshBuilder
         }
     }
 
+    // TODO this is kinda more complicated than it needs to be because we're trying to maintain tile order in the output mesh
     public List<RcBuilderResult> BuildTiles(Action? onTileFinished = null)
     {
         var tasks = new List<Task<(DtMeshData?, VoxelMap?, RcBuilderResult)>>();

@@ -280,7 +280,6 @@ public sealed class NavmeshManager : IDisposable
         cancel.ThrowIfCancellationRequested();
 
         // cache doesn't exist or can't be used for whatever reason - build navmesh from scratch
-        // TODO: we can build multiple tiles concurrently
         var builder = new NavmeshBuilder(scene, customization);
         var deltaProgress = 0.99f / (builder.NumTilesX * builder.NumTilesZ);
         builder.BuildTiles(() =>

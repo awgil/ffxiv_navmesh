@@ -121,7 +121,7 @@ public class NavmeshBuilder
                         var (tile, vox, rc) = BuildTile(x0, z0);
 
                         VoxelMap? thisVolume = null;
-                        if (Navmesh.Volume != null && vox != null)
+                        if (vox != null)
                         {
                             thisVolume = new VoxelMap(BoundsMin, BoundsMax, Settings.NumTiles);
                             thisVolume.Build(vox, x0, z0);

@@ -92,7 +92,7 @@ public class NavmeshBuilder
 
     public List<RcBuilderResult> BuildTiles(Action? onTileFinished = null)
     {
-        var tasks = new List<Task<(DtMeshData?, Voxelizer?, RcBuilderResult)>>();
+        var tasks = new List<Task<(DtMeshData?, VoxelMap?, RcBuilderResult)>>();
 
         int threadCount;
 
@@ -117,9 +117,17 @@ public class NavmeshBuilder
                     await sem.WaitAsync();
                     try
                     {
-                        var data = BuildTile(x0, z0);
+                        var (tile, vox, rc) = BuildTile(x0, z0);
+
+                        VoxelMap? thisVolume = null;
+                        if (Navmesh.Volume != null && vox != null)
+                        {
+                            thisVolume = new VoxelMap(BoundsMin, BoundsMax, Settings.NumTiles);
+                            thisVolume.Build(vox, x0, z0);
+                        }
+
                         onTileFinished?.Invoke();
-                        return data;
+                        return (tile, thisVolume, rc);
                     }
                     finally
                     {
@@ -137,13 +145,31 @@ public class NavmeshBuilder
             var (tile, vox, result) = t.Result;
             if (tile != null)
                 Navmesh.Mesh.AddTile(tile, 0, 0);
-            if (vox != null)
-                Navmesh.Volume?.Build(vox, result.tileX, result.tileZ);
+            if (Navmesh.Volume != null && vox != null)
+                MergeTile(Navmesh.Volume, result.tileX, result.tileZ, vox);
 
             results.Add(result);
         }
 
         return results;
+    }
+
+    private static void MergeTile(VoxelMap parent, int x, int z, VoxelMap child)
+    {
+        var shift = parent.RootTile.Subdivision.Count;
+
+        for (ushort i = 0; i < child.RootTile.Contents.Length; i++)
+        {
+            var contents = child.RootTile.Contents[i];
+            if ((contents & VoxelMap.VoxelOccupiedBit) == 0)
+                continue; // empty
+
+            if ((contents & VoxelMap.VoxelIdMask) != VoxelMap.VoxelIdMask)
+                contents += (ushort)shift;
+
+            parent.RootTile.Contents[i] = contents;
+        }
+        parent.RootTile.Subdivision.AddRange(child.RootTile.Subdivision);
     }
 
     // this can be called concurrently; returns intermediate data that can be discarded if not used

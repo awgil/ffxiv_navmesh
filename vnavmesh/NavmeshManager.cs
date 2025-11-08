@@ -282,7 +282,7 @@ public sealed class NavmeshManager : IDisposable
         // cache doesn't exist or can't be used for whatever reason - build navmesh from scratch
         // TODO: we can build multiple tiles concurrently
         var builder = new NavmeshBuilder(scene, customization);
-        var deltaProgress = 0.95f / (builder.NumTilesX * builder.NumTilesZ);
+        var deltaProgress = 0.99f / (builder.NumTilesX * builder.NumTilesZ);
         builder.BuildTiles(() =>
         {
             _loadTaskProgress += deltaProgress;
@@ -297,7 +297,7 @@ public sealed class NavmeshManager : IDisposable
             builder.Navmesh.Serialize(writer);
         }
         customization.CustomizeMesh(builder.Navmesh.Mesh, layers);
-        _loadTaskProgress += 0.05f;
+        deltaProgress += 0.01f;
         return builder.Navmesh;
     }
 

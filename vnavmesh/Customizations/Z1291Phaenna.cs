@@ -187,5 +187,14 @@ internal class Z1291Phaenna : NavmeshCustomization
         // chasm <-> pools middle
         addCosmoliner(new(433.635f, -230, 234.168f), new(pi, 1.396f, pi), new(660, -242, 420), new(0, 0.785f, 0));
         #endregion
+
+        if (festivalVersion < 0x25)
+            return;
+
+        #region southwestern penis
+        addCosmoliner(new(-580, 24.5f, 74), new(pi, 0, -pi), new(-363.473f, 11, 375.304f), new(0, 0.524f, 0));
+
+        addCosmoliner(new(-356.527f, 11, 414.696f), new(pi, -0.175f, pi), new(-580, 28, 715), new(0, -hpi, 0));
+        #endregion
     }
 }

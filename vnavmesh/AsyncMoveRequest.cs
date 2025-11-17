@@ -1,4 +1,5 @@
-﻿using Navmesh.Movement;
+﻿
+using Navmesh.Movement;
 using System;
 using System.Collections.Generic;
 using System.Numerics;

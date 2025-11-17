@@ -4,6 +4,7 @@ using DotRecast.Core;
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
+
 using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
@@ -173,7 +174,7 @@ class DebugNavmeshCustom : IDisposable
     private DebugDrawer _dd;
     private DebugGameCollision _coll;
     private DebugExtractedCollision? _drawExtracted;
-    private HeightfieldComparison? _globalHFC;
+    private Task<HeightfieldComparison>? _globalHFC;
     private PerTile[,]? _debugTiles;
     private NavmeshManager _manager;
 
@@ -257,10 +258,15 @@ class DebugNavmeshCustom : IDisposable
                 {
                     if (ng.Opened)
                     {
-                        _globalHFC ??= CompareAllHeightfields(_navmesh.Extractor!);
-                        _tree.LeafNode($"Old: {_globalHFC.Value.DurationOld:f3}");
-                        _tree.LeafNode($"New: {_globalHFC.Value.DurationNew:f3}");
-                        _tree.LeafNode($"Match: {_globalHFC.Value.Identical}");
+                        _globalHFC ??= Task.Run(() => CompareAllHeightfields(_navmesh.Extractor!));
+                        if (_globalHFC.IsCompleted)
+                        {
+                            _tree.LeafNode($"Old: {_globalHFC.Result.DurationOld:f3}");
+                            _tree.LeafNode($"New: {_globalHFC.Result.DurationNew:f3}");
+                            _tree.LeafNode($"Match: {_globalHFC.Result.Identical}");
+                        }
+                        else
+                            _tree.LeafNode("Calculating...");
                     }
                 }
 

@@ -2,6 +2,7 @@
 using Dalamud.Interface.Utility.Raii;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+
 using Navmesh.Render;
 using System;
 using System.Linq;
@@ -12,7 +13,7 @@ namespace Navmesh.Debug;
 
 public sealed unsafe class DebugTileManager : IDisposable
 {
-    private readonly TileManager _tiles;
+    private readonly NavmeshManager _tiles;
     private readonly UITree _tree = new();
     private readonly DebugDrawer _dd;
     private readonly DebugGameCollision _coll;
@@ -31,7 +32,7 @@ public sealed unsafe class DebugTileManager : IDisposable
 
     private bool _saveOthers;
 
-    public DebugTileManager(TileManager tiles, DebugDrawer drawer, DebugGameCollision coll)
+    public DebugTileManager(NavmeshManager tiles, DebugDrawer drawer, DebugGameCollision coll)
     {
         _tiles = tiles;
         _dd = drawer;
@@ -58,27 +59,9 @@ public sealed unsafe class DebugTileManager : IDisposable
 
     public void Draw()
     {
-        ImGui.TextUnformatted($"zone={Scene.LastLoadedZone}, festivals={string.Join(".", _tiles.ActiveFestivals.Select(f => f.ToString("X")))}");
-
-        if (ImGui.Button("Force rebuild everything"))
-            _tiles.Rebuild();
-
         var pos2 = Service.ClientState.LocalPlayer?.Position ?? new();
         var tx = (int)((pos2.X + 1024) / Scene.TileUnits);
         var tz = (int)((pos2.Z + 1024) / Scene.TileUnits);
-
-        ImGui.SameLine();
-        if (ImGui.Button($"Force rebuild tile {tx}x{tz}"))
-        {
-            _tiles.RebuildOne(tx, tz, !_saveOthers);
-            _saveOthers = false;
-        }
-        ImGui.SameLine();
-        ImGui.Checkbox($"Keep other tiles loaded", ref _saveOthers);
-
-        ImGui.Checkbox("Cache enabled", ref _tiles.EnableCache);
-
-        ImGui.TextUnformatted($"Tasks: {_tiles.NumTasks.Sum()}");
 
         _hovered = (-1, -1);
 
@@ -142,7 +125,7 @@ public sealed unsafe class DebugTileManager : IDisposable
                     highlightAll = true;
                     foreach (var (key, obj) in tile.Objects)
                     {
-                        var node = _tree.LeafNode($"[{key:X16}] {obj.Type} {obj.Instance.ForceSetPrimFlags}");
+                        var node = _tree.LeafNode($"[{key:X16}] {obj.Type}; flags=+{obj.Instance.ForceSetPrimFlags} -{obj.Instance.ForceClearPrimFlags}");
                         if (node.SelectedOrHovered && obj.Type > 0)
                         {
                             highlightAll = false;

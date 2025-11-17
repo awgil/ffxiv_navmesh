@@ -76,7 +76,7 @@ class DebugNavmeshManager : IDisposable
         ImGui.TextUnformatted($"Current target: {_target}");
 
         if (ImGui.Button("Export bitmap"))
-            ExportBitmap(_manager.Navmesh, _manager.Query, playerPos);
+            ExportBitmap(playerPos);
 
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
         ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
@@ -110,7 +110,7 @@ class DebugNavmeshManager : IDisposable
             _debugVoxelMap?.VisualizeVoxel(voxel);
     }
 
-    private void ExportBitmap(Navmesh navmesh, NavmeshQuery query, Vector3 startingPos)
+    private void ExportBitmap(Vector3 startingPos)
     {
         _manager.BuildBitmap(startingPos, "D:\\navmesh.bmp", 0.5f);
     }

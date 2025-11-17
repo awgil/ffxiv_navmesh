@@ -1,4 +1,5 @@
 ﻿using Dalamud.Game.ClientState.Conditions;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using System;
@@ -7,13 +8,14 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Navmesh;
 
 // manager that loads navmesh matching current zone and performs async pathfinding queries
-public sealed class NavmeshManager : IDisposable
+public sealed partial class NavmeshManager : IDisposable
 {
     public bool UseRaycasts = true;
     public bool UseStringPulling = true;
@@ -35,80 +37,75 @@ public sealed class NavmeshManager : IDisposable
 
     public DirectoryInfo CacheDir { get; private set; }
 
-    public unsafe NavmeshManager(DirectoryInfo cacheDir)
+    public NavmeshManager(DirectoryInfo cacheDir)
     {
         CacheDir = cacheDir;
         cacheDir.Create(); // ensure directory exists
 
+        Service.Config.Modified += OnConfigModified;
+        OnConfigModified();
+
+        Scene.ZoneChanged += OnZoneChange;
+
         // prepare a task with correct task scheduler that other tasks can be chained off
-        _lastLoadQueryTask = Service.Framework.Run(() => Log("Tasks kicked off"));
+        _lastLoadQueryTask = Task.Run(async () =>
+        {
+            // fire change events for all existing layout objects when the plugin loads
+            await Service.Framework.Run(() => Scene.Initialize());
+
+            // then, queue currently loaded layout with no delay
+            foreach (var t in Scene.GetTileChanges())
+                QueueTile(t, true, 0);
+
+            _initialized = true;
+
+            Log("Tasks kicked off");
+        });
     }
 
     public void Dispose()
     {
         Log("Disposing");
+        Scene.Dispose();
+        foreach (var t in Tasks)
+            t?.Cancel();
         ClearState();
     }
 
     public void Update()
     {
-        var curKey = GetCurrentKey();
-        if (curKey != CurrentKey)
+        if (!_initialized || Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
+            return;
+
+        unsafe
         {
-            // navmesh needs to be reloaded
-            if (!Service.Config.AutoLoadNavmesh)
-            {
-                if (CurrentKey.Length == 0)
-                    return; // nothing is loaded, and auto-load is forbidden
-                curKey = ""; // just unload existing mesh
-            }
-            Log($"Starting transition from '{CurrentKey}' to '{curKey}'");
-            CurrentKey = curKey;
-            Reload(true);
-            // mesh load is now in progress
+            var w = LayoutWorld.Instance()->ActiveLayout;
+            if (w == null)
+                return;
+            if (w->FestivalStatus is > 0 and < 5)
+                return;
+
+            MemoryMarshal.Cast<GameMain.Festival, uint>(w->ActiveFestivals).CopyTo(ActiveFestivals);
         }
+
+        var anyChange = false;
+        foreach (var t in Scene.GetTileChanges())
+        {
+            anyChange = true;
+            QueueTile(t, _enableCache, DebounceMs);
+        }
+
+        if (anyChange)
+            _enableCache = true;
     }
+
+    private bool _enableCache;
 
     public bool Reload(bool allowLoadFromCache)
     {
         ClearState();
-        if (CurrentKey.Length > 0)
-        {
-            var cts = _currentCTS = new();
-            ExecuteWhenIdle(async cancel =>
-            {
-                _loadTaskProgress = 0;
-
-                using var resetLoadProgress = new OnDispose(() => _loadTaskProgress = -1);
-
-                var waitStart = DateTime.Now;
-
-                while (InCutscene)
-                {
-                    if ((DateTime.Now - waitStart).TotalSeconds >= 5)
-                    {
-                        waitStart = DateTime.Now;
-                        Log("waiting for cutscene");
-                    }
-                    await Service.Framework.DelayTicks(1, cancel);
-                }
-
-                var (cacheKey, scene) = await Service.Framework.Run(() =>
-                {
-                    var scene = new SceneDefinition();
-                    scene.FillFromActiveLayout();
-                    var cacheKey = GetCacheKey(scene);
-                    return (cacheKey, scene);
-                }, cancel);
-
-                Log($"Kicking off build for '{cacheKey}' (reload={allowLoadFromCache})");
-                var navmesh = await Task.Run(() => BuildNavmesh(scene, cacheKey, allowLoadFromCache, cancel), cancel);
-                Log($"Mesh loaded: '{cacheKey}'");
-                Navmesh = navmesh;
-                Query = new(Navmesh);
-                OnNavmeshChanged?.Invoke(Navmesh, Query);
-            }, cts.Token);
-        }
+        _enableCache = allowLoadFromCache;
+        Scene.Initialize();
         return true;
     }
 
@@ -199,6 +196,36 @@ public sealed class NavmeshManager : IDisposable
         bitmap.Save(filename);
         Service.Log.Debug($"Generated nav bitmap '{filename}' @ {startingPos}: {bitmap.MinBounds}-{bitmap.MaxBounds}");
         return (bitmap.MinBounds, bitmap.MaxBounds);
+    }
+
+    public void Prune(IEnumerable<Vector3> points)
+    {
+        if (Navmesh == null || Query == null)
+            throw new InvalidOperationException("can't prune, mesh is missing");
+
+        var reachablePolys = new HashSet<long>();
+        foreach (var pt in points)
+        {
+            var startPoly = Query.FindNearestMeshPoly(pt);
+            reachablePolys.UnionWith(Query.FindReachableMeshPolys(startPoly));
+        }
+
+        for (var i = 0; i < Navmesh.Mesh.GetMaxTiles(); i++)
+        {
+            if (Navmesh.Mesh.GetTile(i) is not { } t || t.data?.header == null)
+                continue;
+
+            var prBase = Navmesh.Mesh.GetPolyRefBase(t);
+            for (var j = 0; j < t.data.header.polyCount; j++)
+            {
+                var pref = prBase | (uint)j;
+                if (!reachablePolys.Contains(pref))
+                {
+                    Navmesh.Mesh.GetPolyFlags(pref, out var fl);
+                    Navmesh.Mesh.SetPolyFlags(pref, fl | Navmesh.FLAGS_DISABLED);
+                }
+            }
+        }
     }
 
     // if non-empty string is returned, active layout is ready
@@ -350,7 +377,7 @@ public sealed class NavmeshManager : IDisposable
         return res;
     }
 
-    private static void Log(string message) => Service.Log.Debug($"[NavmeshManager] [{Thread.CurrentThread.ManagedThreadId}] {message}");
+    public static void Log(string message) => Service.Log.Debug($"[NavmeshManager] [{Environment.CurrentManagedThreadId,4}] {message}");
     private static void LogTaskError(Task task)
     {
         if (task.IsFaulted)

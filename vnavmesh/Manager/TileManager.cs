@@ -1,21 +1,19 @@
-﻿using Dalamud.Game.ClientState.Conditions;
-using DotRecast.Core;
+﻿using DotRecast.Core;
 using DotRecast.Detour;
 using DotRecast.Recast;
-using FFXIVClientStructs.FFXIV.Client.Game;
-using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using Navmesh.NavVolume;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Navmesh;
 
-public sealed class TileManager : IDisposable
+public partial class NavmeshManager
 {
     public readonly ColliderSet Scene = new();
     public static readonly Vector3 BoundsMin = new(-1024);
@@ -49,18 +47,14 @@ public sealed class TileManager : IDisposable
     public RcBuilderResult?[,] Intermediates { get; private set; } = new RcBuilderResult?[0, 0];
 
     // keyed by zone
-    public volatile int[] NumTasks = new int[2048];
+    public readonly ConcurrentDictionary<uint, CountdownEvent> TaskCounters = [];
 
     public uint[] ActiveFestivals { get; private set; } = new uint[4];
 
-    private readonly Lock locked = new();
+    private readonly Lock meshLock = new();
     private readonly SemaphoreSlim _sem = new(0);
 
     public NavmeshCustomization Customization => Scene.Customization;
-
-    private readonly NavmeshManager _manager;
-
-    public bool EnableCache = true;
 
     public DtNavMesh? Mesh;
     public VoxelMap? Volume;
@@ -69,41 +63,10 @@ public sealed class TileManager : IDisposable
 
     private bool _initialized;
 
-    public TileManager(NavmeshManager manager)
-    {
-        _manager = manager;
-
-        Service.Config.Modified += OnConfigModified;
-        OnConfigModified();
-
-        Scene.ZoneChanged += OnZoneChange;
-
-        Task.Run(async () =>
-        {
-            // fire change events for all existing layout objects when the plugin loads
-            await Service.Framework.Run(() => Scene.Initialize());
-
-            // then, queue currently loaded layout with no delay
-            foreach (var t in Scene.GetTileChanges())
-                QueueTile(t, EnableCache, 0);
-
-            _initialized = true;
-        });
-    }
-
-    public void Dispose()
-    {
-        Scene.Dispose();
-
-        foreach (var t in Tasks)
-            t?.Cancel();
-    }
-
     public void OnZoneChange(ColliderSet scene)
     {
+        ClearState();
         Array.Fill<uint>(ActiveFestivals, 0);
-        foreach (var t in Tasks)
-            t?.Cancel();
         Tasks = new BuildTask?[scene.RowLength, scene.RowLength];
         Intermediates = new RcBuilderResult?[scene.RowLength, scene.RowLength];
         Mesh = new(new()
@@ -115,26 +78,6 @@ public sealed class TileManager : IDisposable
             maxPolys = 1 << DtNavMesh.DT_POLY_BITS
         }, 6);
         Volume = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
-    }
-
-    public void Update()
-    {
-        if (!_initialized || Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
-            return;
-
-        unsafe
-        {
-            var w = LayoutWorld.Instance()->ActiveLayout;
-            if (w == null)
-                return;
-            if (w->FestivalStatus is > 0 and < 5)
-                return;
-
-            MemoryMarshal.Cast<GameMain.Festival, uint>(w->ActiveFestivals).CopyTo(ActiveFestivals);
-        }
-
-        foreach (var t in Scene.GetTileChanges())
-            QueueTile(t, EnableCache, DebounceMs);
     }
 
     private void OnConfigModified()
@@ -180,12 +123,42 @@ public sealed class TileManager : IDisposable
         if (tile.Zone == 0)
             return;
 
-        Tasks[tile.X, tile.Z]?.Cancel();
+        var tc = TaskCounters.AddOrUpdate(tile.Zone, new CountdownEvent(1), (_, c) => { c.AddCount(); return c; });
+
+        if (_currentCTS == null)
+        {
+            var cts = _currentCTS = new();
+            ExecuteWhenIdle(async () =>
+            {
+                await Task.Run(() => tc.Wait());
+                TaskCounters.Remove(tile.Zone, out _);
+
+                if (Mesh != null && tile.Zone == Scene.LastLoadedZone)
+                {
+                    Customization.CustomizeMesh(Mesh, [.. ActiveFestivals]);
+                    Navmesh = new(Customization.Version, Mesh, Volume);
+                    Query = new(Navmesh);
+
+                    if (Seed.Points.TryGetValue(tile.Zone, out var points))
+                        Prune(points);
+
+                    OnNavmeshChanged?.Invoke(Navmesh, Query);
+                }
+            }, cts.Token);
+        }
+
         Tasks[tile.X, tile.Z] = BuildTask.Spawn(async tok =>
         {
-            if (debounce > 0)
-                await Task.Delay(TimeSpan.FromMilliseconds(debounce), tok);
-            await BuildTile(tile, allowCache, tok);
+            try
+            {
+                if (debounce > 0)
+                    await Task.Delay(TimeSpan.FromMilliseconds(debounce), tok);
+                await BuildTile(tile, allowCache, tok);
+            }
+            finally
+            {
+                tc.Signal();
+            }
         });
     }
 
@@ -196,80 +169,58 @@ public sealed class TileManager : IDisposable
 
     private async Task BuildTile(TileObjects data, bool allowCache, CancellationToken token)
     {
-        Interlocked.Add(ref NumTasks[data.Zone], 1);
-
         _numStarted++;
 
         var x = data.X;
         var z = data.Z;
 
-        var thisZoneFinished = false;
-
+        await _sem.WaitAsync(token);
         try
         {
-            await _sem.WaitAsync(token);
-            try
-            {
-                var (tile, vox) = LoadOrBuildTile(data, allowCache, token);
+            var (tile, vox) = LoadOrBuildTile(data, allowCache, token);
 
-                // if tile zone doesn't match current zone, the player changed areas while we were building, so we don't modify the loaded mesh (tile will still be saved to cache)
-                if (Mesh != null && data.Zone == Scene.LastLoadedZone)
+            // if tile zone doesn't match current zone, the player changed areas while we were building, so we don't modify the loaded mesh (tile will still be saved to cache)
+            if (Mesh != null && data.Zone == Scene.LastLoadedZone)
+            {
+                lock (meshLock)
                 {
-                    lock (locked)
-                    {
-                        if (tile != null)
-                            Mesh.UpdateTile(tile, 0);
-                        if (vox != null && Volume != null)
-                            MergeTile(Volume, x, z, vox);
-                    }
+                    if (tile != null)
+                        Mesh.UpdateTile(tile, 0);
+                    if (vox != null && Volume != null)
+                        MergeTile(Volume, x, z, vox);
                 }
             }
-            catch (Exception ex)
+        }
+        catch (Exception ex)
+        {
+            if (ex is not (OperationCanceledException or CustomizationVersionMismatch))
             {
-                if (ex is not (OperationCanceledException or CustomizationVersionMismatch))
-                {
-                    _exc = ex;
-                    Log(ex, $"while building tile {x}x{z}");
-                }
-                throw;
+                _exc = ex;
+                Log(ex, $"while building tile {x}x{z}");
             }
-            finally
-            {
-                _sem.Release();
-            }
+            throw;
         }
         finally
         {
-            if (Interlocked.Add(ref NumTasks[data.Zone], -1) <= 0)
-            {
-                // all tasks finished, reset progress bar and counters
-                _numStarted = _numFinished = 0;
-                _manager.SetProgress(0, 0);
-
-                thisZoneFinished = data.Zone == Scene.LastLoadedZone;
-            }
-            else
-            {
-                // update progress
-                _numFinished++;
-                _manager.SetProgress(_numFinished, _numStarted);
-            }
-        }
-
-        if (Mesh != null && thisZoneFinished)
-        {
-            if (_exc != null)
-            {
-                Log(_exc, "a task failed, mesh will be incomplete");
-                _exc = null;
-                return;
-            }
-
-            Log("all tiles done, replacing mesh");
-            Customization.CustomizeMesh(Mesh, [.. ActiveFestivals]);
-            _manager.ReplaceMesh(new(Customization.Version, Mesh, Volume));
+            _sem.Release();
         }
     }
+
+    //if (Mesh != null && thisZoneFinished)
+    //{
+    //    if (_exc != null)
+    //    {
+    //        Log(_exc, "a task failed, mesh will be incomplete");
+    //        _exc = null;
+    //        return;
+    //    }
+
+    //    Log("all tiles done, replacing mesh");
+    //    Customization.CustomizeMesh(Mesh, [.. ActiveFestivals]);
+    //    Navmesh = new(Customization.Version, Mesh, Volume);
+    //    Query = new(Navmesh);
+    //    OnNavmeshChanged?.Invoke(Navmesh, Query);
+    //}
 
     private static void MergeTile(VoxelMap parent, int x, int z, VoxelMap child)
     {
@@ -305,7 +256,7 @@ public sealed class TileManager : IDisposable
 
         var x = data.X;
         var z = data.Z;
-        var dir = new DirectoryInfo($"{_manager.CacheDir}/z{data.Zone}");
+        var dir = new DirectoryInfo($"{CacheDir}/z{data.Zone}");
         var cacheFile = new FileInfo(dir.FullName + $"/{x:d2}-{z:d2}-{cacheKey}.tile");
 
         try
@@ -346,7 +297,6 @@ public sealed class TileManager : IDisposable
         return (tile, map);
     }
 
-    public static void Log(string message) => Service.Log.Debug($"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
     private static void Log(Exception ex, string message) => Service.Log.Warning(ex, $"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
 
     private static void SerializeTile(FileInfo cacheFile, DtMeshData? tile, VoxelMap? map, int version, TileObjects data)
@@ -565,7 +515,7 @@ public sealed class TileBuilder
 
         var meshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
 
-        TileManager.Log($"built navmesh tile {TileX}x{TileZ} in {timer.Value().TotalMilliseconds}ms");
+        NavmeshManager.Log($"built navmesh tile {TileX}x{TileZ} in {timer.Value().TotalMilliseconds}ms");
 
         return (meshData, vox, new RcBuilderResult(TileX, TileZ, shf, chf, cset, pmesh, dmesh, Telemetry));
     }

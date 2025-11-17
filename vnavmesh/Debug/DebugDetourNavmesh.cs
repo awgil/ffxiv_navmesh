@@ -328,6 +328,9 @@ public class DebugDetourNavmesh : DebugRecast
     // effect + data are expected to be already bound
     private void VisualizeRoughPolygon(DtMeshTile tile, EffectMesh.Data visu, DtPoly poly, bool colorByArea, bool highlight)
     {
+        if ((poly.flags & Navmesh.FLAGS_DISABLED) != 0)
+            return;
+
         if (poly.GetPolyType() != DtPolyTypes.DT_POLYTYPE_OFFMESH_CONNECTION)
         {
             if (poly.vertCount < 3)

@@ -100,6 +100,10 @@
     <ProjectReference Include="..\DotRecast\src\DotRecast.Recast\DotRecast.Recast.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="ColliderSet\" />
+  </ItemGroup>
+
   <Target Name="FilterCopyLocalItems" AfterTargets="ResolvePackageDependenciesForBuild">
     <ItemGroup>
       <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="'%(Filename)' != 'SharpDX.D3DCompiler'" />

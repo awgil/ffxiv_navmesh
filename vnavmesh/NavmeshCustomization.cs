@@ -63,7 +63,7 @@ public class NavmeshCustomization
             vertCount = 1,
             flags = 1
         };
-        p.SetArea(Navmesh.OffMeshEndpoint);
+        p.SetArea(Navmesh.AREA_ID_WARP);
         p.SetPolyType(DtPolyTypes.DT_POLYTYPE_OFFMESH_CONNECTION);
         p.verts[0] = startTile.data.header.vertCount;
 

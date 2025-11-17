@@ -1,4 +1,5 @@
 ﻿using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+
 using Navmesh.Movement;
 using System;
 using System.Collections.Generic;

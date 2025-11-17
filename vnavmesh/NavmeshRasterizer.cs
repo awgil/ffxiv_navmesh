@@ -316,6 +316,7 @@ public class NavmeshRasterizer
 
     private void AddSpan(int x, int z, int y0, int y1, int areaId, bool includeInVolume, bool mergeBelow = true)
     {
+        var yOrig = (y0, y1);
         ref var cellHead = ref _heightfield.spans[z * _heightfield.width + x];
 
         // find insert position for new span: skip any existing spans that end before new span start
@@ -363,7 +364,8 @@ public class NavmeshRasterizer
         else
             _heightfield.Span(prevSpanIndex).next = newSpanIndex;
 
-        // and also mark overlapping voxels as solid
+        // mark overlapping voxels as solid; use unmodified y coords since it's possible for a realSolid span to be merged with a fly-through span
+        // TODO: figure out if we can preserve flythrough-ability using areaId - not sure if nonzero area id always indicates a walkable surface, recast docs are very unclear on this front
         if (includeInVolume && _voxelizer != null)
         {
             x -= _heightfield.borderSize;
@@ -375,8 +377,8 @@ public class NavmeshRasterizer
                 if (x < _voxelizer.NumX && z < _voxelizer.NumZ)
                 {
                     // add 1-cell "underhang" in case this span lies exactly on a tile boundary (which is actually fairly common for level geometry)
-                    // TODO figure out less of a hack for this - spans along a boundary should only occupy the lower voxel, not both
-                    _voxelizer.AddSpan(x, z, (y0 - 1) >> _voxShiftY, y1 >> _voxShiftY);
+                    // TODO: if the span does lie on a tile boundary, it should only occupy the lower voxel and not the upper one
+                    _voxelizer.AddSpan(x, z, (yOrig.y0 - 1) >> _voxShiftY, yOrig.y1 >> _voxShiftY);
                 }
             }
         }
@@ -467,7 +469,6 @@ public class NavmeshRasterizer
                             continue; // TODO: rasterize to normal heightfield, can't do it right now, since we're using same heightfield for both mesh and volume
 
                         bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable);
-                        unwalkable |= _voxelizer != null && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable); // for flyable scenes, assume unlandable == unwalkable
                         if (!unwalkable)
                         {
                             var v1 = CachedVertex(vertices, p.V1);

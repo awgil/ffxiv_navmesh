@@ -3,6 +3,7 @@ using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+
 using Navmesh.Movement;
 using System;
 using System.Numerics;
@@ -19,7 +20,6 @@ public sealed class Plugin : IDalamudPlugin
     private DTRProvider _dtrProvider;
     private MainWindow _wndMain;
     private IPCProvider _ipcProvider;
-    private TileManager _tileManager;
 
     public Plugin(IDalamudPluginInterface dalamud)
     {
@@ -41,11 +41,10 @@ public sealed class Plugin : IDalamudPlugin
         Service.Config.Modified += () => Service.Config.Save(dalamud.ConfigFile);
 
         _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
-        _tileManager = new(_navmeshManager);
         _followPath = new(dalamud, _navmeshManager);
         _asyncMove = new(_navmeshManager, _followPath);
         _dtrProvider = new(_navmeshManager, _asyncMove, _followPath);
-        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider, _tileManager, dalamud.ConfigDirectory.FullName) { IsOpen = dalamud.IsDev };
+        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider, dalamud.ConfigDirectory.FullName) { IsOpen = dalamud.IsDev };
         _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain, _dtrProvider);
 
         WindowSystem.AddWindow(_wndMain);
@@ -106,7 +105,6 @@ public sealed class Plugin : IDalamudPlugin
         _asyncMove.Dispose();
         _followPath.Dispose();
         _navmeshManager.Dispose();
-        _tileManager.Dispose();
     }
 
     public static void DuoLog(Exception ex)
@@ -123,8 +121,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnUpdate(IFramework fwk)
     {
-        _tileManager.Update();
-        //_navmeshManager.Update();
+        _navmeshManager.Update();
         _followPath.Update(fwk);
         _asyncMove.Update();
         _dtrProvider.Update();

@@ -17,7 +17,7 @@ public class MainWindow : Window, IDisposable
     private DebugTileManager _debugTiles;
     private string _configDirectory;
 
-    public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, TileManager tileManager, string configDir) : base("Navmesh")
+    public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, string configDir) : base("Navmesh")
     {
         _path = path;
         _configDirectory = configDir;
@@ -25,7 +25,7 @@ public class MainWindow : Window, IDisposable
         _debugNavmeshManager = new(_dd, _debugGameColl, manager, path, move, dtr);
         _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _configDirectory);
         _debugLayout = new(_dd, _debugGameColl);
-        _debugTiles = new(tileManager, _dd, _debugGameColl);
+        _debugTiles = new(manager, _dd, _debugGameColl);
     }
 
     public void Dispose()

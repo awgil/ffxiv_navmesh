@@ -18,7 +18,8 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
     public static readonly uint Version = 22;
-    public const int OffMeshEndpoint = 5;
+    public const int AREA_ID_WARP = 5;
+    public const int FLAGS_DISABLED = 0x10;
 
     // throws an exception on failure
     public static Navmesh Deserialize(BinaryReader reader, int expectedCustomizationVersion)

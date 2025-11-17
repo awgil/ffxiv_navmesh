@@ -206,7 +206,14 @@ public sealed partial class NavmeshManager : IDisposable
         var reachablePolys = new HashSet<long>();
         foreach (var pt in points)
         {
+            if (pt == default)
+            {
+                Service.Log.Error($"Thanks, C#!");
+                return;
+            }
+
             var startPoly = Query.FindNearestMeshPoly(pt);
+            Log($"starting polygon for {pt}: {startPoly:X}");
             reachablePolys.UnionWith(Query.FindReachableMeshPolys(startPoly));
         }
 

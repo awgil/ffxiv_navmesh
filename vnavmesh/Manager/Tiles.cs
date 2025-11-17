@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 namespace Navmesh;
 
 public readonly record struct TileObject(SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type);
-public readonly record struct TileObjects(int X, int Z, SortedDictionary<ulong, TileObject> Objects, ReadOnlyDictionary<string, SceneExtractor.Mesh> AllMeshes, NavmeshCustomization Customization, uint Zone)
+public readonly record struct Tile(int X, int Z, SortedDictionary<ulong, TileObject> Objects, ReadOnlyDictionary<string, SceneExtractor.Mesh> AllMeshes, NavmeshCustomization Customization, uint Zone)
 {
     public readonly IEnumerable<TileObject> ObjectsByMesh(Func<SceneExtractor.Mesh, bool> func) => Objects.Values.Where(o => func(o.Mesh));
     public readonly IEnumerable<TileObject> ObjectsByPath(string path) => ObjectsByMesh(m => m.Path == path);
@@ -41,7 +41,7 @@ public partial class ColliderSet
         public bool Changed;
     }
 
-    public IEnumerable<TileObjects> GetTileChanges()
+    public IEnumerable<Tile> GetTileChanges()
     {
         if (!_anyChanged)
             yield break;
@@ -55,7 +55,7 @@ public partial class ColliderSet
                 }
     }
 
-    public IEnumerable<TileObjects> GetAllTiles()
+    public IEnumerable<Tile> GetAllTiles()
     {
         for (var i = 0; i < _tiles.GetLength(0); i++)
             for (var j = 0; j < _tiles.GetLength(1); j++)
@@ -63,7 +63,7 @@ public partial class ColliderSet
                     yield return t;
     }
 
-    public TileObjects? GetOneTile(int i, int j)
+    public Tile? GetOneTile(int i, int j)
     {
         var t = _tiles[i, j];
         if (t == null)

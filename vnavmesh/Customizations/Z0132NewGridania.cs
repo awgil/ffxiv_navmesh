@@ -15,7 +15,7 @@ internal class Z0132NewGridania : NavmeshCustomization
                 inst.WorldTransform.M22 *= 2;
     }
 
-    public override void CustomizeTile(TileObjects tile)
+    public override void CustomizeTile(Tile tile)
     {
         foreach (var obj in tile.ObjectsByPath("bg/ffxiv/fst_f1/twn/common/collision/f1t0_a0_plnt1.pcb"))
             obj.Instance.WorldTransform.M22 *= 2;

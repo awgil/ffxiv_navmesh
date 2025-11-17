@@ -2,7 +2,11 @@
 using Navmesh.Movement;
 using Navmesh.NavVolume;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
+using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace Navmesh.Debug;
 
@@ -86,6 +90,19 @@ class DebugNavmeshManager : IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Pathfind to target using volume"))
             _asyncMove.MoveTo(_target, true);
+
+        if (ImGui.Button("Record seed point"))
+        {
+            Task.Run(async () =>
+            {
+                var ff = await FloodFill.GetAsync();
+                ff.Seeds.TryAdd(Service.ClientState.TerritoryType, []);
+                ff.Seeds[Service.ClientState.TerritoryType].Add(playerPos);
+
+                Dictionary<uint, List<JsonVec>> pt = ff.Seeds.ToDictionary(k => k.Key, v => v.Value.Select(v => (JsonVec)v).ToList());
+                ImGui.SetClipboardText(JsonSerializer.Serialize(pt));
+            });
+        }
 
         DrawPosition("Player", playerPos);
         DrawPosition("Target", _target);

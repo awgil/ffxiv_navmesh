@@ -11,7 +11,7 @@ class Z0823TheQitanaRavel : NavmeshCustomization
         scene.Meshes.Remove("<plane one-sided>");
     }
 
-    public override void CustomizeTile(TileObjects tile)
+    public override void CustomizeTile(Tile tile)
     {
         tile.RemoveObjects(o => o.Mesh.Path == "<plane one-sided>");
     }

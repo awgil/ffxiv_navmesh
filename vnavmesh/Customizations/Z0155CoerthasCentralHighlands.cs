@@ -18,7 +18,7 @@ class Z0155CoerthasCentralHighlands : NavmeshCustomization
                 inst.ForceSetPrimFlags |= SceneExtractor.PrimitiveFlags.ForceWalkable;
     }
 
-    public override void CustomizeTile(TileObjects tile)
+    public override void CustomizeTile(Tile tile)
     {
         tile.AddBox(new Vector3(1.5f, 0.15f, 0.2f), new(-417.5f, 221.5f, -288.8f));
 

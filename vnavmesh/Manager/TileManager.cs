@@ -118,7 +118,7 @@ public partial class NavmeshManager
             QueueTile(t, false, 0);
     }
 
-    private void QueueTile(TileObjects tile, bool allowCache, double debounce)
+    private void QueueTile(Tile tile, bool allowCache, double debounce)
     {
         if (tile.Zone == 0)
             return;
@@ -139,7 +139,7 @@ public partial class NavmeshManager
                     Navmesh = new(Customization.Version, Mesh, Volume);
                     Query = new(Navmesh);
 
-                    if (Seed.Points.TryGetValue(tile.Zone, out var points))
+                    if (Customization.IsFlyingSupported(tile.Zone) && (await FloodFill.GetAsync()).Seeds.TryGetValue(tile.Zone, out var points))
                         Prune(points);
 
                     OnNavmeshChanged?.Invoke(Navmesh, Query);
@@ -167,7 +167,7 @@ public partial class NavmeshManager
     private volatile int _numStarted;
     private volatile int _numFinished;
 
-    private async Task BuildTile(TileObjects data, bool allowCache, CancellationToken token)
+    private async Task BuildTile(Tile data, bool allowCache, CancellationToken token)
     {
         _numStarted++;
 
@@ -206,22 +206,6 @@ public partial class NavmeshManager
         }
     }
 
-    //if (Mesh != null && thisZoneFinished)
-    //{
-    //    if (_exc != null)
-    //    {
-    //        Log(_exc, "a task failed, mesh will be incomplete");
-    //        _exc = null;
-    //        return;
-    //    }
-
-    //    Log("all tiles done, replacing mesh");
-    //    Customization.CustomizeMesh(Mesh, [.. ActiveFestivals]);
-    //    Navmesh = new(Customization.Version, Mesh, Volume);
-    //    Query = new(Navmesh);
-    //    OnNavmeshChanged?.Invoke(Navmesh, Query);
-    //}
-
     private static void MergeTile(VoxelMap parent, int x, int z, VoxelMap child)
     {
         var subdivisionShift = parent.RootTile.Subdivision.Count;
@@ -246,7 +230,7 @@ public partial class NavmeshManager
         parent.RootTile.Subdivision.AddRange(child.RootTile.Subdivision);
     }
 
-    private (DtMeshData?, VoxelMap?) LoadOrBuildTile(TileObjects data, bool allowCache, CancellationToken token)
+    private (DtMeshData?, VoxelMap?) LoadOrBuildTile(Tile data, bool allowCache, CancellationToken token)
     {
         var customization = data.Customization;
         customization.CustomizeTile(data);
@@ -299,7 +283,7 @@ public partial class NavmeshManager
 
     private static void Log(Exception ex, string message) => Service.Log.Warning(ex, $"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
 
-    private static void SerializeTile(FileInfo cacheFile, DtMeshData? tile, VoxelMap? map, int version, TileObjects data)
+    private static void SerializeTile(FileInfo cacheFile, DtMeshData? tile, VoxelMap? map, int version, Tile data)
     {
         using (var wstream = cacheFile.Open(FileMode.Create, FileAccess.Write, FileShare.None))
         {
@@ -326,7 +310,7 @@ public sealed class TileBuilder
     public int NumTilesX;
     public int NumTilesZ;
 
-    private readonly TileObjects Tile;
+    private readonly Tile Tile;
     public int TileX => Tile.X;
     public int TileZ => Tile.Z;
 
@@ -345,7 +329,7 @@ public sealed class TileBuilder
     private readonly DtNavMesh navmesh;
     private readonly VoxelMap? volume;
 
-    public TileBuilder(TileObjects data, NavmeshCustomization customization, bool flyable)
+    public TileBuilder(Tile data, NavmeshCustomization customization, bool flyable)
     {
         Tile = data;
 

@@ -82,6 +82,9 @@ public sealed class Plugin : IDalamudPlugin
 
         Service.Framework.Update += OnUpdate;
         Service.ClientState.ZoneInit += ClientState_ZoneInit;
+
+        // prefetch seed points
+        var _ = FloodFill.GetAsync();
     }
 
     private void ClientState_ZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)

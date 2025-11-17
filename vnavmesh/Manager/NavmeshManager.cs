@@ -206,17 +206,11 @@ public sealed partial class NavmeshManager : IDisposable
         var reachablePolys = new HashSet<long>();
         foreach (var pt in points)
         {
-            if (pt == default)
-            {
-                Service.Log.Error($"Thanks, C#!");
-                return;
-            }
-
             var startPoly = Query.FindNearestMeshPoly(pt);
-            Log($"starting polygon for {pt}: {startPoly:X}");
             reachablePolys.UnionWith(Query.FindReachableMeshPolys(startPoly));
         }
 
+        var pruneCount = 0;
         for (var i = 0; i < Navmesh.Mesh.GetMaxTiles(); i++)
         {
             if (Navmesh.Mesh.GetTile(i) is not { } t || t.data?.header == null)
@@ -228,11 +222,14 @@ public sealed partial class NavmeshManager : IDisposable
                 var pref = prBase | (uint)j;
                 if (!reachablePolys.Contains(pref))
                 {
+                    pruneCount++;
                     Navmesh.Mesh.GetPolyFlags(pref, out var fl);
                     Navmesh.Mesh.SetPolyFlags(pref, fl | Navmesh.FLAGS_DISABLED);
                 }
             }
         }
+
+        Log($"pruned {pruneCount} unreachable polygons");
     }
 
     // if non-empty string is returned, active layout is ready

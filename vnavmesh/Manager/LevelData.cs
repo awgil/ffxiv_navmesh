@@ -1,6 +1,8 @@
 ﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+using FFXIVClientStructs.STD;
+using FFXIVClientStructs.STD.Helper;
 using Lumina.Data.Files;
 using System;
 using System.Collections.Generic;
@@ -38,8 +40,7 @@ public partial class ColliderSet
             return false;
         }
 
-        var dkey = new LayoutManager.AnalyticShapeDataKey() { Key = crc };
-        if (layout->CrcToAnalyticShapeData.TryGetValuePointer(dkey, out var data))
+        if (TryGetValuePointer(layout->CrcToAnalyticShapeData, crc, out var data))
         {
             shape = new AnalyticShape(data->Transform, data->BoundsMin, data->BoundsMax);
             AnalyticShapes[crc] = shape;
@@ -52,6 +53,57 @@ public partial class ColliderSet
             return false;
         }
     }
+
+    private unsafe bool TryGetValuePointer(StdMap<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData> map, uint key, out AnalyticShapeData* value)
+    {
+        var fr = FindLowerBound(map.WithOps.Tree, key);
+        var flag = fr.Bound->_Myval.Item1.Key == key;
+        if (flag)
+        {
+            value = &fr.Bound->_Myval.Item2;
+        }
+        else
+        {
+            value = null;
+        }
+        return flag;
+    }
+
+    // sure would be nice if AnalyticShapeDataKey was IComparable
+    private unsafe RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>>.FindResult FindLowerBound(RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>> map, uint key)
+    {
+        if (map.Head == null)
+            return default;
+
+        RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>>.FindResult findResult = default;
+        findResult.Location = new()
+        {
+            Parent = map.Head->_Parent,
+            Child = RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>>.TreeChild.Right
+        };
+        findResult.Bound = map.Head;
+        var result = findResult;
+        var ptr = result.Location.Parent;
+        while (!ptr->_Isnil)
+        {
+            result.Location.Parent = ptr;
+            if (CompareKey(key, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>.ExtractKey(in ptr->_Myval)) <= 0)
+            {
+                result.Location.Child = RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>>.TreeChild.Left;
+                result.Bound = ptr;
+                ptr = ptr->_Left;
+            }
+            else
+            {
+                result.Location.Child = RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>>.TreeChild.Right;
+                ptr = ptr->_Right;
+            }
+        }
+
+        return result;
+    }
+
+    private int CompareKey(uint key, LayoutManager.AnalyticShapeDataKey key2) => key.CompareTo(key2.Key);
 
     private unsafe SceneExtractor.Mesh GetMeshByPath(string path, SceneExtractor.MeshType meshType)
     {

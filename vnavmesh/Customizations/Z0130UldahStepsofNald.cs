@@ -13,7 +13,7 @@ class Z0130UldahStepsofNald : NavmeshCustomization
                 instance.ForceSetPrimFlags |= SceneExtractor.PrimitiveFlags.ForceUnwalkable;
     }
 
-    public override void CustomizeTile(SceneTracker.Tile tile)
+    public override void CustomizeTile(TileObjects tile)
     {
         foreach (var obj in tile.ObjectsByPath("bg/ffxiv/wil_w1/twn/common/collision/w1t0_f0_kadn1.pcb"))
             obj.Instance.ForceSetPrimFlags |= SceneExtractor.PrimitiveFlags.ForceUnwalkable;

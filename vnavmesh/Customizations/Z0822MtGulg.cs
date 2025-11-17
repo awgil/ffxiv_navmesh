@@ -11,7 +11,7 @@ class Z0822MtGulg : NavmeshCustomization
         scene.Meshes.Remove("<plane one-sided>");
     }
 
-    public override void CustomizeTile(SceneTracker.Tile tile)
+    public override void CustomizeTile(TileObjects tile)
     {
         tile.RemoveObjects(o => o.Mesh.Path == "<plane one-sided>");
     }

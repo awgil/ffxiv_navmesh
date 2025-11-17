@@ -31,7 +31,7 @@ class Z0795EurekaPyros : NavmeshCustomization
         }
     }
 
-    public override void CustomizeTile(SceneTracker.Tile tile)
+    public override void CustomizeTile(TileObjects tile)
     {
         foreach (var obj in tile.ObjectsByMesh(m => m.Path.StartsWith("bg/ex2/05_zon_z3/fld/z3fc/collision/tr")))
             foreach (var part in obj.Mesh.Parts)

@@ -2,11 +2,14 @@
 using DotRecast.Core;
 using DotRecast.Detour;
 using DotRecast.Recast;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using Navmesh.NavVolume;
 using System;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,7 +17,7 @@ namespace Navmesh;
 
 public sealed class TileManager : IDisposable
 {
-    public readonly SceneTracker Scene = new();
+    public readonly ColliderSet Scene = new();
     public static readonly Vector3 BoundsMin = new(-1024);
     public static readonly Vector3 BoundsMax = new(1024);
 
@@ -47,6 +50,8 @@ public sealed class TileManager : IDisposable
 
     // keyed by zone
     public volatile int[] NumTasks = new int[2048];
+
+    public uint[] ActiveFestivals { get; private set; } = new uint[4];
 
     private readonly Lock locked = new();
     private readonly SemaphoreSlim _sem = new(0);
@@ -94,8 +99,9 @@ public sealed class TileManager : IDisposable
             t?.Cancel();
     }
 
-    public void OnZoneChange(SceneTracker scene)
+    public void OnZoneChange(ColliderSet scene)
     {
+        Array.Fill<uint>(ActiveFestivals, 0);
         foreach (var t in Tasks)
             t?.Cancel();
         Tasks = new BuildTask?[scene.RowLength, scene.RowLength];
@@ -115,6 +121,17 @@ public sealed class TileManager : IDisposable
     {
         if (!_initialized || Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
             return;
+
+        unsafe
+        {
+            var w = LayoutWorld.Instance()->ActiveLayout;
+            if (w == null)
+                return;
+            if (w->FestivalStatus is > 0 and < 5)
+                return;
+
+            MemoryMarshal.Cast<GameMain.Festival, uint>(w->ActiveFestivals).CopyTo(ActiveFestivals);
+        }
 
         foreach (var t in Scene.GetTileChanges())
             QueueTile(t, EnableCache, DebounceMs);
@@ -158,7 +175,7 @@ public sealed class TileManager : IDisposable
             QueueTile(t, false, 0);
     }
 
-    private void QueueTile(SceneTracker.Tile tile, bool allowCache, double debounce)
+    private void QueueTile(TileObjects tile, bool allowCache, double debounce)
     {
         if (tile.Zone == 0)
             return;
@@ -177,7 +194,7 @@ public sealed class TileManager : IDisposable
     private volatile int _numStarted;
     private volatile int _numFinished;
 
-    private async Task BuildTile(SceneTracker.Tile data, bool allowCache, CancellationToken token)
+    private async Task BuildTile(TileObjects data, bool allowCache, CancellationToken token)
     {
         Interlocked.Add(ref NumTasks[data.Zone], 1);
 
@@ -249,7 +266,7 @@ public sealed class TileManager : IDisposable
             }
 
             Log("all tiles done, replacing mesh");
-            Customization.CustomizeMesh(Mesh, Scene.ActiveFestivals.ToList());
+            Customization.CustomizeMesh(Mesh, [.. ActiveFestivals]);
             _manager.ReplaceMesh(new(Customization.Version, Mesh, Volume));
         }
     }
@@ -278,7 +295,7 @@ public sealed class TileManager : IDisposable
         parent.RootTile.Subdivision.AddRange(child.RootTile.Subdivision);
     }
 
-    private (DtMeshData?, VoxelMap?) LoadOrBuildTile(SceneTracker.Tile data, bool allowCache, CancellationToken token)
+    private (DtMeshData?, VoxelMap?) LoadOrBuildTile(TileObjects data, bool allowCache, CancellationToken token)
     {
         var customization = data.Customization;
         customization.CustomizeTile(data);
@@ -332,7 +349,7 @@ public sealed class TileManager : IDisposable
     public static void Log(string message) => Service.Log.Debug($"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
     private static void Log(Exception ex, string message) => Service.Log.Warning(ex, $"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
 
-    private static void SerializeTile(FileInfo cacheFile, DtMeshData? tile, VoxelMap? map, int version, SceneTracker.Tile data)
+    private static void SerializeTile(FileInfo cacheFile, DtMeshData? tile, VoxelMap? map, int version, TileObjects data)
     {
         using (var wstream = cacheFile.Open(FileMode.Create, FileAccess.Write, FileShare.None))
         {
@@ -359,7 +376,7 @@ public sealed class TileBuilder
     public int NumTilesX;
     public int NumTilesZ;
 
-    private readonly SceneTracker.Tile Tile;
+    private readonly TileObjects Tile;
     public int TileX => Tile.X;
     public int TileZ => Tile.Z;
 
@@ -378,7 +395,7 @@ public sealed class TileBuilder
     private readonly DtNavMesh navmesh;
     private readonly VoxelMap? volume;
 
-    public TileBuilder(SceneTracker.Tile data, NavmeshCustomization customization, bool flyable)
+    public TileBuilder(TileObjects data, NavmeshCustomization customization, bool flyable)
     {
         Tile = data;
 

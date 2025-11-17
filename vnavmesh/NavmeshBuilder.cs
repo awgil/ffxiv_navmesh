@@ -153,7 +153,7 @@ public class NavmeshBuilder
 
         // 0. calculate tile bounds
         // we expand the heighfield bounding box by border size to find the extents of geometry we need to build this tile
-        // this is done in order to make sure that the navmesh tiles connect correctly at the borders, and the obstacles close to the border work correctly with the dilation process
+        // this is done in order to make sure that the Tiles connect correctly at the borders, and the obstacles close to the border work correctly with the dilation process
         // no polygons (or contours) will be created on the border area
         float widthWorld = Navmesh.Mesh.GetParams().tileWidth;
         float heightWorld = Navmesh.Mesh.GetParams().tileHeight;

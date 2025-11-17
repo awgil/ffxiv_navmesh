@@ -25,7 +25,7 @@ public class NavmeshCustomization
     // this is a customization point to add or remove colliders in the scene
     public virtual void CustomizeScene(SceneExtractor scene) { }
 
-    public virtual void CustomizeTile(SceneTracker.Tile tile) { }
+    public virtual void CustomizeTile(TileObjects tile) { }
 
     public virtual void CustomizeSettings(DtNavMeshCreateParams config) { }
 
@@ -179,7 +179,7 @@ public static class SceneExtensions
 
 public static class TileExtensions
 {
-    public static void AddAxisAlignedCollider(this SceneTracker.Tile tile, string meshKey, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default)
+    public static void AddAxisAlignedCollider(this TileObjects tile, string meshKey, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default)
     {
         var transform = Matrix4x3.Identity;
         transform.M11 = scale.X;
@@ -190,8 +190,8 @@ public static class TileExtensions
         var existingMesh = tile.AllMeshes[meshKey];
         tile.Objects.Add((ulong)tile.Objects.Count, new(existingMesh, new(0ul, transform, aabb, setFlags, default), FFXIVClientStructs.FFXIV.Client.LayoutEngine.InstanceType.CollisionBox));
     }
-    public static void AddBox(this SceneTracker.Tile tile, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default) => AddAxisAlignedCollider(tile, "<box>", scale, worldTransform, setFlags);
-    public static void AddCylinder(this SceneTracker.Tile tile, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default) => AddAxisAlignedCollider(tile, "<cylinder>", scale, worldTransform, setFlags);
+    public static void AddBox(this TileObjects tile, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default) => AddAxisAlignedCollider(tile, "<box>", scale, worldTransform, setFlags);
+    public static void AddCylinder(this TileObjects tile, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default) => AddAxisAlignedCollider(tile, "<cylinder>", scale, worldTransform, setFlags);
 }
 
 public static class CreateParamsExtensions

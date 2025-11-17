@@ -189,7 +189,7 @@ internal class Z1291Phaenna : NavmeshCustomization
         #endregion
     }
 
-    public override void CustomizeTile(SceneTracker.Tile tile)
+    public override void CustomizeTile(TileObjects tile)
     {
         tile.RemoveObjects(l => l.Mesh.Path.EndsWith("a0_drn01.pcb") || l.Mesh.Path.EndsWith("a0_tnk01.pcb"));
     }

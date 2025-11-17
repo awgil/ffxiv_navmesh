@@ -18,13 +18,13 @@ public sealed unsafe class DebugTileManager : IDisposable
     private readonly DebugGameCollision _coll;
     private (int, int) _hovered;
     private (int, int) _selected = (-1, -1);
-    private SceneTracker Scene => _tiles.Scene;
+    private ColliderSet Scene => _tiles.Scene;
 
     private readonly EffectMesh.Data[,] _drawMeshes = new EffectMesh.Data[16, 16];
     private readonly DebugNavmeshCustom.PerTile?[,] _perTile = new DebugNavmeshCustom.PerTile?[16, 16];
 
     (int X, int Z) Focused => _hovered.Item1 >= 0 && _hovered.Item2 >= 0 ? (_hovered.Item1, _hovered.Item2) : _selected;
-    SceneTracker.TileChangeset? FocusedTile => Focused.X >= 0 && Focused.Z >= 0 ? _tiles.Scene._tiles[Focused.X, Focused.Z] : null;
+    ColliderSet.TileInternal? FocusedTile => Focused.X >= 0 && Focused.Z >= 0 ? _tiles.Scene._tiles[Focused.X, Focused.Z] : null;
 
     public static readonly Vector2 TileSize = new(40, 40);
     public static readonly Vector3 BoundsMin = new(-1024);
@@ -58,7 +58,7 @@ public sealed unsafe class DebugTileManager : IDisposable
 
     public void Draw()
     {
-        ImGui.TextUnformatted($"zone={Scene.LastLoadedZone}, festivals={string.Join(".", Scene.ActiveFestivals.Select(f => f.ToString("X")))}");
+        ImGui.TextUnformatted($"zone={Scene.LastLoadedZone}, festivals={string.Join(".", _tiles.ActiveFestivals.Select(f => f.ToString("X")))}");
 
         if (ImGui.Button("Force rebuild everything"))
             _tiles.Rebuild();
@@ -78,7 +78,7 @@ public sealed unsafe class DebugTileManager : IDisposable
 
         ImGui.Checkbox("Cache enabled", ref _tiles.EnableCache);
 
-        ImGui.TextUnformatted($"Tasks: {_tiles.NumTasks}");
+        ImGui.TextUnformatted($"Tasks: {_tiles.NumTasks.Sum()}");
 
         _hovered = (-1, -1);
 
@@ -135,7 +135,7 @@ public sealed unsafe class DebugTileManager : IDisposable
 
             bool highlightAll = false;
 
-            using (var no = _tree.Node($"Objects {tile.Objects.Count}###objs"))
+            using (var no = _tree.Node($"Objects ({tile.Objects.Count})###objs"))
             {
                 if (no.Opened)
                 {
@@ -173,7 +173,7 @@ public sealed unsafe class DebugTileManager : IDisposable
         }
     }
 
-    private EffectMesh.Data GetOrInitVisualizer(SceneTracker.TileChangeset tile)
+    private EffectMesh.Data GetOrInitVisualizer(ColliderSet.TileInternal tile)
     {
         ref var visu = ref _drawMeshes[tile.X, tile.Z];
 

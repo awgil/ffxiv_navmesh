@@ -12,7 +12,7 @@ internal class Z0152EastShroud : NavmeshCustomization
         scene.InsertCylinderCollider(new Vector3(2), new(-40, -8, 225), SceneExtractor.PrimitiveFlags.Unlandable);
     }
 
-    public override void CustomizeTile(SceneTracker.Tile tile)
+    public override void CustomizeTile(TileObjects tile)
     {
         tile.AddCylinder(new Vector3(2), new(-40, -8, 225), SceneExtractor.PrimitiveFlags.Unlandable);
     }

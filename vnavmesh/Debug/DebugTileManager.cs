@@ -30,8 +30,6 @@ public sealed unsafe class DebugTileManager : IDisposable
     public static readonly Vector2 TileSize = new(40, 40);
     public static readonly Vector3 BoundsMin = new(-1024);
 
-    private bool _saveOthers;
-
     public DebugTileManager(NavmeshManager tiles, DebugDrawer drawer, DebugGameCollision coll)
     {
         _tiles = tiles;

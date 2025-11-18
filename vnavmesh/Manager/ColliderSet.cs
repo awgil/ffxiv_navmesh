@@ -132,13 +132,29 @@ public sealed partial class ColliderSet : IDisposable
         SetActive(thisPtr, active);
     }
 
+    private unsafe void SetColliderMaterial(FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Collider* thisPtr, ulong id, ulong mask)
+    {
+        var objId = (thisPtr->LayoutObjectId << 32) | (thisPtr->LayoutObjectId >> 32);
+        if (_allObjects.TryGetValue(thisPtr->LayoutObjectId, out var bounds))
+        {
+            if (RemoveObject(thisPtr->LayoutObjectId, out var obj))
+            {
+                obj.Instance.ForceSetPrimFlags = SceneExtractor.ExtractMaterialFlags(thisPtr->ObjectMaterialValue);
+                AddObject(obj.Mesh.Path, obj.Instance, obj.Type);
+            }
+        }
+    }
+
     private unsafe void SetActive(BgPartsLayoutInstance* thisPtr, bool active)
     {
         var key = (ulong)thisPtr->Id.InstanceKey << 32 | thisPtr->SubId;
         if (active)
         {
             if (_allObjects.ContainsKey(key))
+            {
+                //Service.Log.Verbose($"[Col] BgPart {key:X16} is already in layout, doing nothing");
                 return;
+            }
 
             ulong mat = (ulong)thisPtr->CollisionMaterialIdHigh << 32 | thisPtr->CollisionMaterialIdLow;
             ulong matMask = (ulong)thisPtr->CollisionMaterialMaskHigh << 32 | thisPtr->CollisionMaterialMaskLow;
@@ -146,7 +162,10 @@ public sealed partial class ColliderSet : IDisposable
             if (thisPtr->AnalyticShapeDataCrc != 0)
             {
                 if (!TryGetAnalyticShapeData(thisPtr->AnalyticShapeDataCrc, thisPtr->Layout, out var shape))
+                {
+                    Service.Log.Verbose($"[Col] no analytic shape for {thisPtr->AnalyticShapeDataCrc}, skipping");
                     return;
+                }
 
                 var transform = *thisPtr->GetTransformImpl();
                 var mtxBounds = Matrix4x4.CreateScale((shape.BoundsMax - shape.BoundsMin) * 0.5f);
@@ -258,11 +277,15 @@ public sealed partial class ColliderSet : IDisposable
         }
     }
 
-    private void RemoveObject(ulong key)
+    private bool RemoveObject(ulong key, out TileObject obj)
     {
         if (_allObjects.Remove(key, out var part))
-            RemoveMeshInstance(key, part);
+            return RemoveMeshInstance(key, part, out obj);
+        obj = default;
+        return false;
     }
+
+    private void RemoveObject(ulong key) => RemoveObject(key, out _);
 
     private void AddMeshInstance(SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance, InstanceType type)
     {
@@ -275,13 +298,18 @@ public sealed partial class ColliderSet : IDisposable
                 if (j < 0 || j >= RowLength) continue;
                 var tile = _tiles[i, j] ??= new(i, j);
                 if (tile.Objects.TryAdd(instance.Id, new(mesh, instance, type)))
+                {
+                    Service.Log.Verbose($"[Col] adding object {instance.Id:X16} to tile {i}x{j}");
                     tile.Changed = _anyChanged = true;
+                }
             }
         }
     }
 
-    private void RemoveMeshInstance(ulong key, AABB bounds)
+    private bool RemoveMeshInstance(ulong key, AABB bounds, out TileObject obj)
     {
+        obj = default;
+        var removed = false;
         var (tileBoundsMin, tileBoundsMax) = GetTiles(bounds);
         for (var i = tileBoundsMin.Item1; i <= tileBoundsMax.Item1; i++)
         {
@@ -290,10 +318,14 @@ public sealed partial class ColliderSet : IDisposable
             {
                 if (j < 0 || j >= RowLength) continue;
                 var tile = _tiles[i, j] ??= new(i, j);
-                if (tile.Objects.Remove(key, out _))
-                    tile.Changed = _anyChanged = true;
+                if (tile.Objects.Remove(key, out obj))
+                {
+                    Service.Log.Verbose($"[Col] removing object {key:X16} from tile {i}x{j}");
+                    tile.Changed = _anyChanged = removed = true;
+                }
             }
         }
+        return removed;
     }
 
     private ((int, int) Min, (int, int) Max) GetTiles(AABB box)

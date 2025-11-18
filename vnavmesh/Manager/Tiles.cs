@@ -130,7 +130,7 @@ public partial class NavmeshManager
                     Query = new(Navmesh);
 
                     if (Customization.IsFlyingSupported(tile.Zone) && (await FloodFill.GetAsync()).Seeds.TryGetValue(tile.Zone, out var points))
-                        Prune(points);
+                        Prune(points.Select(p => (Vector3)p));
 
                     OnNavmeshChanged?.Invoke(Navmesh, Query);
                 }
@@ -224,7 +224,7 @@ public partial class NavmeshManager
     {
         var customization = data.Customization;
         customization.CustomizeTile(data);
-        Log($"building tile {data.X}x{data.Z}");
+        //Log($"building tile {data.X}x{data.Z}");
 
         var cacheKey = data.GetCacheKey();
 
@@ -240,7 +240,7 @@ public partial class NavmeshManager
                 using var stream = cacheFile.OpenRead();
                 using var reader = new BinaryReader(stream);
                 var tile2 = Navmesh.DeserializeSingleTile(reader, customization.Version);
-                Log($"loaded tile {data.X}x{data.Z} from cache");
+                //Log($"loaded tile {data.X}x{data.Z} from cache");
                 return tile2;
             }
         }

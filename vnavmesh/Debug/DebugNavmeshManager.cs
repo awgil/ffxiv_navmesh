@@ -2,10 +2,8 @@
 using Navmesh.Movement;
 using Navmesh.NavVolume;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Navmesh.Debug;
@@ -85,6 +83,8 @@ class DebugNavmeshManager : IDisposable
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
         ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
         ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);
+        if (Service.PluginInterface.IsDev)
+            ImGui.Checkbox("Seed mode", ref _manager.SeedMode);
         if (ImGui.Button("Pathfind to target using navmesh"))
             _asyncMove.MoveTo(_target, false);
         ImGui.SameLine();
@@ -96,11 +96,8 @@ class DebugNavmeshManager : IDisposable
             Task.Run(async () =>
             {
                 var ff = await FloodFill.GetAsync();
-                ff.Seeds.TryAdd(Service.ClientState.TerritoryType, []);
-                ff.Seeds[Service.ClientState.TerritoryType].Add(playerPos);
-
-                var pt = new SortedDictionary<uint, List<JsonVec>>(ff.Seeds.ToDictionary(k => k.Key, v => v.Value.Select(v => (JsonVec)v).ToList()));
-                ImGui.SetClipboardText(JsonSerializer.Serialize(pt));
+                ff.AddPoint(Service.ClientState.TerritoryType, playerPos);
+                await ff.Serialize();
             });
         }
         ImGui.SameLine();

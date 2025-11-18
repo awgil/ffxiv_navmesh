@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
 using System.Numerics;
 using System.Text.Json;
@@ -16,19 +15,34 @@ public record struct JsonVec(float X, float Y, float Z)
 
 public class FloodFill
 {
-    public Dictionary<uint, List<Vector3>> Seeds = [];
+    public Dictionary<uint, List<JsonVec>> Seeds = [];
 
     private static FloodFill? _instance;
+
+    internal static void Clear() => _instance = null;
 
     public static FloodFill? Get() => _instance;
 
     public static async Task<FloodFill> GetAsync()
     {
-        if (Service.PluginInterface.IsDev)
-            _instance = null;
-
         _instance ??= await Init();
         return _instance!;
+    }
+
+    public void AddPoint(uint zone, Vector3 point)
+    {
+        Seeds.TryAdd(zone, []);
+        Seeds[zone].Add(point);
+    }
+
+    public async Task Serialize()
+    {
+        if (Service.PluginInterface.IsDev)
+        {
+            var finfo = new FileInfo("C:\\Users\\me\\source\\repos\\vnav\\seeds\\seeds.json");
+            using var st = finfo.Create();
+            await JsonSerializer.SerializeAsync(st, new SortedDictionary<uint, List<JsonVec>>(Seeds), serOpts);
+        }
     }
 
     private static async Task<FloodFill> Init()
@@ -50,9 +64,24 @@ public class FloodFill
         }
     }
 
+    private static readonly JsonSerializerOptions deOpts = new() { ReadCommentHandling = JsonCommentHandling.Skip };
+    private static readonly JsonSerializerOptions serOpts = new()
+    {
+        WriteIndented = true,
+        IndentSize = 2
+    };
+
     private static async Task<FloodFill> FromStream(Stream s)
     {
-        var seeds = await JsonSerializer.DeserializeAsync<Dictionary<uint, List<JsonVec>>>(s, new JsonSerializerOptions() { ReadCommentHandling = JsonCommentHandling.Skip });
-        return new FloodFill() { Seeds = seeds!.ToDictionary(kv => kv.Key, v => v.Value.Select(v => (Vector3)v).ToList()) };
+        try
+        {
+            var seeds = await JsonSerializer.DeserializeAsync<Dictionary<uint, List<JsonVec>>>(s, deOpts);
+            return new FloodFill() { Seeds = seeds! };
+        }
+        catch (JsonException ex)
+        {
+            Service.Log.Warning(ex, "Unable to load flood points");
+            return new();
+        }
     }
 }

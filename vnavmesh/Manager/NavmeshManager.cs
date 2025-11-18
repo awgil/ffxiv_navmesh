@@ -19,6 +19,7 @@ public sealed partial class NavmeshManager : IDisposable
 {
     public bool UseRaycasts = true;
     public bool UseStringPulling = true;
+    public bool SeedMode = Service.PluginInterface.IsDev;
 
     public string CurrentKey { get; private set; } = ""; // unique string representing currently loaded navmesh
     public Navmesh? Navmesh { get; private set; }
@@ -96,6 +97,9 @@ public sealed partial class NavmeshManager : IDisposable
             _enableCache = true;
             _enableDebounce = true;
         }
+
+        if (SeedMode)
+            RunSeedMode();
     }
 
     private bool _enableCache = true;
@@ -108,6 +112,38 @@ public sealed partial class NavmeshManager : IDisposable
         _enableDebounce = false;
         Scene.Initialize();
         return true;
+    }
+
+    private bool _seeding;
+
+    private void RunSeedMode()
+    {
+        if (_seeding)
+            return;
+
+        var player = Service.ClientState.LocalPlayer;
+        if (player == null)
+            return;
+
+        if (Service.Condition.Any(ConditionFlag.InFlight, ConditionFlag.Diving, ConditionFlag.BetweenAreas51, ConditionFlag.Jumping, ConditionFlag.Mounted) || Service.ClientState.TerritoryType == 0)
+            return;
+
+        if (Navmesh == null || Query == null || _loadTaskProgress >= 0)
+            return;
+
+        var pos = player.Position;
+        var playerPoly = Query.FindNearestMeshPoly(pos);
+        if (playerPoly == 0)
+        {
+            _seeding = true;
+            ExecuteWhenIdle(async () =>
+            {
+                var ff = await FloodFill.GetAsync();
+                ff.AddPoint(Service.ClientState.TerritoryType, pos);
+                await ff.Serialize();
+                Reload(true);
+            }, default);
+        }
     }
 
     internal void ReplaceMesh(Navmesh mesh)
@@ -216,11 +252,21 @@ public sealed partial class NavmeshManager : IDisposable
             for (var j = 0; j < t.data.header.polyCount; j++)
             {
                 var pref = prBase | (uint)j;
-                if (!reachablePolys.Contains(pref))
+                if (Navmesh.Mesh.GetPolyFlags(pref, out var fl).Failed())
+                {
+                    Log($"failed to fetch flags for {pref:X}");
+                    continue;
+                }
+                if (reachablePolys.Contains(pref))
+                {
+                    if (Navmesh.Mesh.SetPolyFlags(pref, fl & ~Navmesh.FLAGS_DISABLED).Failed())
+                        Log($"failed to set flags for {pref:X}");
+                }
+                else
                 {
                     pruneCount++;
-                    Navmesh.Mesh.GetPolyFlags(pref, out var fl);
-                    Navmesh.Mesh.SetPolyFlags(pref, fl | Navmesh.FLAGS_DISABLED);
+                    if (Navmesh.Mesh.SetPolyFlags(pref, fl | Navmesh.FLAGS_DISABLED).Failed())
+                        Log($"failed to set flags for {pref:X}");
                 }
             }
         }
@@ -254,7 +300,9 @@ public sealed partial class NavmeshManager : IDisposable
         ExecuteWhenIdle(() =>
         {
             Log("Clearing state");
+            FloodFill.Clear();
             _numActivePathfinds = 0;
+            _seeding = false;
             cts.Dispose();
             OnNavmeshChanged?.Invoke(null, null);
             Query = null;

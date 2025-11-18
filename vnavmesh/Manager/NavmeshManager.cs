@@ -53,10 +53,6 @@ public sealed partial class NavmeshManager : IDisposable
             // fire change events for all existing layout objects when the plugin loads
             await Service.Framework.Run(() => Scene.Initialize());
 
-            // then, queue currently loaded layout with no delay
-            foreach (var t in Scene.GetTileChanges())
-                QueueTile(t, true, 0);
-
             _initialized = true;
 
             Log("Tasks kicked off");
@@ -92,19 +88,24 @@ public sealed partial class NavmeshManager : IDisposable
         foreach (var t in Scene.GetTileChanges())
         {
             anyChange = true;
-            QueueTile(t, _enableCache, DebounceMs);
+            QueueTile(t, _enableCache, _enableDebounce ? DebounceMs : 0);
         }
 
         if (anyChange)
+        {
             _enableCache = true;
+            _enableDebounce = true;
+        }
     }
 
-    private bool _enableCache;
+    private bool _enableCache = true;
+    private bool _enableDebounce;
 
     public bool Reload(bool allowLoadFromCache)
     {
         ClearState();
         _enableCache = allowLoadFromCache;
+        _enableDebounce = false;
         Scene.Initialize();
         return true;
     }

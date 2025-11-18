@@ -46,6 +46,8 @@ public partial class NavmeshManager
     public BuildTask?[,] Tasks { get; private set; } = new BuildTask?[0, 0];
     public RcBuilderResult?[,] Intermediates { get; private set; } = new RcBuilderResult?[0, 0];
 
+    public bool TrackIntermediates;
+
     // keyed by zone
     public readonly ConcurrentDictionary<uint, CountdownEvent> TaskCounters = [];
 
@@ -101,21 +103,6 @@ public partial class NavmeshManager
                 for (var i = 0; i < -deltaThreads; i++)
                     await _sem.WaitAsync();
             });
-    }
-
-    public void Rebuild() => Scene.Initialize();
-
-    public void RebuildOne(int x, int z, bool scrapOthers)
-    {
-        if (scrapOthers)
-        {
-            Scene.Initialize();
-            // clear changeset
-            foreach (var _ in Scene.GetTileChanges()) { }
-        }
-
-        if (Scene.GetOneTile(x, z) is { } t)
-            QueueTile(t, false, 0);
     }
 
     private volatile int _numStarted;
@@ -265,7 +252,8 @@ public partial class NavmeshManager
         var builder = new TileBuilder(data, customization, customization.IsFlyingSupported(data.Zone));
         var (tile, vox, intermediates) = builder.Build(token);
 
-        Intermediates[x, z] = intermediates;
+        if (TrackIntermediates)
+            Intermediates[x, z] = intermediates;
 
         VoxelMap? map = null;
         if (vox != null)

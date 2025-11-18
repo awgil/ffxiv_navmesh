@@ -75,7 +75,7 @@ public class SceneExtractor
 
     public class MeshInstance(ulong id, Matrix4x3 worldTransform, AABB worldBounds, PrimitiveFlags forceSetPrimFlags, PrimitiveFlags forceClearPrimFlags)
     {
-        public MeshInstance(ulong id, Matrix4x3 transform, AABB bounds, ulong matId, ulong matMask) : this(id, transform, bounds, ExtractMaterialFlags(matMask & matId), PrimitiveFlags.None) { }
+        public MeshInstance(ulong id, Matrix4x3 transform, AABB bounds, ulong matId, ulong matMask) : this(id, transform, bounds, ExtractMaterialFlags(matId), PrimitiveFlags.None) { }
 
         public ulong Id = id;
         public Matrix4x3 WorldTransform = worldTransform;
@@ -325,7 +325,7 @@ public class SceneExtractor
 
         // all conditional colliders have the Temporary bit set
         // but to make it annoying, most underwater geometry (seafloor etc) has it set too, so we have to check for two flags
-        if (m.HasFlag(MaterialFlags.Temporary) && !m.HasFlag(MaterialFlags.NoLand))
+        if (m.HasFlag(MaterialFlags.Temporary) /* && !m.HasFlag(MaterialFlags.NoLand) */)
             res |= PrimitiveFlags.Transparent;
 
         // in addition to actual fly-through materials, divable water should be excluded from the volume

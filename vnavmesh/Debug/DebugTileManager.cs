@@ -60,8 +60,8 @@ public sealed unsafe class DebugTileManager : IDisposable
     public void Draw()
     {
         var pos2 = Service.ClientState.LocalPlayer?.Position ?? new();
-        var tx = (int)((pos2.X + 1024) / Scene.TileUnits);
-        var tz = (int)((pos2.Z + 1024) / Scene.TileUnits);
+
+        ImGui.Checkbox("Track intermediates", ref _tiles.TrackIntermediates);
 
         _hovered = (-1, -1);
 

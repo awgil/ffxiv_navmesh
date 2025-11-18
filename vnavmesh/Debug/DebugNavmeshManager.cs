@@ -59,7 +59,7 @@ class DebugNavmeshManager : IDisposable
                 _manager.Reload(false);
         }
         ImGui.SameLine();
-        ImGui.TextUnformatted(_manager.CurrentKey);
+        ImGui.TextUnformatted($"z{_manager.Scene.LastLoadedZone}, {string.Join(".", _manager.ActiveFestivals.Select(f => f.ToString("X")))}");
         ImGui.TextUnformatted($"Num pathfinding tasks: {(_manager.PathfindInProgress ? 1 : 0)} in progress, {_manager.NumQueuedPathfindRequests} queued");
 
         if (_manager.Navmesh == null || _manager.Query == null)
@@ -99,10 +99,13 @@ class DebugNavmeshManager : IDisposable
                 ff.Seeds.TryAdd(Service.ClientState.TerritoryType, []);
                 ff.Seeds[Service.ClientState.TerritoryType].Add(playerPos);
 
-                Dictionary<uint, List<JsonVec>> pt = ff.Seeds.ToDictionary(k => k.Key, v => v.Value.Select(v => (JsonVec)v).ToList());
+                var pt = new SortedDictionary<uint, List<JsonVec>>(ff.Seeds.ToDictionary(k => k.Key, v => v.Value.Select(v => (JsonVec)v).ToList()));
                 ImGui.SetClipboardText(JsonSerializer.Serialize(pt));
             });
         }
+        ImGui.SameLine();
+        var pts = FloodFill.Get()?.Seeds.TryGetValue(Service.ClientState.TerritoryType, out var vs) == true ? vs : [];
+        ImGui.TextUnformatted($"Num points for current zone: {pts.Count}");
 
         DrawPosition("Player", playerPos);
         DrawPosition("Target", _target);

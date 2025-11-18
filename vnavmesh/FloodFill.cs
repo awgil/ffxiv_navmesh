@@ -20,6 +20,8 @@ public class FloodFill
 
     private static FloodFill? _instance;
 
+    public static FloodFill? Get() => _instance;
+
     public static async Task<FloodFill> GetAsync()
     {
         if (Service.PluginInterface.IsDev)

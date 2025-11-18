@@ -126,8 +126,6 @@ public sealed partial class NavmeshManager : IDisposable
             _loadTaskProgress = (float)finished / started;
     }
 
-    private static bool InCutscene => Service.Condition[ConditionFlag.WatchingCutscene] || Service.Condition[ConditionFlag.OccupiedInCutSceneEvent];
-
     public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, CancellationToken externalCancel = default, float range = 0)
     {
         if (_currentCTS == null)
@@ -203,17 +201,14 @@ public sealed partial class NavmeshManager : IDisposable
         if (Navmesh == null || Query == null)
             throw new InvalidOperationException("can't prune, mesh is missing");
 
-        var reachablePolys = new HashSet<long>();
-        foreach (var pt in points)
-        {
-            var startPoly = Query.FindNearestMeshPoly(pt);
-            reachablePolys.UnionWith(Query.FindReachableMeshPolys(startPoly));
-        }
+        var startPolys = points.Select(pt => Query.FindNearestMeshPoly(pt));
+        var reachablePolys = Query.FindReachableMeshPolys([.. startPolys]);
 
         var pruneCount = 0;
         for (var i = 0; i < Navmesh.Mesh.GetMaxTiles(); i++)
         {
-            if (Navmesh.Mesh.GetTile(i) is not { } t || t.data?.header == null)
+            var t = Navmesh.Mesh.GetTile(i);
+            if (t.data?.header == null)
                 continue;
 
             var prBase = Navmesh.Mesh.GetPolyRefBase(t);
@@ -230,31 +225,6 @@ public sealed partial class NavmeshManager : IDisposable
         }
 
         Log($"pruned {pruneCount} unreachable polygons");
-    }
-
-    // if non-empty string is returned, active layout is ready
-    private unsafe string GetCurrentKey()
-    {
-        var layout = LayoutWorld.Instance()->ActiveLayout;
-        if (layout == null || layout->InitState != 7 || layout->FestivalStatus is > 0 and < 5)
-            return ""; // layout not ready
-
-        var filter = LayoutUtils.FindFilter(layout);
-        var filterKey = filter != null ? filter->Key : 0;
-
-        var terrRow = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId);
-
-        // CE always has a festival layer (i hope). the non-festival layout is briefly loaded when entering the zone, which triggers a useless mesh build (which is also expensive because the zone is large)
-        if (terrRow?.TerritoryIntendedUse.RowId == 60)
-        {
-            var fest = layout->ActiveFestivals[0];
-            if (fest.Id == 0 && fest.Phase == 0)
-                return "";
-        }
-
-        var sgs = LayoutUtils.GetZoneSharedGroupsEnabled(filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId);
-
-        return $"{terrRow?.Bg}//{filterKey:X}//{LayoutUtils.FestivalsString(layout->ActiveFestivals)}//{string.Join('.', sgs)}";
     }
 
     internal static unsafe string GetCacheKey(SceneDefinition scene)

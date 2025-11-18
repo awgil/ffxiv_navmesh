@@ -1,7 +1,7 @@
-﻿using Dalamud.Hooking;
-using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+using FFXIVClientStructs.Interop;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -29,10 +29,21 @@ public sealed partial class ColliderSet : IDisposable
         [_keyMeshCylinder] = new() { Path = _keyMeshCylinder, Parts = SceneExtractor.MeshCylinder, MeshType = SceneExtractor.MeshType.CylinderMesh }
     };
 
-    private readonly ConcurrentDictionary<ulong, AABB> _allObjects = [];
+    class MaybeEnabled<T> where T : class
+    {
+        public required T? Value;
+        public bool Enabled;
+        public AABB Bounds;
 
-    private readonly Hook<BgPartsLayoutInstance.Delegates.SetActive> _bgPartsSetActiveHook;
-    private readonly Hook<TriggerBoxLayoutInstance.Delegates.SetActive> _triggerBoxSetActiveHook;
+        public T? ValueIfEnabled => Enabled ? Value : null;
+    }
+
+    private readonly ConcurrentDictionary<Pointer<ILayoutInstance>, MaybeEnabled<SceneExtractor.MeshInstance>> _objects = [];
+
+    private readonly HookAddress<BgPartsLayoutInstance.Delegates.CreatePrimary> _bgCreate;
+    private readonly HookAddress<BgPartsLayoutInstance.Delegates.DestroyPrimary> _bgDestroy;
+    private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.CreatePrimary> _boxCreate;
+    private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.DestroyPrimary> _boxDestroy;
 
     public NavmeshCustomization Customization { get; private set; } = new();
 
@@ -44,7 +55,8 @@ public sealed partial class ColliderSet : IDisposable
 
     public uint LastLoadedZone;
 
-    private bool _anyChanged;
+    public readonly record struct TileChangeArgs(int X, int Z, ulong Key, SceneExtractor.MeshInstance? Instance);
+    public event Action<TileChangeArgs> OnTileChanged = delegate { };
 
     public unsafe ColliderSet()
     {
@@ -52,8 +64,10 @@ public sealed partial class ColliderSet : IDisposable
 
         Service.ClientState.ZoneInit += OnZoneInit;
 
-        _bgPartsSetActiveHook = Service.Hook.HookFromSignature<BgPartsLayoutInstance.Delegates.SetActive>("48 89 5C 24 ?? 57 48 83 EC 20 48 8B D9 0F B6 C2 ", BgPartsSetActiveDetour);
-        _triggerBoxSetActiveHook = Service.Hook.HookFromSignature<TriggerBoxLayoutInstance.Delegates.SetActive>("80 61 2B EF C0 E2 04 ", TriggerBoxSetActiveDetour);
+        _bgCreate = new("48 89 5C 24 ?? 57 48 83 EC 20 8B 41 24 4D 8B C8 45 33 C0 48 8B FA ", BgCreateDetour, false);
+        _bgDestroy = new("40 53 48 83 EC 20 48 8B D9 48 8B 49 30 48 85 C9 74 27 48 8B 01 FF 50 08 83 7B 24 FF 75 13 48 8B 4B 30 48 85 C9 74 12 48 8B 01 BA ?? ?? ?? ?? FF 10 48 C7 43 ?? ?? ?? ?? ?? 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC 83 79 40 00 ", BgDestroyDetour, false);
+        _boxCreate = new("E8 ?? ?? ?? ?? 8B 43 3C 48 8B 5C 24 ?? ", BoxCreateDetour, false);
+        _boxDestroy = new("40 53 48 83 EC 20 48 8B D9 48 8B 49 30 48 85 C9 74 31 ", BoxDestroyDetour, false);
     }
 
     public unsafe void Initialize(bool emitChangeEvents = true)
@@ -64,8 +78,10 @@ public sealed partial class ColliderSet : IDisposable
         ActivateExistingLayout(world->GlobalLayout);
         ActivateExistingLayout(world->ActiveLayout);
 
-        _bgPartsSetActiveHook.Enable();
-        _triggerBoxSetActiveHook.Enable();
+        _bgCreate.Enabled = true;
+        _bgDestroy.Enabled = true;
+        _boxCreate.Enabled = true;
+        _boxDestroy.Enabled = true;
 
         ZoneChanged.Invoke(this);
     }
@@ -73,8 +89,69 @@ public sealed partial class ColliderSet : IDisposable
     public void Dispose()
     {
         Service.ClientState.ZoneInit -= OnZoneInit;
-        _bgPartsSetActiveHook.Dispose();
-        _triggerBoxSetActiveHook.Dispose();
+        _bgCreate.Dispose();
+        _bgDestroy.Dispose();
+        _boxCreate.Dispose();
+        _boxDestroy.Dispose();
+    }
+
+    public void Tick()
+    {
+        foreach (var (ptr, inst) in _objects)
+            UpdateObject(ptr, inst);
+    }
+
+    private unsafe void UpdateObject(Pointer<ILayoutInstance> pointer, MaybeEnabled<SceneExtractor.MeshInstance> obj)
+    {
+        // this layout instance doesn't have a mesh/collider associated with it, so it doesn't actually have collision - ignore it
+        if (obj.Value == null)
+            return;
+
+        var modified = false;
+
+        var wasEnabled = obj.Enabled;
+        obj.Enabled = (pointer.Value->Flags3 & 0x10) != 0;
+        modified |= obj.Enabled != wasEnabled;
+
+        var matPrev = obj.Value.ForceSetPrimFlags;
+        var matCur = GetMaterialFlags(pointer.Value);
+        if (matPrev != matCur)
+        {
+            obj.Value.ForceSetPrimFlags = matCur;
+            modified = true;
+        }
+
+        if (modified)
+        {
+            var key = (ulong)pointer.Value->Id.InstanceKey << 32 | pointer.Value->SubId;
+
+            var bounds = obj.Value.WorldBounds;
+            var min = bounds.Min - new Vector3(-1024);
+            var max = bounds.Max - new Vector3(-1024);
+
+            var imin = (int)min.X / TileUnits;
+            var imax = (int)max.X / TileUnits;
+            var jmin = (int)min.Z / TileUnits;
+            var jmax = (int)max.Z / TileUnits;
+            for (var i = Math.Max(0, imin); i <= Math.Min(imax, RowLength - 1); i++)
+                for (var j = Math.Max(0, jmin); j <= Math.Min(jmax, RowLength - 1); j++)
+                    OnTileChanged.Invoke(new(i, j, key, obj.Enabled ? obj.Value : null));
+        }
+    }
+
+    private unsafe SceneExtractor.PrimitiveFlags GetMaterialFlags(ILayoutInstance* val)
+    {
+        switch (val->Id.Type)
+        {
+            case InstanceType.BgPart:
+                var v = (BgPartsLayoutInstance*)val;
+                return SceneExtractor.ExtractMaterialFlags((ulong)v->CollisionMaterialIdHigh << 32 | v->CollisionMaterialIdLow);
+            case InstanceType.CollisionBox:
+                var c = (CollisionBoxLayoutInstance*)val;
+                return SceneExtractor.ExtractMaterialFlags((ulong)c->MaterialIdHigh << 32 | c->MaterialIdLow);
+            default:
+                return default;
+        }
     }
 
     private unsafe void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
@@ -88,7 +165,6 @@ public sealed partial class ColliderSet : IDisposable
         LastLoadedZone = zoneId;
         Customization = NavmeshCustomizationRegistry.ForTerritory(zoneId);
         RowLength = Customization.Settings.NumTiles[0];
-        _allObjects.Clear();
         _tiles = new TileInternal?[RowLength, RowLength];
 
         var tt = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(zoneId);
@@ -105,235 +181,44 @@ public sealed partial class ColliderSet : IDisposable
     {
         if (layout == null)
             return;
-
-        // trigger add events for existing colliders
-        var bgParts = layout->InstancesByType.FindPtr(InstanceType.BgPart);
-        if (bgParts != null)
-            foreach (var (k, v) in *bgParts)
-                if ((v.Value->Flags3 & 0x10) != 0)
-                    SetActive((BgPartsLayoutInstance*)v.Value, true);
-
-        var colliders = layout->InstancesByType.FindPtr(InstanceType.CollisionBox);
-        if (colliders != null)
-            foreach (var (k, v) in *colliders)
-                if ((v.Value->Flags3 & 0x10) != 0)
-                    SetActive((TriggerBoxLayoutInstance*)v.Value, true);
     }
 
-    private unsafe void BgPartsSetActiveDetour(BgPartsLayoutInstance* thisPtr, bool active)
+    private unsafe void BgCreateDetour(BgPartsLayoutInstance* thisPtr, Transform* transform, void* pathOrType)
     {
-        _bgPartsSetActiveHook.Original(thisPtr, active);
-        SetActive(thisPtr, active);
+        _bgCreate.Original(thisPtr, transform, pathOrType);
+        _objects.TryAdd(&thisPtr->ILayoutInstance, new() { Value = LoadBgPart(thisPtr) });
     }
 
-    private unsafe void TriggerBoxSetActiveDetour(TriggerBoxLayoutInstance* thisPtr, bool active)
+    private unsafe void BgDestroyDetour(BgPartsLayoutInstance* thisPtr)
     {
-        _triggerBoxSetActiveHook.Original(thisPtr, active);
-        SetActive(thisPtr, active);
+        _bgDestroy.Original(thisPtr);
+        _objects.Remove(&thisPtr->ILayoutInstance, out _);
     }
 
-    private unsafe void SetColliderMaterial(FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Collider* thisPtr, ulong id, ulong mask)
+    private unsafe void BoxCreateDetour(TriggerBoxLayoutInstance* thisPtr, Transform* transform, void* pathOrType)
     {
-        var objId = (thisPtr->LayoutObjectId << 32) | (thisPtr->LayoutObjectId >> 32);
-        if (_allObjects.TryGetValue(thisPtr->LayoutObjectId, out var bounds))
+        _boxCreate.Original(thisPtr, transform, pathOrType);
+        if (thisPtr->Id.Type == InstanceType.CollisionBox)
+            _objects.TryAdd(&thisPtr->ILayoutInstance, new() { Value = LoadBox((CollisionBoxLayoutInstance*)thisPtr) });
+    }
+
+    private unsafe void BoxDestroyDetour(TriggerBoxLayoutInstance* thisPtr)
+    {
+        _boxDestroy.Original(thisPtr);
+        _objects.Remove(&thisPtr->ILayoutInstance, out _);
+    }
+
+    private unsafe SceneExtractor.MeshInstance? LoadBgPart(BgPartsLayoutInstance* inst)
+    {
+        if (inst->AnalyticShapeDataCrc != 0)
         {
-            if (RemoveObject(thisPtr->LayoutObjectId, out var obj))
-            {
-                obj.Instance.ForceSetPrimFlags = SceneExtractor.ExtractMaterialFlags(thisPtr->ObjectMaterialValue);
-                AddObject(obj.Mesh.Path, obj.Instance, obj.Type);
-            }
+
         }
     }
 
-    private unsafe void SetActive(BgPartsLayoutInstance* thisPtr, bool active)
+    private unsafe SceneExtractor.MeshInstance? LoadBox(CollisionBoxLayoutInstance* inst)
     {
-        var key = (ulong)thisPtr->Id.InstanceKey << 32 | thisPtr->SubId;
-        if (active)
-        {
-            if (_allObjects.ContainsKey(key))
-            {
-                //Service.Log.Verbose($"[Col] BgPart {key:X16} is already in layout, doing nothing");
-                return;
-            }
 
-            ulong mat = (ulong)thisPtr->CollisionMaterialIdHigh << 32 | thisPtr->CollisionMaterialIdLow;
-            ulong matMask = (ulong)thisPtr->CollisionMaterialMaskHigh << 32 | thisPtr->CollisionMaterialMaskLow;
-
-            if (thisPtr->AnalyticShapeDataCrc != 0)
-            {
-                if (!TryGetAnalyticShapeData(thisPtr->AnalyticShapeDataCrc, thisPtr->Layout, out var shape))
-                {
-                    Service.Log.Verbose($"[Col] no analytic shape for {thisPtr->AnalyticShapeDataCrc}, skipping");
-                    return;
-                }
-
-                var transform = *thisPtr->GetTransformImpl();
-                var mtxBounds = Matrix4x4.CreateScale((shape.BoundsMax - shape.BoundsMin) * 0.5f);
-                mtxBounds.Translation = (shape.BoundsMin + shape.BoundsMax) * 0.5f;
-                var fullTransform = mtxBounds * shape.Transform.Compose() * transform.Compose();
-                var resultingTransform = new Matrix4x3(fullTransform);
-
-                switch ((FileLayerGroupAnalyticCollider.Type)shape.Transform.Type)
-                {
-                    case FileLayerGroupAnalyticCollider.Type.Box:
-                        AddObject(_keyAnalyticBox, new(key, resultingTransform, SceneExtractor.CalculateBoxBounds(ref resultingTransform), mat, matMask), InstanceType.BgPart);
-                        break;
-                    case FileLayerGroupAnalyticCollider.Type.Sphere:
-                        AddObject(_keyAnalyticSphere, new(key, resultingTransform, SceneExtractor.CalculateSphereBounds(key, ref resultingTransform), mat, matMask), InstanceType.BgPart);
-                        break;
-                    case FileLayerGroupAnalyticCollider.Type.Cylinder:
-                        AddObject(_keyMeshCylinder, new(key, resultingTransform, SceneExtractor.CalculateBoxBounds(ref resultingTransform), mat, matMask), InstanceType.BgPart);
-                        break;
-                    case FileLayerGroupAnalyticCollider.Type.Plane:
-                        AddObject(_keyAnalyticPlaneSingle, new(key, resultingTransform, SceneExtractor.CalculatePlaneBounds(ref resultingTransform), mat, matMask), InstanceType.BgPart);
-                        break;
-                }
-            }
-            else if (thisPtr->CollisionMeshPathCrc != 0)
-            {
-                var path = GetCollisionMeshPathByCrc(thisPtr->CollisionMeshPathCrc, thisPtr->Layout);
-                var mesh = GetMeshByPath(path, SceneExtractor.MeshType.FileMesh);
-
-                var transform = *thisPtr->GetTransformImpl();
-                var t2 = new Matrix4x3(transform.Compose());
-                var bounds = SceneExtractor.CalculateMeshBounds(mesh, ref t2);
-
-                AddObject(path, new(key, t2, bounds, mat, matMask), InstanceType.BgPart);
-            }
-        }
-        else
-        {
-            RemoveObject(key);
-        }
-    }
-
-    private unsafe void SetActive(TriggerBoxLayoutInstance* thisPtr, bool active)
-    {
-        if (thisPtr->Id.Type != InstanceType.CollisionBox)
-            return;
-
-        var cast = (CollisionBoxLayoutInstance*)thisPtr;
-        var key = (ulong)thisPtr->Id.InstanceKey << 32 | thisPtr->SubId;
-
-        if (active)
-        {
-            ulong mat = (ulong)cast->MaterialIdHigh << 32 | cast->MaterialIdLow;
-            ulong matMask = (ulong)cast->MaterialMaskHigh << 32 | cast->MaterialMaskLow;
-
-            if (_allObjects.ContainsKey(key))
-                return;
-
-            var zone = LastLoadedZone;
-            bool isBoundaryObject = _boundaryLayers.TryGetValue(zone, out var l) && l.Contains(thisPtr->Layer->Id);
-
-            var transform = new Matrix4x3(cast->Transform.Compose());
-            switch (cast->TriggerBoxLayoutInstance.Type)
-            {
-                case ColliderType.Box:
-                    AddObject(_keyAnalyticBox, new(key, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask), InstanceType.CollisionBox, isBoundaryObject);
-                    break;
-                case ColliderType.Sphere:
-                    AddObject(_keyAnalyticSphere, new(key, transform, SceneExtractor.CalculateSphereBounds(key, ref transform), mat, matMask), InstanceType.CollisionBox, isBoundaryObject);
-                    break;
-                case ColliderType.Cylinder:
-                    AddObject(_keyAnalyticCylinder, new(key, transform, SceneExtractor.CalculateBoxBounds(ref transform), mat, matMask), InstanceType.CollisionBox, isBoundaryObject);
-                    break;
-                case ColliderType.Plane:
-                    AddObject(_keyAnalyticPlaneSingle, new(key, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask), InstanceType.CollisionBox, isBoundaryObject);
-                    break;
-                case ColliderType.Mesh:
-                    if (cast->PcbPathCrc != 0)
-                    {
-                        var path = GetCollisionMeshPathByCrc(cast->PcbPathCrc, thisPtr->Layout);
-                        var mesh = GetMeshByPath(path, SceneExtractor.MeshType.FileMesh);
-                        AddObject(path, new(key, transform, SceneExtractor.CalculateMeshBounds(mesh, ref transform), mat, matMask), InstanceType.CollisionBox, isBoundaryObject);
-                    }
-                    break;
-                case ColliderType.PlaneTwoSided:
-                    AddObject(_keyAnalyticPlaneDouble, new(key, transform, SceneExtractor.CalculatePlaneBounds(ref transform), mat, matMask), InstanceType.CollisionBox, isBoundaryObject);
-                    break;
-            }
-        }
-        else
-        {
-            RemoveObject(key);
-        }
-    }
-
-    private void AddObject(string path, SceneExtractor.MeshInstance part, InstanceType type, bool isBoundaryObject = false)
-    {
-        if (_allObjects.TryAdd(part.Id, part.WorldBounds))
-        {
-            if (isBoundaryObject)
-            {
-                part.ForceSetPrimFlags &= ~SceneExtractor.PrimitiveFlags.Transparent;
-                part.ForceSetPrimFlags |= SceneExtractor.PrimitiveFlags.Unlandable;
-            }
-            // exclude from cache to save cpu cycles
-            else if (part.ForceSetPrimFlags.HasFlag(SceneExtractor.PrimitiveFlags.Transparent))
-                return;
-
-            AddMeshInstance(Meshes[path], part, type);
-        }
-    }
-
-    private bool RemoveObject(ulong key, out TileObject obj)
-    {
-        if (_allObjects.Remove(key, out var part))
-            return RemoveMeshInstance(key, part, out obj);
-        obj = default;
-        return false;
-    }
-
-    private void RemoveObject(ulong key) => RemoveObject(key, out _);
-
-    private void AddMeshInstance(SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance, InstanceType type)
-    {
-        var (tileBoundsMin, tileBoundsMax) = GetTiles(instance.WorldBounds);
-        for (var i = tileBoundsMin.Item1; i <= tileBoundsMax.Item1; i++)
-        {
-            if (i < 0 || i >= RowLength) continue;
-            for (var j = tileBoundsMin.Item2; j <= tileBoundsMax.Item2; j++)
-            {
-                if (j < 0 || j >= RowLength) continue;
-                var tile = _tiles[i, j] ??= new(i, j);
-                if (tile.Objects.TryAdd(instance.Id, new(mesh, instance, type)))
-                {
-                    Service.Log.Verbose($"[Col] adding object {instance.Id:X16} to tile {i}x{j}");
-                    tile.Changed = _anyChanged = true;
-                }
-            }
-        }
-    }
-
-    private bool RemoveMeshInstance(ulong key, AABB bounds, out TileObject obj)
-    {
-        obj = default;
-        var removed = false;
-        var (tileBoundsMin, tileBoundsMax) = GetTiles(bounds);
-        for (var i = tileBoundsMin.Item1; i <= tileBoundsMax.Item1; i++)
-        {
-            if (i < 0 || i >= RowLength) continue;
-            for (var j = tileBoundsMin.Item2; j <= tileBoundsMax.Item2; j++)
-            {
-                if (j < 0 || j >= RowLength) continue;
-                var tile = _tiles[i, j] ??= new(i, j);
-                if (tile.Objects.Remove(key, out obj))
-                {
-                    Service.Log.Verbose($"[Col] removing object {key:X16} from tile {i}x{j}");
-                    tile.Changed = _anyChanged = removed = true;
-                }
-            }
-        }
-        return removed;
-    }
-
-    private ((int, int) Min, (int, int) Max) GetTiles(AABB box)
-    {
-        var min = box.Min - new Vector3(-1024);
-        var max = box.Max - new Vector3(-1024);
-
-        return (((int)min.X / TileUnits, (int)min.Z / TileUnits), ((int)max.X / TileUnits, (int)max.Z / TileUnits));
     }
 }
 

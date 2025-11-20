@@ -84,7 +84,7 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
 
     public uint LastLoadedZone;
 
-    public readonly record struct InstanceChangeArgs(int X, int Z, ulong Key, InstanceWithMesh? Instance);
+    public readonly record struct InstanceChangeArgs(uint Zone, int X, int Z, ulong Key, InstanceWithMesh? Instance);
 
     public unsafe ColliderSet()
     {
@@ -206,7 +206,7 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
         var jmax = (int)max.Z / TileUnits;
         for (var i = Math.Max(0, imin); i <= Math.Min(imax, RowLength - 1); i++)
             for (var j = Math.Max(0, jmin); j <= Math.Min(jmax, RowLength - 1); j++)
-                Notify(new(i, j, key, enabled ? inst : null));
+                Notify(new(LastLoadedZone, i, j, key, enabled ? inst : null));
     }
 
     private unsafe SceneExtractor.PrimitiveFlags GetMaterialFlags(ILayoutInstance* val)
@@ -335,7 +335,7 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
 
 public sealed class Grid : Subscribable<Grid.TileChangeArgs>
 {
-    public record struct TileChangeArgs(int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects);
+    public record struct TileChangeArgs(uint Zone, int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects);
 
     private readonly SortedDictionary<ulong, InstanceWithMesh>[,] _tiles = new SortedDictionary<ulong, InstanceWithMesh>[16, 16];
 
@@ -370,7 +370,7 @@ public sealed class Grid : Subscribable<Grid.TileChangeArgs>
                 modified.Add((change.X, change.Z));
             }
             foreach (var (x, z) in modified)
-                Notify(new(x, z, _tiles[x, z]));
+                Notify(new(change.Zone, x, z, _tiles[x, z]));
         }
     }
 

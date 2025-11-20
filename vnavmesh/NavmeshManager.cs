@@ -84,12 +84,13 @@ public sealed partial class NavmeshManager : IDisposable
         Grid.Debounced(TimeSpan.FromMilliseconds(500))
             .ForEachAsync(async changes =>
             {
-                Interlocked.Add(ref _numStarted, changes.Count);
+                _numStarted += changes.Count;
+                var zone = changes[0].Zone;
                 List<Task> tiles = [];
                 var enableCache = _enableCache;
                 foreach (var tile in changes)
                 {
-                    var t = new Tile(tile.X, tile.Z, new SortedDictionary<ulong, InstanceWithMesh>(tile.Objects.ToDictionary(k => k.Key, k => k.Value with { Instance = k.Value.Instance.Clone() })), Customization, Scene.LastLoadedZone);
+                    var t = new Tile(tile.X, tile.Z, new SortedDictionary<ulong, InstanceWithMesh>(tile.Objects.ToDictionary(k => k.Key, k => k.Value with { Instance = k.Value.Instance.Clone() })), Customization, zone);
                     tiles.Add(
                         Task.Run(async () => await BuildTile(t, enableCache, _taskSrc.Token), _taskSrc.Token)
                             .ContinueWith(_ =>
@@ -104,7 +105,7 @@ public sealed partial class NavmeshManager : IDisposable
                 if (_numFinished < _numStarted)
                     return;
 
-                if (Mesh != null)
+                if (Mesh != null && zone == Service.ClientState.TerritoryType)
                 {
                     _queryToken?.Cancel();
                     _queryToken = new();
@@ -113,7 +114,7 @@ public sealed partial class NavmeshManager : IDisposable
                     Query = new(Navmesh);
 
                     var ff = await FloodFill.GetAsync();
-                    if (ff.Seeds.TryGetValue(Scene.LastLoadedZone, out var ss))
+                    if (ff.Seeds.TryGetValue(zone, out var ss))
                         Prune(ss.Select(s => (Vector3)s));
 
                     OnNavmeshChanged?.Invoke(Navmesh, Query);

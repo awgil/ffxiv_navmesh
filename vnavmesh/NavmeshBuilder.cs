@@ -3,11 +3,35 @@ using DotRecast.Detour;
 using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
+using System.Security.Cryptography;
 using System.Threading;
 
 namespace Navmesh;
+
+public readonly record struct Tile(int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects, ReadOnlyDictionary<string, SceneExtractor.Mesh> AllMeshes, NavmeshCustomization Customization, uint Zone)
+{
+    public readonly IEnumerable<InstanceWithMesh> ObjectsByMesh(Func<SceneExtractor.Mesh, bool> func) => Objects.Values.Where(o => func(o.Mesh));
+    public readonly IEnumerable<InstanceWithMesh> ObjectsByPath(string path) => ObjectsByMesh(m => m.Path == path);
+
+    public readonly void RemoveObjects(Func<InstanceWithMesh, bool> filter)
+    {
+        foreach (var k in Objects.Keys.ToList())
+            if (filter(Objects[k]))
+                Objects.Remove(k);
+    }
+
+    public readonly string GetCacheKey()
+    {
+        var span = Objects.Keys.ToArray();
+        var bytes = new byte[span.Length * sizeof(ulong)];
+        Buffer.BlockCopy(span, 0, bytes, 0, bytes.Length);
+        return Convert.ToHexString(MD5.HashData(bytes));
+    }
+}
 
 public sealed class NavmeshBuilder
 {

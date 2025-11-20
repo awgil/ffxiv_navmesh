@@ -21,10 +21,15 @@ public sealed partial class NavmeshManager : IDisposable
     public bool UseStringPulling = true;
     public bool SeedMode = Service.PluginInterface.IsDev;
 
-    public string CurrentKey { get; private set; } = ""; // unique string representing currently loaded navmesh
+    public static readonly Vector3 BoundsMin = new(-1024);
+    public static readonly Vector3 BoundsMax = new(1024);
+
     public Navmesh? Navmesh { get; private set; }
     public NavmeshQuery? Query { get; private set; }
     public event Action<Navmesh?, NavmeshQuery?>? OnNavmeshChanged;
+
+    public DtNavMesh? Mesh;
+    public VoxelMap? Volume;
 
     private volatile float _loadTaskProgress = -1;
     public float LoadTaskProgress => _loadTaskProgress; // negative if load task is not running, otherwise in [0, 1] range
@@ -40,20 +45,23 @@ public sealed partial class NavmeshManager : IDisposable
 
     public DirectoryInfo CacheDir { get; private set; }
 
+    public readonly ColliderSet Scene = new();
     private readonly Grid Grid = new();
 
     private readonly CancellationTokenSource _taskToken = new();
     private CancellationTokenSource? _queryToken = new();
 
     public NavmeshCustomization Customization => Scene.Customization;
+    public uint[] ActiveFestivals { get; private set; } = new uint[4];
 
-    public DtNavMesh? Mesh;
-    public VoxelMap? Volume;
+    public bool TrackIntermediates;
+    public RcBuilderResult?[,] Intermediates { get; private set; } = new RcBuilderResult?[0, 0];
 
     private int Concurrency;
     private readonly Lock meshLock = new();
     private readonly SemaphoreSlim _sem = new(0);
 
+    private bool _initialized;
     private bool _enableCache = true;
 
     public NavmeshManager(DirectoryInfo cacheDir)

@@ -188,7 +188,7 @@ public static class TileExtensions
         transform.Row3 = worldTransform;
         var aabb = new AABB() { Min = transform.Row3 - scale, Max = transform.Row3 + scale };
         var existingMesh = tile.AllMeshes[meshKey];
-        tile.Objects.Add((ulong)tile.Objects.Count, new(existingMesh, new(0ul, transform, aabb, setFlags, default), FFXIVClientStructs.FFXIV.Client.LayoutEngine.InstanceType.CollisionBox));
+        tile.Objects.Add((ulong)tile.Objects.Count, new(existingMesh, new(0ul, transform, aabb, setFlags, default)));
     }
     public static void AddBox(this Tile tile, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default) => AddAxisAlignedCollider(tile, "<box>", scale, worldTransform, setFlags);
     public static void AddCylinder(this Tile tile, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default) => AddAxisAlignedCollider(tile, "<cylinder>", scale, worldTransform, setFlags);

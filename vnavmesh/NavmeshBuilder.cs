@@ -1,72 +1,67 @@
 ﻿using DotRecast.Core;
-using DotRecast.Core.Numerics;
 using DotRecast.Detour;
-using DotRecast.Detour.Extras.Jumplink;
 using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
-using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Navmesh;
 
-// utility for building a navmesh from scene data
-// individual tiles can be built concurrently
-public class NavmeshBuilder
+public sealed class NavmeshBuilder
 {
-    public record struct Intermediates(RcHeightfield SolidHeightfield, RcCompactHeightfield CompactHeightfield, RcContourSet ContourSet, RcPolyMesh PolyMesh, RcPolyMeshDetail? DetailMesh);
-
     public RcContext Telemetry = new();
     public NavmeshSettings Settings;
-    public SceneExtractor Scene;
     public Vector3 BoundsMin;
     public Vector3 BoundsMax;
     public int NumTilesX;
     public int NumTilesZ;
-    public Navmesh Navmesh; // should not be accessed while building tiles
 
-    private NavmeshCustomization customization;
+    private readonly Tile Tile;
+    public int TileX => Tile.X;
+    public int TileZ => Tile.Z;
 
-    private int _walkableClimbVoxels;
-    private int _walkableHeightVoxels;
-    private int _walkableRadiusVoxels;
-    private float _walkableNormalThreshold;
-    private int _borderSizeVoxels;
-    private float _borderSizeWorld;
-    private int _tileSizeXVoxels;
-    private int _tileSizeZVoxels;
-    private int _voxelizerNumX = 1;
-    private int _voxelizerNumY = 1;
-    private int _voxelizerNumZ = 1;
+    private readonly int _walkableClimbVoxels;
+    private readonly int _walkableHeightVoxels;
+    private readonly int _walkableRadiusVoxels;
+    private readonly float _walkableNormalThreshold;
+    private readonly int _borderSizeVoxels;
+    private readonly float _borderSizeWorld;
+    private readonly int _tileSizeXVoxels;
+    private readonly int _tileSizeZVoxels;
+    private readonly int _voxelizerNumX = 1;
+    private readonly int _voxelizerNumY = 1;
+    private readonly int _voxelizerNumZ = 1;
 
-    public NavmeshBuilder(SceneDefinition scene, NavmeshCustomization customization)
+    private readonly DtNavMesh navmesh;
+    private readonly VoxelMap? volume;
+
+    public NavmeshBuilder(Tile data, NavmeshCustomization customization, bool flyable)
     {
-        Settings = customization.Settings;
-        var flyable = customization.IsFlyingSupported(scene.TerritoryID);
-        this.customization = customization;
+        Tile = data;
 
-        // load all meshes
-        Scene = new(scene);
-        customization.CustomizeScene(Scene);
+        Settings = customization.Settings;
+        Settings.NumTiles = [.. customization.Settings.NumTiles];
+        customization.CustomizeTile(data);
+
+        var NumTilesX = Settings.NumTiles[0];
+        var NumTilesZ = NumTilesX;
 
         BoundsMin = new(-1024);
         BoundsMax = new(1024);
-        NumTilesX = NumTilesZ = Settings.NumTiles[0];
-        Service.Log.Debug($"starting building {NumTilesX}x{NumTilesZ} navmesh, customization = {customization.GetType()} v{customization.Version}");
 
-        // create empty navmesh
-        var navmeshParams = new DtNavMeshParams();
-        navmeshParams.orig = BoundsMin.SystemToRecast();
-        navmeshParams.tileWidth = (BoundsMax.X - BoundsMin.X) / NumTilesX;
-        navmeshParams.tileHeight = (BoundsMax.Z - BoundsMin.Z) / NumTilesZ;
-        navmeshParams.maxTiles = NumTilesX * NumTilesZ;
-        navmeshParams.maxPolys = 1 << DtNavMesh.DT_POLY_BITS;
+        var navmeshParams = new DtNavMeshParams
+        {
+            orig = BoundsMin.SystemToRecast(),
+            tileWidth = (BoundsMax.X - BoundsMin.X) / NumTilesX,
+            tileHeight = (BoundsMax.Z - BoundsMin.Z) / NumTilesZ,
+            maxTiles = NumTilesX * NumTilesZ,
+            maxPolys = 1 << DtNavMesh.DT_POLY_BITS
+        };
 
-        var navmesh = new DtNavMesh(navmeshParams, Settings.PolyMaxVerts);
-        var volume = flyable ? new VoxelMap(BoundsMin, BoundsMax, Settings.NumTiles) : null;
-        Navmesh = new(customization.Version, navmesh, volume);
+        navmesh = new DtNavMesh(navmeshParams, Settings.PolyMaxVerts);
+        volume = flyable ? new VoxelMap(BoundsMin, BoundsMax, Settings.NumTiles) : null;
 
         // calculate derived parameters
         _walkableClimbVoxels = (int)MathF.Floor(Settings.AgentMaxClimb / Settings.CellHeight);
@@ -90,88 +85,26 @@ public class NavmeshBuilder
         }
     }
 
-    public List<RcBuilderResult> BuildTiles(Action? onTileFinished = null)
-    {
-        var tasks = new List<Task<(DtMeshData?, Voxelizer?, RcBuilderResult)>>();
-
-        int threadCount;
-
-        var maxThreads = Environment.ProcessorCount;
-        var wantedThreads = Service.Config.BuildMaxCores;
-        if (wantedThreads <= 0)
-            threadCount = maxThreads + wantedThreads;
-        else
-            threadCount = wantedThreads;
-        threadCount = Math.Clamp(threadCount, 1, maxThreads);
-
-        var sem = new SemaphoreSlim(threadCount, threadCount);
-
-        for (var z = 0; z < NumTilesZ; z++)
-        {
-            for (var x = 0; x < NumTilesX; x++)
-            {
-                var z0 = z;
-                var x0 = x;
-                tasks.Add(Task.Run(async () =>
-                {
-                    await sem.WaitAsync();
-                    try
-                    {
-                        var data = BuildTile(x0, z0);
-                        onTileFinished?.Invoke();
-                        return data;
-                    }
-                    finally
-                    {
-                        sem.Release();
-                    }
-                }));
-            }
-        }
-
-        var results = new List<RcBuilderResult>();
-
-        foreach (var t in tasks)
-        {
-            t.Wait();
-            var (tile, vox, result) = t.Result;
-            if (tile != null)
-                Navmesh.Mesh.AddTile(tile, 0, 0);
-            if (vox != null)
-                Navmesh.Volume?.Build(vox, result.tileX, result.tileZ);
-
-            results.Add(result);
-        }
-
-        return results;
-    }
-
-    // this can be called concurrently; returns intermediate data that can be discarded if not used
-    public (DtMeshData?, Voxelizer?, RcBuilderResult) BuildTile(int x, int z)
+    public (DtMeshData?, Voxelizer?, RcBuilderResult) Build(CancellationToken token)
     {
         var timer = Timer.Create();
 
-        // 0. calculate tile bounds
-        // we expand the heighfield bounding box by border size to find the extents of geometry we need to build this tile
-        // this is done in order to make sure that the Tiles connect correctly at the borders, and the obstacles close to the border work correctly with the dilation process
-        // no polygons (or contours) will be created on the border area
-        float widthWorld = Navmesh.Mesh.GetParams().tileWidth;
-        float heightWorld = Navmesh.Mesh.GetParams().tileHeight;
-        var tileBoundsMin = new Vector3(BoundsMin.X + x * widthWorld, BoundsMin.Y, BoundsMin.Z + z * heightWorld);
+        var widthWorld = navmesh.GetParams().tileWidth;
+        var heightWorld = navmesh.GetParams().tileHeight;
+        var tileBoundsMin = new Vector3(BoundsMin.X + TileX * widthWorld, BoundsMin.Y, BoundsMin.Z + TileZ * heightWorld);
         var tileBoundsMax = new Vector3(tileBoundsMin.X + widthWorld, BoundsMax.Y, tileBoundsMin.Z + heightWorld);
         tileBoundsMin.X -= _borderSizeWorld;
         tileBoundsMin.Z -= _borderSizeWorld;
         tileBoundsMax.X += _borderSizeWorld;
         tileBoundsMax.Z += _borderSizeWorld;
 
-        // 1. voxelize raw geometry
-        // this creates a 'solid heightfield', which is a grid of sorted linked lists of spans
-        // each span contains an 'area id', which is either walkable (if normal is good) or not (otherwise); areas outside spans contains no geometry at all
         var shf = new RcHeightfield(_tileSizeXVoxels, _tileSizeZVoxels, tileBoundsMin.SystemToRecast(), tileBoundsMax.SystemToRecast(), Settings.CellSize, Settings.CellHeight, _borderSizeVoxels);
-        var vox = Navmesh.Volume != null ? new Voxelizer(_voxelizerNumX, _voxelizerNumY, _voxelizerNumZ) : null;
+        var vox = volume != null ? new Voxelizer(_voxelizerNumX, _voxelizerNumY, _voxelizerNumZ) : null;
         var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, _walkableHeightVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), vox, Telemetry);
-        rasterizer.Rasterize(Scene, SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true); // rasterize normal geometry
-        rasterizer.Rasterize(Scene, SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true); // rasterize terrain and bounding planes
+
+        rasterizer.RasterizeFlat(Tile.Objects.Values, SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true, token);
+        rasterizer.RasterizeFlat(Tile.Objects.Values.Concat(SceneTool.Get().GetTerrain(Tile.Zone)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, token);
+        //rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, token);
 
         // 2. perform a bunch of postprocessing on a heightfield
         if (Settings.Filtering.HasFlag(NavmeshSettings.Filter.LowHangingObstacles))
@@ -206,7 +139,6 @@ public class NavmeshBuilder
         // this changes area of some spans from walkable to non-walkable
         // note that before this step, compact heightfield has no non-walkable spans
         RcAreas.ErodeWalkableArea(Telemetry, _walkableRadiusVoxels, chf);
-        // note: this is the good time to mark convex poly areas with custom area ids
 
         // 5. build connected regions; this assigns region ids to spans in the compact heightfield
         // there are different algorithms with different tradeoffs
@@ -259,8 +191,8 @@ public class NavmeshBuilder
             detailTris = dmesh?.tris,
             detailTriCount = dmesh?.ntris ?? 0,
 
-            tileX = x,
-            tileZ = z,
+            tileX = TileX,
+            tileZ = TileZ,
             tileLayer = 0, // TODO: do we care to use layers?..
             bmin = pmesh.bmin,
             bmax = pmesh.bmax,
@@ -273,68 +205,11 @@ public class NavmeshBuilder
 
             buildBvTree = true, // TODO: false if using layers?
         };
-        customization.CustomizeSettings(navmeshConfig);
 
-        var builderResult = new RcBuilderResult(x, z, shf, chf, cset, pmesh, dmesh, Telemetry);
-        var bl = new JumpLinkBuilder([builderResult]);
+        var meshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
 
-        void addConnections(List<JumpLink> links)
-        {
-            foreach (var link in links)
-            {
-                RcVec3f prev = default;
-                for (var i = 0; i < link.startSamples.Length; i++)
-                {
-                    var p = link.startSamples[i].p;
-                    var q = link.endSamples[i].p;
-                    if (i == 0 || RcVecUtils.Dist2D(prev, p) > Settings.AgentRadius)
-                    {
-                        navmeshConfig.AddOffMeshConnection(p.RecastToSystem(), q.RecastToSystem(), Settings.AgentRadius, false);
-                        prev = p;
-                    }
-                }
-            }
-        }
+        NavmeshManager.Log($"built navmesh tile {TileX}x{TileZ} in {timer.Value().TotalMilliseconds}ms");
 
-        if (Settings.GenerateEdgeClimbLinks)
-        {
-            var cfg = new JumpLinkBuilderConfig(
-                Settings.CellSize,
-                Settings.CellHeight,
-                Settings.AgentRadius,
-                Settings.AgentHeight,
-                Settings.AgentMaxClimb,
-                Settings.GroundTolerance,
-                -Settings.AgentRadius * 0.2f,
-                Settings.CellSize + 2 * Settings.AgentRadius + Settings.ClimbDownDistance,
-                -Settings.ClimbDownMaxHeight,
-                -Settings.ClimbDownMinHeight,
-                0
-            );
-            addConnections(bl.Build(cfg, JumpLinkType.EDGE_CLIMB_DOWN));
-        }
-
-        if (Settings.GenerateEdgeJumpLinks)
-        {
-            var cfg = new JumpLinkBuilderConfig(
-                Settings.CellSize,
-                Settings.CellHeight,
-                Settings.AgentRadius,
-                Settings.AgentHeight,
-                Settings.AgentMaxClimb,
-                Settings.GroundTolerance,
-                -Settings.AgentRadius * 0.2f,
-                Settings.EdgeJumpEndDistance,
-                -Settings.EdgeJumpMaxDrop,
-                -Settings.EdgeJumpMinDrop,
-                Settings.EdgeJumpHeight
-            );
-            addConnections(bl.Build(cfg, JumpLinkType.EDGE_JUMP));
-        }
-
-        var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
-
-        Service.Log.Debug($"built navmesh tile {x}x{z} in {timer.Value().TotalMilliseconds}ms");
-        return (navmeshData, vox, builderResult);
+        return (meshData, vox, new RcBuilderResult(TileX, TileZ, shf, chf, cset, pmesh, dmesh, Telemetry));
     }
 }

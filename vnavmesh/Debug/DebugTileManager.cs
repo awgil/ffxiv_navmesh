@@ -1,16 +1,6 @@
-﻿using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility.Raii;
-using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
-using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+﻿namespace Navmesh.Debug;
 
-using Navmesh.Render;
-using System;
-using System.Linq;
-using System.Numerics;
-using System.Threading.Tasks;
-
-namespace Navmesh.Debug;
-
+/*
 public sealed unsafe class DebugTileManager : IDisposable
 {
     private readonly NavmeshManager _tiles;
@@ -59,6 +49,7 @@ public sealed unsafe class DebugTileManager : IDisposable
     {
         var pos2 = Service.ClientState.LocalPlayer?.Position ?? new();
 
+        ImGui.TextUnformatted($"Num objects: {Scene.NumObjects}");
         ImGui.Checkbox("Track intermediates", ref _tiles.TrackIntermediates);
 
         _hovered = (-1, -1);
@@ -213,3 +204,4 @@ public sealed unsafe class DebugTileManager : IDisposable
         return coll;
     }
 }
+*/

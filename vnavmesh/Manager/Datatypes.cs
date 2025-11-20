@@ -1,5 +1,4 @@
-﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -8,13 +7,13 @@ using System.Security.Cryptography;
 
 namespace Navmesh;
 
-public readonly record struct TileObject(SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type);
-public readonly record struct Tile(int X, int Z, SortedDictionary<ulong, TileObject> Objects, ReadOnlyDictionary<string, SceneExtractor.Mesh> AllMeshes, NavmeshCustomization Customization, uint Zone)
+//public readonly record struct TileObject(SceneExtractor.Mesh Mesh, SceneExtractor.MeshInstance Instance, InstanceType Type);
+public readonly record struct Tile(int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects, ReadOnlyDictionary<string, SceneExtractor.Mesh> AllMeshes, NavmeshCustomization Customization, uint Zone)
 {
-    public readonly IEnumerable<TileObject> ObjectsByMesh(Func<SceneExtractor.Mesh, bool> func) => Objects.Values.Where(o => func(o.Mesh));
-    public readonly IEnumerable<TileObject> ObjectsByPath(string path) => ObjectsByMesh(m => m.Path == path);
+    public readonly IEnumerable<InstanceWithMesh> ObjectsByMesh(Func<SceneExtractor.Mesh, bool> func) => Objects.Values.Where(o => func(o.Mesh));
+    public readonly IEnumerable<InstanceWithMesh> ObjectsByPath(string path) => ObjectsByMesh(m => m.Path == path);
 
-    public readonly void RemoveObjects(Func<TileObject, bool> filter)
+    public readonly void RemoveObjects(Func<InstanceWithMesh, bool> filter)
     {
         foreach (var k in Objects.Keys.ToList())
             if (filter(Objects[k]))
@@ -37,37 +36,7 @@ public partial class ColliderSet
     {
         public int X = x;
         public int Z = z;
-        public ConcurrentDictionary<ulong, TileObject> Objects = [];
+        public ConcurrentDictionary<ulong, InstanceWithMesh> Objects = [];
         public bool Changed;
-    }
-
-    public IEnumerable<Tile> GetTileChanges()
-    {
-        if (!_anyChanged)
-            yield break;
-
-        for (var i = 0; i < _tiles.GetLength(0); i++)
-            for (var j = 0; j < _tiles.GetLength(1); j++)
-                if (_tiles[i, j]?.Changed == true)
-                {
-                    _tiles[i, j]!.Changed = false;
-                    yield return GetOneTile(i, j)!.Value;
-                }
-    }
-
-    public IEnumerable<Tile> GetAllTiles()
-    {
-        for (var i = 0; i < _tiles.GetLength(0); i++)
-            for (var j = 0; j < _tiles.GetLength(1); j++)
-                if (GetOneTile(i, j) is { } t)
-                    yield return t;
-    }
-
-    public Tile? GetOneTile(int i, int j)
-    {
-        var t = _tiles[i, j];
-        if (t == null)
-            return null;
-        return new(t.X, t.Z, new SortedDictionary<ulong, TileObject>(t.Objects), Meshes.AsReadOnly(), Customization, LastLoadedZone);
     }
 }

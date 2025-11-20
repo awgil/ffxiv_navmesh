@@ -329,7 +329,7 @@ public class DebugExtractedCollision : IDisposable
 
     private void ExportMesh()
     {
-        var key = NavmeshManager.GetCacheKey(_scene);
+        var key = _scene.TerritoryID.ToString();
         var outFile = new FileInfo($"{_configDirectory}/export/{key}.obj");
 
         var verts = new List<Vector3>();

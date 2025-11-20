@@ -75,12 +75,12 @@ class DebugNavmeshCustom : IDisposable
 
         public State CurrentState => _task == null ? State.NotBuilt : !_task.IsCompleted ? State.InProgress : _task.IsFaulted ? State.Failed : State.Ready;
         public SceneDefinition? Scene => _task != null && _task.IsCompletedSuccessfully ? _scene : null;
-        public SceneExtractor? Extractor => _task != null && _task.IsCompletedSuccessfully ? _builder?.Scene : null;
+        public SceneExtractor? Extractor => null; // _task != null && _task.IsCompletedSuccessfully ? _builder?.Scene : null;
         public IntermediateData? Intermediates => _task != null && _task.IsCompletedSuccessfully ? _intermediates : null;
         public NavmeshQuery? Query => _task != null && _task.IsCompletedSuccessfully ? _query : null;
-        public DtNavMesh? Navmesh => _task != null && _task.IsCompletedSuccessfully ? _builder?.Navmesh.Mesh : null;
+        public DtNavMesh? Navmesh => null; // _task != null && _task.IsCompletedSuccessfully ? _builder?.Navmesh.Mesh : null;
         public DtNavMeshQuery? MeshQuery => _task != null && _task.IsCompletedSuccessfully ? _query?.MeshQuery : null;
-        public VoxelMap? Volume => _task != null && _task.IsCompletedSuccessfully ? _builder?.Navmesh.Volume : null;
+        //public VoxelMap? Volume => _task != null && _task.IsCompletedSuccessfully ? _builder?.Navmesh.Volume : null;
         public VoxelPathfind? VolumeQuery => _task != null && _task.IsCompletedSuccessfully ? _query?.VolumeQuery : null;
 
         public void Dispose()
@@ -118,6 +118,7 @@ class DebugNavmeshCustom : IDisposable
         {
             try
             {
+                /*
                 var timer = Timer.Create();
                 _builder = new(scene, customization);
 
@@ -139,6 +140,7 @@ class DebugNavmeshCustom : IDisposable
                 _query = new(_builder.Navmesh);
                 Service.Log.Debug($"navmesh build time: {timer.Value().TotalMilliseconds}ms");
                 _manager.ReplaceMesh(_builder.Navmesh);
+                */
             }
             catch (Exception ex)
             {

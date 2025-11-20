@@ -1,14 +1,14 @@
 ﻿using Dalamud.Game.ClientState.Conditions;
-using FFXIVClientStructs.FFXIV.Client.Game;
-using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using DotRecast.Detour;
+using DotRecast.Recast;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
-using System.Runtime.InteropServices;
+using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -29,14 +29,32 @@ public sealed partial class NavmeshManager : IDisposable
     private volatile float _loadTaskProgress = -1;
     public float LoadTaskProgress => _loadTaskProgress; // negative if load task is not running, otherwise in [0, 1] range
 
-    private CancellationTokenSource? _currentCTS; // this is signalled when mesh is unloaded, all pathfinding tasks that use it are then cancelled
     private Task _lastLoadQueryTask; // we limit the concurrency to max 1 running task (otherwise we'd need multiple Query objects, which aren't lightweight); note that each task completes on main thread!
 
     private int _numActivePathfinds;
     public bool PathfindInProgress => _numActivePathfinds > 0;
     public int NumQueuedPathfindRequests => _numActivePathfinds > 0 ? _numActivePathfinds - 1 : 0;
 
+    private volatile int _numStarted;
+    private volatile int _numFinished;
+
     public DirectoryInfo CacheDir { get; private set; }
+
+    private readonly Grid Grid = new();
+
+    private readonly CancellationTokenSource _taskToken = new();
+    private CancellationTokenSource? _queryToken = new();
+
+    public NavmeshCustomization Customization => Scene.Customization;
+
+    public DtNavMesh? Mesh;
+    public VoxelMap? Volume;
+
+    private int Concurrency;
+    private readonly Lock meshLock = new();
+    private readonly SemaphoreSlim _sem = new(0);
+
+    private bool _enableCache = true;
 
     public NavmeshManager(DirectoryInfo cacheDir)
     {
@@ -47,6 +65,46 @@ public sealed partial class NavmeshManager : IDisposable
         OnConfigModified();
 
         Scene.ZoneChanged += OnZoneChange;
+        // setup scene to update instance list
+        Scene.ForEachAsync(Grid.Apply, _taskToken.Token);
+
+        // trigger tile rebuilds after X ms of no changes
+        Grid.Window(() => Grid.Throttle(TimeSpan.FromMilliseconds(500)))
+            .SelectMany(result => result.Distinct(t => (t.X, t.Z)).ToList())
+            .ForEachAsync(async changes =>
+            {
+                Interlocked.Add(ref _numStarted, changes.Count);
+                List<Task> tiles = [];
+                var enableCache = _enableCache;
+                foreach (var tile in changes)
+                {
+                    var t = new Tile(tile.X, tile.Z, tile.Objects, SceneTool.Get().Meshes.AsReadOnly(), Customization, Scene.LastLoadedZone);
+                    tiles.Add(
+                        Task.Run(async () => await BuildTile(t, enableCache, _taskToken.Token), _taskToken.Token)
+                            .ContinueWith(_ =>
+                            {
+                                Interlocked.Add(ref _numFinished, 1);
+                                _loadTaskProgress = (float)_numFinished / _numStarted;
+                            })
+                    );
+                }
+                await Task.WhenAll(tiles);
+                if (_numFinished >= _numStarted)
+                {
+                    _numFinished = _numStarted = 0;
+                    _loadTaskProgress = -1;
+                }
+
+                _enableCache = true;
+
+                if (Mesh != null)
+                {
+                    Navmesh = new(Customization.Version, Mesh, Volume);
+                    Query = new(Navmesh);
+                    OnNavmeshChanged?.Invoke(Navmesh, Query);
+                    _queryToken = new();
+                }
+            }, _taskToken.Token);
 
         // prepare a task with correct task scheduler that other tasks can be chained off
         _lastLoadQueryTask = Task.Run(async () =>
@@ -63,9 +121,9 @@ public sealed partial class NavmeshManager : IDisposable
     public void Dispose()
     {
         Log("Disposing");
+        _taskToken.Cancel();
+        Grid.Dispose();
         Scene.Dispose();
-        foreach (var t in Tasks)
-            t?.Cancel();
         ClearState();
     }
 
@@ -74,42 +132,52 @@ public sealed partial class NavmeshManager : IDisposable
         if (!_initialized || Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
             return;
 
-        unsafe
-        {
-            var w = LayoutWorld.Instance()->ActiveLayout;
-            if (w == null)
-                return;
-            if (w->FestivalStatus is > 0 and < 5)
-                return;
-
-            MemoryMarshal.Cast<GameMain.Festival, uint>(w->ActiveFestivals).CopyTo(ActiveFestivals);
-        }
-
-        var anyChange = false;
-        foreach (var t in Scene.GetTileChanges())
-        {
-            anyChange = true;
-            QueueTile(t, _enableCache, _enableDebounce ? DebounceMs : 0);
-        }
-
-        if (anyChange)
-        {
-            _enableCache = true;
-            _enableDebounce = true;
-        }
-
-        if (SeedMode)
-            RunSeedMode();
+        Scene.Tick();
     }
 
-    private bool _enableCache = true;
-    private bool _enableDebounce;
+    public void OnZoneChange(ColliderSet scene)
+    {
+        ClearState();
+        Array.Fill<uint>(ActiveFestivals, 0);
+        Intermediates = new RcBuilderResult?[scene.RowLength, scene.RowLength];
+        Mesh = new(new()
+        {
+            orig = BoundsMin.SystemToRecast(),
+            tileWidth = (BoundsMax.X - BoundsMin.X) / Scene.RowLength,
+            tileHeight = (BoundsMax.Z - BoundsMin.Z) / Scene.RowLength,
+            maxTiles = Scene.NumTiles,
+            maxPolys = 1 << DtNavMesh.DT_POLY_BITS
+        }, 6);
+        Volume = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
+    }
+
+    private void OnConfigModified()
+    {
+        var oldThreads = Concurrency;
+
+        var maxThreads = Environment.ProcessorCount;
+        var wantedThreads = Service.Config.BuildMaxCores;
+        if (wantedThreads <= 0)
+            Concurrency = maxThreads + wantedThreads;
+        else
+            Concurrency = wantedThreads;
+        Concurrency = Math.Clamp(Concurrency, 1, maxThreads);
+
+        var deltaThreads = Concurrency - oldThreads;
+        if (deltaThreads > 0)
+            _sem.Release(deltaThreads);
+        else if (deltaThreads < 0)
+            Task.Run(async () =>
+            {
+                for (var i = 0; i < -deltaThreads; i++)
+                    await _sem.WaitAsync();
+            });
+    }
 
     public bool Reload(bool allowLoadFromCache)
     {
-        ClearState();
         _enableCache = allowLoadFromCache;
-        _enableDebounce = false;
+        ClearState();
         Scene.Initialize();
         return true;
     }
@@ -146,30 +214,128 @@ public sealed partial class NavmeshManager : IDisposable
         }
     }
 
-    internal void ReplaceMesh(Navmesh mesh)
+    private async Task BuildTile(Tile data, bool allowCache, CancellationToken token)
     {
-        _currentCTS = new();
-        Log($"Mesh replaced");
-        Navmesh = mesh;
-        Query = new(Navmesh);
-        OnNavmeshChanged?.Invoke(Navmesh, Query);
+        var x = data.X;
+        var z = data.Z;
+
+        await _sem.WaitAsync(token);
+        try
+        {
+            var (tile, vox) = LoadOrBuildTile(data, allowCache, token);
+
+            // if tile zone doesn't match current zone, the player changed areas while we were building, so we don't modify the loaded mesh (tile will still be saved to cache)
+            if (Mesh != null && data.Zone == Scene.LastLoadedZone)
+            {
+                lock (meshLock)
+                {
+                    if (tile != null)
+                        Mesh.UpdateTile(tile, 0);
+                    if (vox != null && Volume != null)
+                        MergeTile(Volume, x, z, vox);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (ex is not (OperationCanceledException or CustomizationVersionMismatch))
+            {
+                _exc = ex;
+                Log(ex, $"while building tile {x}x{z}");
+            }
+            throw;
+        }
+        finally
+        {
+            _sem.Release();
+        }
     }
 
-    internal void SetProgress(int finished, int started)
+    private Exception? _exc;
+
+    private (DtMeshData?, VoxelMap?) LoadOrBuildTile(Tile data, bool allowCache, CancellationToken token)
     {
-        if (started == 0)
-            _loadTaskProgress = -1;
-        else
-            _loadTaskProgress = (float)finished / started;
+        var customization = data.Customization;
+        customization.CustomizeTile(data);
+        Log($"building tile {data.X}x{data.Z}");
+
+        var cacheKey = data.GetCacheKey();
+
+        var x = data.X;
+        var z = data.Z;
+        var dir = new DirectoryInfo($"{CacheDir}/z{data.Zone}");
+        var cacheFile = new FileInfo(dir.FullName + $"/{x:d2}-{z:d2}-{cacheKey}.tile");
+
+        try
+        {
+            if (cacheFile.Exists && allowCache)
+            {
+                using var stream = cacheFile.OpenRead();
+                using var reader = new BinaryReader(stream);
+                var tile2 = Navmesh.DeserializeSingleTile(reader, customization.Version);
+                Log($"loaded tile {data.X}x{data.Z} from cache");
+                return tile2;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log(ex, "unable to load tile from cache");
+        }
+
+        var builder = new NavmeshBuilder(data, customization, customization.IsFlyingSupported(data.Zone));
+        var (tile, vox, intermediates) = builder.Build(token);
+
+        if (TrackIntermediates)
+            Intermediates[x, z] = intermediates;
+
+        VoxelMap? map = null;
+        if (vox != null)
+        {
+            map = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
+            map.Build(vox, x, z, token);
+        }
+
+        if (!dir.Exists)
+            dir.Create();
+
+        SerializeTile(cacheFile, tile, map, customization.Version, data);
+
+        token.ThrowIfCancellationRequested();
+
+        return (tile, map);
+    }
+
+    private static void MergeTile(VoxelMap parent, int x, int z, VoxelMap child)
+    {
+        var subdivisionShift = parent.RootTile.Subdivision.Count;
+
+        for (ushort i = 0; i < child.RootTile.Contents.Length; i++)
+        {
+            var contents = child.RootTile.Contents[i];
+
+            if ((contents & VoxelMap.VoxelOccupiedBit) == 0)
+                continue; // empty
+
+            // TODO: almost positive this isn't necessary
+            //var v = child.RootTile.LevelDesc.IndexToVoxel(i);
+            //if (v.x != x || v.z != z)
+            //    continue;
+
+            if ((contents & VoxelMap.VoxelIdMask) != VoxelMap.VoxelIdMask)
+                contents += (ushort)subdivisionShift;
+
+            parent.RootTile.Contents[i] = contents;
+        }
+        parent.RootTile.Subdivision.AddRange(child.RootTile.Subdivision);
     }
 
     public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, CancellationToken externalCancel = default, float range = 0)
     {
-        if (_currentCTS == null)
+        if (_queryToken == null)
             throw new Exception($"Can't initiate query - navmesh is not loaded");
 
         // task can be cancelled either by internal request (i.e. when navmesh is reloaded) or external
-        var combined = CancellationTokenSource.CreateLinkedTokenSource(_currentCTS.Token, externalCancel);
+        var combined = CancellationTokenSource.CreateLinkedTokenSource(_queryToken.Token, externalCancel);
         ++_numActivePathfinds;
         return ExecuteWhenIdle(async cancel =>
         {
@@ -274,27 +440,13 @@ public sealed partial class NavmeshManager : IDisposable
         Log($"pruned {pruneCount} unreachable polygons");
     }
 
-    internal static unsafe string GetCacheKey(SceneDefinition scene)
-    {
-        // note: festivals are active globally, but majority of zones don't have festival-specific layers, so we only want real ones in the cache key
-        var layout = LayoutWorld.Instance()->ActiveLayout;
-        var filter = LayoutUtils.FindFilter(layout);
-        var filterKey = filter != null ? filter->Key : 0;
-        var terrId = filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId;
-        var terrRow = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(terrId);
-
-        static string numbers<T>(IEnumerable<T> nums) where T : INumber<T> => string.Join('.', nums.Select(n => n.ToString("X", CultureInfo.InvariantCulture)));
-
-        return $"{terrRow?.Bg.ToString().Replace('/', '_')}__{filterKey:X}__{numbers(scene.FestivalLayers)}__{numbers(scene.ZoneSGs)}";
-    }
-
     private void ClearState()
     {
-        if (_currentCTS == null)
+        if (_queryToken == null)
             return; // already cleared
 
-        var cts = _currentCTS;
-        _currentCTS = null;
+        var cts = _queryToken;
+        _queryToken = null;
         cts.Cancel();
         Log("Queueing state clear");
         ExecuteWhenIdle(() =>
@@ -308,56 +460,6 @@ public sealed partial class NavmeshManager : IDisposable
             Query = null;
             Navmesh = null;
         }, default);
-    }
-
-    private Navmesh BuildNavmesh(SceneDefinition scene, string cacheKey, bool allowLoadFromCache, CancellationToken cancel)
-    {
-        Log($"Build task started: '{cacheKey}'");
-        var customization = NavmeshCustomizationRegistry.ForTerritory(scene.TerritoryID);
-        Log($"Customization for '{scene.TerritoryID}': {customization.GetType()}");
-
-        var layers = scene.FestivalLayers.ToList();
-
-        // try reading from cache
-        var cache = new FileInfo($"{CacheDir.FullName}/{cacheKey}.navmesh");
-        if (allowLoadFromCache && cache.Exists)
-        {
-            try
-            {
-                Log($"Loading cache: {cache.FullName}");
-                using var stream = cache.OpenRead();
-                using var reader = new BinaryReader(stream);
-                var mesh = Navmesh.Deserialize(reader, customization.Version);
-                customization.CustomizeMesh(mesh.Mesh, layers);
-                return mesh;
-            }
-            catch (Exception ex)
-            {
-                Log($"Failed to load cache: {ex}");
-            }
-        }
-        cancel.ThrowIfCancellationRequested();
-
-        // cache doesn't exist or can't be used for whatever reason - build navmesh from scratch
-        // TODO: we can build multiple tiles concurrently
-        var builder = new NavmeshBuilder(scene, customization);
-        var deltaProgress = 0.95f / (builder.NumTilesX * builder.NumTilesZ);
-        builder.BuildTiles(() =>
-        {
-            _loadTaskProgress += deltaProgress;
-            cancel.ThrowIfCancellationRequested();
-        });
-
-        // write results to cache
-        {
-            Service.Log.Debug($"Writing cache: {cache.FullName}");
-            using var stream = cache.Open(FileMode.Create, FileAccess.Write, FileShare.None);
-            using var writer = new BinaryWriter(stream);
-            builder.Navmesh.Serialize(writer);
-        }
-        customization.CustomizeMesh(builder.Navmesh.Mesh, layers);
-        _loadTaskProgress += 0.05f;
-        return builder.Navmesh;
     }
 
     private void ExecuteWhenIdle(Action task, CancellationToken token)
@@ -401,9 +503,27 @@ public sealed partial class NavmeshManager : IDisposable
     }
 
     public static void Log(string message) => Service.Log.Debug($"[NavmeshManager] [{Environment.CurrentManagedThreadId,4}] {message}");
+    private static void Log(Exception ex, string message) => Service.Log.Warning(ex, $"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
     private static void LogTaskError(Task task)
     {
         if (task.IsFaulted)
             Service.Log.Error($"[NavmeshManager] Task failed with error: {task.Exception}");
+    }
+
+    private static void SerializeTile(FileInfo cacheFile, DtMeshData? tile, VoxelMap? map, int version, Tile data)
+    {
+        using (var wstream = cacheFile.Open(FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            using var writer = new BinaryWriter(wstream);
+            Navmesh.SerializeSingleTile(writer, tile, map, version);
+        }
+
+        var objfile = new FileInfo(Path.ChangeExtension(cacheFile.FullName, ".txt"));
+        using (var wstream = objfile.Open(FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            using var writer = new StreamWriter(wstream);
+            foreach (var (key, tileobj) in data.Objects)
+                writer.WriteLine($"{key:X16} {tileobj.Mesh.Path}");
+        }
     }
 }

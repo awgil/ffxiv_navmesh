@@ -140,9 +140,9 @@ public class NavmeshRasterizer
     }
 
     public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold) =>
-        RasterizeFlat(geom.Meshes.SelectMany(kv => kv.Value.Instances.Select(i => (kv.Value, i))), types, perMeshInteriors, solidBelowNonManifold);
+        RasterizeFlat(geom.Meshes.SelectMany(kv => kv.Value.Instances.Select(i => new InstanceWithMesh(kv.Value, i))), types, perMeshInteriors, solidBelowNonManifold);
 
-    public void RasterizeFlat(IEnumerable<(SceneExtractor.Mesh, SceneExtractor.MeshInstance)> instances, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold, CancellationToken? token = null)
+    public void RasterizeFlat(IEnumerable<InstanceWithMesh> instances, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold, CancellationToken? token = null)
     {
         foreach (var (mesh, instance) in instances)
         {

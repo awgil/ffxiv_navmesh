@@ -1,6 +1,8 @@
 ﻿using Dalamud.Game.ClientState.Conditions;
 using DotRecast.Detour;
 using DotRecast.Recast;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using Navmesh.NavVolume;
 using System;
@@ -9,6 +11,7 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Reactive.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -48,7 +51,7 @@ public sealed partial class NavmeshManager : IDisposable
     public readonly ColliderSet Scene = new();
     private readonly Grid Grid = new();
 
-    private readonly CancellationTokenSource _taskToken = new();
+    private readonly CancellationTokenSource _taskSrc = new();
     private CancellationTokenSource? _queryToken = new();
 
     public NavmeshCustomization Customization => Scene.Customization;
@@ -73,12 +76,12 @@ public sealed partial class NavmeshManager : IDisposable
         OnConfigModified();
 
         Scene.ZoneChanged += OnZoneChange;
-        // setup scene to update instance list
-        Scene.ForEachAsync(Grid.Apply, _taskToken.Token);
 
-        // trigger tile rebuilds after X ms of no changes
-        Grid.Window(() => Grid.Throttle(TimeSpan.FromMilliseconds(500)))
-            .SelectMany(result => result.Distinct(t => (t.X, t.Z)).ToList())
+        // update object list whenever scene changes
+        Grid.Watch(Scene, _taskSrc.Token);
+
+        // trigger rebuilds when updates stop
+        Grid.Debounced(TimeSpan.FromMilliseconds(500))
             .ForEachAsync(async changes =>
             {
                 Interlocked.Add(ref _numStarted, changes.Count);
@@ -86,9 +89,9 @@ public sealed partial class NavmeshManager : IDisposable
                 var enableCache = _enableCache;
                 foreach (var tile in changes)
                 {
-                    var t = new Tile(tile.X, tile.Z, tile.Objects, SceneTool.Get().Meshes.AsReadOnly(), Customization, Scene.LastLoadedZone);
+                    var t = new Tile(tile.X, tile.Z, new SortedDictionary<ulong, InstanceWithMesh>(tile.Objects.ToDictionary(k => k.Key, k => k.Value with { Instance = k.Value.Instance.Clone() })), Customization, Scene.LastLoadedZone);
                     tiles.Add(
-                        Task.Run(async () => await BuildTile(t, enableCache, _taskToken.Token), _taskToken.Token)
+                        Task.Run(async () => await BuildTile(t, enableCache, _taskSrc.Token), _taskSrc.Token)
                             .ContinueWith(_ =>
                             {
                                 Interlocked.Add(ref _numFinished, 1);
@@ -96,23 +99,30 @@ public sealed partial class NavmeshManager : IDisposable
                             })
                     );
                 }
-                await Task.WhenAll(tiles);
-                if (_numFinished >= _numStarted)
-                {
-                    _numFinished = _numStarted = 0;
-                    _loadTaskProgress = -1;
-                }
 
-                _enableCache = true;
+                await Task.WhenAll(tiles);
+                if (_numFinished < _numStarted)
+                    return;
 
                 if (Mesh != null)
                 {
+                    _queryToken?.Cancel();
+                    _queryToken = new();
+                    Customization.CustomizeMesh(Mesh, [.. ActiveFestivals]);
                     Navmesh = new(Customization.Version, Mesh, Volume);
                     Query = new(Navmesh);
+
+                    var ff = await FloodFill.GetAsync();
+                    if (ff.Seeds.TryGetValue(Scene.LastLoadedZone, out var ss))
+                        Prune(ss.Select(s => (Vector3)s));
+
                     OnNavmeshChanged?.Invoke(Navmesh, Query);
-                    _queryToken = new();
                 }
-            }, _taskToken.Token);
+
+                _numFinished = _numStarted = 0;
+                _loadTaskProgress = -1;
+                _enableCache = true;
+            }, _taskSrc.Token);
 
         // prepare a task with correct task scheduler that other tasks can be chained off
         _lastLoadQueryTask = Task.Run(async () =>
@@ -129,7 +139,7 @@ public sealed partial class NavmeshManager : IDisposable
     public void Dispose()
     {
         Log("Disposing");
-        _taskToken.Cancel();
+        _taskSrc.Cancel();
         Grid.Dispose();
         Scene.Dispose();
         ClearState();
@@ -140,7 +150,21 @@ public sealed partial class NavmeshManager : IDisposable
         if (!_initialized || Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
             return;
 
-        Scene.Tick();
+        Scene.Poll();
+
+        unsafe
+        {
+            var w = LayoutWorld.Instance()->ActiveLayout;
+            if (w == null)
+                return;
+            if (w->FestivalStatus is > 0 and < 5)
+                return;
+
+            MemoryMarshal.Cast<GameMain.Festival, uint>(w->ActiveFestivals).CopyTo(ActiveFestivals);
+        }
+
+        if (SeedMode)
+            RunSeedMode();
     }
 
     public void OnZoneChange(ColliderSet scene)

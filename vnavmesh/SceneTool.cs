@@ -18,7 +18,7 @@ public record class InstanceWithMesh(Mesh Mesh, MeshInstance Instance);
 public class SceneTool
 {
     public Dictionary<string, Mesh> Meshes { get; private set; } = [];
-    public Dictionary<uint, List<InstanceWithMesh>> Terrains { get; private set; } = [];
+    private readonly Dictionary<uint, List<InstanceWithMesh>> _terrains = [];
 
     private static readonly List<MeshPart> _meshBox;
     private static readonly List<MeshPart> _meshSphere;
@@ -273,32 +273,35 @@ public class SceneTool
 
     public unsafe List<InstanceWithMesh> GetTerrain(uint zoneId)
     {
-        if (Terrains.TryGetValue(zoneId, out var t))
+        if (_terrains.TryGetValue(zoneId, out var t))
             return t;
 
-        if (Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(zoneId) is not { } tt)
-            return Terrains[zoneId] = [];
-
-        List<InstanceWithMesh> obj = [];
-
-        var ttBg = tt.Bg.ToString();
-        var bgPrefix = "bg/" + ttBg[..ttBg.IndexOf("level/")];
-        var terr = bgPrefix + "collision";
-        if (Service.DataManager.GetFile(terr + "/list.pcb") is { } list)
+        lock (_terrains)
         {
-            fixed (byte* data = &list.Data[0])
+            if (Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(zoneId) is not { } tt)
+                return _terrains[zoneId] = [];
+
+            List<InstanceWithMesh> obj = [];
+
+            var ttBg = tt.Bg.ToString();
+            var bgPrefix = "bg/" + ttBg[..ttBg.IndexOf("level/")];
+            var terr = bgPrefix + "collision";
+            if (Service.DataManager.GetFile(terr + "/list.pcb") is { } list)
             {
-                var header = (ColliderStreamed.FileHeader*)data;
-                foreach (ref var entry in new Span<ColliderStreamed.FileEntry>(header + 1, header->NumMeshes))
+                fixed (byte* data = &list.Data[0])
                 {
-                    var path = $"{terr}/tr{entry.MeshId:d4}.pcb";
-                    var mesh = GetMeshByPath(path, MeshType.Terrain);
-                    obj.Add(new(mesh, new(0, Matrix4x3.Identity, entry.Bounds, 0ul, 0ul)));
+                    var header = (ColliderStreamed.FileHeader*)data;
+                    foreach (ref var entry in new Span<ColliderStreamed.FileEntry>(header + 1, header->NumMeshes))
+                    {
+                        var path = $"{terr}/tr{entry.MeshId:d4}.pcb";
+                        var mesh = GetMeshByPath(path, MeshType.Terrain);
+                        obj.Add(new(mesh, new(0, Matrix4x3.Identity, entry.Bounds, 0ul, 0ul)));
+                    }
                 }
             }
-        }
 
-        return Terrains[zoneId] = obj;
+            return _terrains[zoneId] = obj;
+        }
     }
 
     private unsafe bool TryGetAnalyticShapeData(uint crc, LayoutManager* layout, out AnalyticShape shape)

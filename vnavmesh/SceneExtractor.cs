@@ -75,13 +75,15 @@ public class SceneExtractor
 
     public class MeshInstance(ulong id, Matrix4x3 worldTransform, AABB worldBounds, PrimitiveFlags forceSetPrimFlags, PrimitiveFlags forceClearPrimFlags)
     {
-        public MeshInstance(ulong id, Matrix4x3 transform, AABB bounds, ulong matId, ulong matMask) : this(id, transform, bounds, ExtractMaterialFlags(matId), PrimitiveFlags.None) { }
+        public MeshInstance(ulong id, Matrix4x3 transform, AABB bounds, ulong matId, ulong matMask) : this(id, transform, bounds, ExtractMaterialFlags(matId & matMask), PrimitiveFlags.None) { }
 
         public ulong Id = id;
         public Matrix4x3 WorldTransform = worldTransform;
         public AABB WorldBounds = worldBounds;
         public PrimitiveFlags ForceSetPrimFlags = forceSetPrimFlags;
         public PrimitiveFlags ForceClearPrimFlags = forceClearPrimFlags;
+
+        public MeshInstance Clone() => new(Id, WorldTransform, WorldBounds, ForceSetPrimFlags, ForceClearPrimFlags);
     }
 
     public class Mesh

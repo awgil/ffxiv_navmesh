@@ -3,7 +3,6 @@ using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
-
 using Navmesh.Movement;
 using System;
 using System.Numerics;
@@ -39,6 +38,8 @@ public sealed class Plugin : IDalamudPlugin
         dalamud.Create<Service>();
         Service.Config.Load(dalamud.ConfigFile);
         Service.Config.Modified += () => Service.Config.Save(dalamud.ConfigFile);
+
+        //DtUtils.LogHandler = (msg, ex) => Service.Log.Debug(ex, $"[DT] {msg}");
 
         _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
         _followPath = new(dalamud, _navmeshManager);

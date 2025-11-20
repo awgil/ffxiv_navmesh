@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
+using static Navmesh.SceneExtractor;
 
 namespace Navmesh;
 
@@ -139,14 +140,14 @@ public class NavmeshRasterizer
         }
     }
 
-    public void Rasterize(SceneExtractor geom, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold) =>
+    public void Rasterize(SceneExtractor geom, MeshType types, bool perMeshInteriors, bool solidBelowNonManifold) =>
         RasterizeFlat(geom.Meshes.SelectMany(kv => kv.Value.Instances.Select(i => new InstanceWithMesh(kv.Value, i))), types, perMeshInteriors, solidBelowNonManifold);
 
-    public void RasterizeFlat(IEnumerable<InstanceWithMesh> instances, SceneExtractor.MeshType types, bool perMeshInteriors, bool solidBelowNonManifold, CancellationToken? token = null)
+    public void RasterizeFlat(IEnumerable<InstanceWithMesh> instances, MeshType types, bool perMeshInteriors, bool solidBelowNonManifold, CancellationToken? token = null)
     {
         foreach (var (mesh, instance) in instances)
         {
-            if ((mesh.MeshType & types) == SceneExtractor.MeshType.None)
+            if ((mesh.MeshType & types) == MeshType.None)
                 continue;
 
             token?.ThrowIfCancellationRequested();
@@ -168,7 +169,7 @@ public class NavmeshRasterizer
     }
 
     // if it returns true, the mesh borders were rasterized, so intersection set could be modified
-    public bool RasterizeMesh(SceneExtractor.Mesh mesh, SceneExtractor.MeshInstance instance, out int minimalY)
+    public bool RasterizeMesh(Mesh mesh, MeshInstance instance, out int minimalY)
     {
         minimalY = _maxY;
         if (instance.WorldBounds.Max.X <= _heightfield.bmin.X || instance.WorldBounds.Max.Z <= _heightfield.bmin.Z || instance.WorldBounds.Min.X >= _heightfield.bmax.X || instance.WorldBounds.Min.Z >= _heightfield.bmax.Z)
@@ -201,11 +202,11 @@ public class NavmeshRasterizer
 
                 var flags = (p.Flags & ~instance.ForceClearPrimFlags) | instance.ForceSetPrimFlags;
 
-                bool realSolid = !flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough);
-                bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable)
+                bool realSolid = !flags.HasFlag(PrimitiveFlags.FlyThrough);
+                bool unwalkable = flags.HasFlag(PrimitiveFlags.ForceUnwalkable)
                     || normal.Y < _walkableNormalThreshold
                     // for flyable scenes, assume unlandable == unwalkable, unless explicitly set
-                    || _voxelizer != null && flags.HasFlag(SceneExtractor.PrimitiveFlags.Unlandable) && !flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceWalkable);
+                    || _voxelizer != null && flags.HasFlag(PrimitiveFlags.Unlandable) && !flags.HasFlag(PrimitiveFlags.ForceWalkable);
                 var areaId = unwalkable ? 0 : RcConstants.RC_WALKABLE_AREA;
 
                 // prepare for clipping: while iterating over z, we'll keep the 'remaining polygon' in clipRemainingZ
@@ -436,12 +437,12 @@ public class NavmeshRasterizer
     }
 
     // TODO: remove after i'm confident in my replacement code
-    public void RasterizeOld(SceneExtractor geom, SceneExtractor.MeshType types)
+    public void RasterizeOld(SceneExtractor geom, MeshType types)
     {
         float[] vertices = new float[3 * 256];
         foreach (var (name, mesh) in geom.Meshes)
         {
-            if ((mesh.MeshType & types) == SceneExtractor.MeshType.None)
+            if ((mesh.MeshType & types) == MeshType.None)
                 continue;
 
             foreach (var inst in mesh.Instances)
@@ -465,10 +466,10 @@ public class NavmeshRasterizer
                     foreach (var p in part.Primitives)
                     {
                         var flags = (p.Flags & ~inst.ForceClearPrimFlags) | inst.ForceSetPrimFlags;
-                        if (_voxelizer != null && flags.HasFlag(SceneExtractor.PrimitiveFlags.FlyThrough))
+                        if (_voxelizer != null && flags.HasFlag(PrimitiveFlags.FlyThrough))
                             continue; // TODO: rasterize to normal heightfield, can't do it right now, since we're using same heightfield for both mesh and volume
 
-                        bool unwalkable = flags.HasFlag(SceneExtractor.PrimitiveFlags.ForceUnwalkable);
+                        bool unwalkable = flags.HasFlag(PrimitiveFlags.ForceUnwalkable);
                         if (!unwalkable)
                         {
                             var v1 = CachedVertex(vertices, p.V1);
@@ -494,7 +495,7 @@ public class NavmeshRasterizer
         return new(vertices[offset], vertices[offset + 1], vertices[offset + 2]);
     }
 
-    private void TransformVertices(SceneExtractor.MeshInstance instance, List<Vector3> localVertices, Span<Vector3> outWorld, Span<OutFlags> outFlags)
+    private void TransformVertices(MeshInstance instance, List<Vector3> localVertices, Span<Vector3> outWorld, Span<OutFlags> outFlags)
     {
         int iv = 0;
         foreach (var v in localVertices)

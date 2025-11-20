@@ -4,7 +4,6 @@ using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
 using System.Security.Cryptography;
@@ -12,7 +11,7 @@ using System.Threading;
 
 namespace Navmesh;
 
-public readonly record struct Tile(int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects, ReadOnlyDictionary<string, SceneExtractor.Mesh> AllMeshes, NavmeshCustomization Customization, uint Zone)
+public readonly record struct Tile(int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects, NavmeshCustomization Customization, uint Zone)
 {
     public readonly IEnumerable<InstanceWithMesh> ObjectsByMesh(Func<SceneExtractor.Mesh, bool> func) => Objects.Values.Where(o => func(o.Mesh));
     public readonly IEnumerable<InstanceWithMesh> ObjectsByPath(string path) => ObjectsByMesh(m => m.Path == path);

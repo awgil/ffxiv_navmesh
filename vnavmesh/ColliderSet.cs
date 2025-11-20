@@ -4,7 +4,6 @@ using FFXIVClientStructs.Interop;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Reactive.Linq;
 using System.Threading;
@@ -56,38 +55,24 @@ public sealed class Subscription<TVal>(Subscribable<TVal>? parent, IObserver<TVa
 
 public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChangeArgs>
 {
-    private const string _keyAnalyticBox = "<box>";
-    private const string _keyAnalyticSphere = "<sphere>";
-    private const string _keyAnalyticCylinder = "<cylinder>";
-    private const string _keyAnalyticPlaneSingle = "<plane one-sided>";
-    private const string _keyAnalyticPlaneDouble = "<plane two-sided>";
-    private const string _keyMeshCylinder = "<mesh cylinder>";
-
-    public static readonly Dictionary<string, SceneExtractor.Mesh> MeshesGlobal = new()
-    {
-        [_keyAnalyticBox] = new() { Path = _keyAnalyticBox, Parts = SceneExtractor.MeshBox, MeshType = SceneExtractor.MeshType.AnalyticShape },
-        [_keyAnalyticSphere] = new() { Path = _keyAnalyticSphere, Parts = SceneExtractor.MeshSphere, MeshType = SceneExtractor.MeshType.AnalyticShape },
-        [_keyAnalyticCylinder] = new() { Path = _keyAnalyticCylinder, Parts = SceneExtractor.MeshCylinder, MeshType = SceneExtractor.MeshType.AnalyticShape },
-        [_keyAnalyticPlaneSingle] = new() { Path = _keyAnalyticPlaneSingle, Parts = SceneExtractor.MeshPlane, MeshType = SceneExtractor.MeshType.AnalyticPlane },
-        [_keyAnalyticPlaneDouble] = new() { Path = _keyAnalyticPlaneDouble, Parts = SceneExtractor.MeshPlane, MeshType = SceneExtractor.MeshType.AnalyticPlane },
-        [_keyMeshCylinder] = new() { Path = _keyMeshCylinder, Parts = SceneExtractor.MeshCylinder, MeshType = SceneExtractor.MeshType.CylinderMesh }
-    };
-
     record class MaybeEnabled
     {
-        public InstanceWithMesh? Instance;
-        public bool Enabled;
-        public bool Destroyed;
-        public bool Dirty;
+        public InstanceWithMesh? Instance { get; set; }
+        public bool Enabled { get; set; }
+        public bool Destroyed { get; set; }
+        public bool Dirty { get; set; }
     }
 
     private readonly ConcurrentDictionary<Pointer<ILayoutInstance>, MaybeEnabled> _objects = [];
-    public int NumObjects => _objects.Where(o => o.Value.Instance != null).Count();
 
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.CreatePrimary> _bgCreate;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.DestroyPrimary> _bgDestroy;
+
     private readonly HookAddress<CollisionBoxLayoutInstance.Delegates.CreatePrimary> _boxCreate;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.DestroyPrimary> _boxDestroy;
+    private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetTranslationImpl> _boxTrans;
+    private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetRotationImpl> _boxRot;
+    private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetScaleImpl> _boxScale;
 
     public NavmeshCustomization Customization { get; private set; } = new();
 
@@ -105,19 +90,22 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
     {
         Service.ClientState.ZoneInit += OnZoneInit;
 
-        _bgCreate = new("48 89 5C 24 ?? 57 48 83 EC 20 8B 41 24 4D 8B C8 45 33 C0 48 8B FA ", BgCreateDetour, false);
-        _bgDestroy = new("40 53 48 83 EC 20 48 8B D9 48 8B 49 30 48 85 C9 74 27 48 8B 01 FF 50 08 83 7B 24 FF 75 13 48 8B 4B 30 48 85 C9 74 12 48 8B 01 BA ?? ?? ?? ?? FF 10 48 C7 43 ?? ?? ?? ?? ?? 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC CC 83 79 40 00 ", BgDestroyDetour, false);
-        _boxCreate = new("48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 55 48 8B EC 48 83 EC 60 48 8B 05 ?? ?? ?? ?? 49 8B D8 48 8B F9 4C 8B CA 48 8D 55 E0 48 8B B0 ?? ?? ?? ?? 8B 41 74 41 33 00 4C 8D 45 D0 83 E0 0F 48 C7 45 ?? ?? ?? ?? ?? 31 41 74 48 8D 4D F0 C7 45 ?? ?? ?? ?? ?? 48 C7 45 ?? ?? ?? ?? ?? C7 45 ?? ?? ?? ?? ?? 48 C7 45 ?? ?? ?? ?? ?? C7 45 ?? ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 03 ", BoxCreateDetour, false);
-        _boxDestroy = new("40 53 48 83 EC 20 48 8B D9 48 8B 49 30 48 85 C9 74 31 ", BoxDestroyDetour, false);
+        var bgpVtbl = (BgPartsLayoutInstance.BgPartsLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 90 48 89 50 F8 ");
+        var collVtbl = (CollisionBoxLayoutInstance.CollisionBoxLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 85 FF 74 20 48 8B CF E8 ?? ?? ?? ?? 4C 8B F0 48 8D 55 C7 45 33 C0 49 8B CE 48 8B 00 FF 50 08 E9 ?? ?? ?? ?? 66 44 39 73 ?? 75 45 44 38 73 1F 74 0A 48 8B 43 08 83 78 1C 06 75 35 48 8B 4B 08 4C 39 B1 ?? ?? ?? ?? 74 28 85 F6 75 24 45 84 FF 74 1F B2 3A ", 0x17);
+
+        _bgCreate = new((nint)bgpVtbl->CreatePrimary, BgCreateDetour, false);
+        _bgDestroy = new((nint)bgpVtbl->DestroyPrimary, BgDestroyDetour, false);
+
+        // collisionboxes often get resized *after* being initialized instead of before, how annoying
+        _boxCreate = new((nint)collVtbl->CreatePrimary, BoxCreateDetour, false);
+        _boxDestroy = new((nint)collVtbl->DestroyPrimary, BoxDestroyDetour, false);
+        _boxTrans = new((nint)collVtbl->SetTranslationImpl, BoxTransDetour, false);
+        _boxRot = new((nint)collVtbl->SetRotationImpl, BoxRotDetour, false);
+        _boxScale = new((nint)collVtbl->SetScaleImpl, BoxScaleDetour, false);
     }
 
-    public unsafe void Initialize(bool emitChangeEvents = true)
+    public unsafe void Initialize()
     {
-        foreach (var obj in _objects.Values)
-            if (obj.Instance != null)
-                NotifyObject(obj.Instance, false);
-        _objects.Clear();
-
         InitZone(Service.ClientState.TerritoryType);
 
         var world = LayoutWorld.Instance();
@@ -128,6 +116,10 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
         _bgDestroy.Enabled = true;
         _boxCreate.Enabled = true;
         _boxDestroy.Enabled = true;
+
+        _boxTrans.Enabled = true;
+        _boxRot.Enabled = true;
+        _boxScale.Enabled = true;
 
         ZoneChanged.Invoke(this);
     }
@@ -141,12 +133,15 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
             _bgDestroy.Dispose();
             _boxCreate.Dispose();
             _boxDestroy.Dispose();
+            _boxTrans.Dispose();
+            _boxRot.Dispose();
+            _boxScale.Dispose();
         }
     }
 
     private readonly List<Pointer<ILayoutInstance>> _destroyed = [];
 
-    public unsafe void Tick()
+    public void Poll()
     {
         _destroyed.Clear();
         foreach (var (ptr, inst) in _objects)
@@ -173,15 +168,21 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
 
         var modified = obj.Dirty;
         obj.Dirty = false;
+        var k = obj.Instance.Instance.Id;
+        if (modified)
+            Service.Log.Verbose($"object {k:X16} was dirty");
 
         var wasEnabled = obj.Enabled;
         obj.Enabled = (pointer.Value->Flags3 & 0x10) != 0;
+        if (obj.Enabled != wasEnabled)
+            Service.Log.Verbose($"object {k:X16} was " + (wasEnabled ? "disabled" : "enabled"));
         modified |= obj.Enabled != wasEnabled;
 
         var matPrev = obj.Instance.Instance.ForceSetPrimFlags;
         var matCur = GetMaterialFlags(pointer.Value);
         if (matPrev != matCur)
         {
+            Service.Log.Verbose($"object {k:X16} material changed from {matPrev} to {matCur}");
             obj.Instance.Instance.ForceSetPrimFlags = matCur;
             modified = true;
         }
@@ -196,6 +197,8 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
         var bounds = inst.Instance.WorldBounds;
         var min = bounds.Min - new Vector3(-1024);
         var max = bounds.Max - new Vector3(-1024);
+
+        enabled &= !inst.Instance.ForceSetPrimFlags.HasFlag(SceneExtractor.PrimitiveFlags.Transparent);
 
         var imin = (int)min.X / TileUnits;
         var imax = (int)max.X / TileUnits;
@@ -212,10 +215,14 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
         {
             case InstanceType.BgPart:
                 var v = (BgPartsLayoutInstance*)val;
-                return SceneExtractor.ExtractMaterialFlags((ulong)v->CollisionMaterialIdHigh << 32 | v->CollisionMaterialIdLow);
+                var id = (ulong)v->CollisionMaterialIdHigh << 32 | v->CollisionMaterialIdLow;
+                var mask = (ulong)v->CollisionMaterialMaskHigh << 32 | v->CollisionMaterialMaskLow;
+                return SceneExtractor.ExtractMaterialFlags(id & mask);
             case InstanceType.CollisionBox:
                 var c = (CollisionBoxLayoutInstance*)val;
-                return SceneExtractor.ExtractMaterialFlags((ulong)c->MaterialIdHigh << 32 | c->MaterialIdLow);
+                var id2 = (ulong)c->MaterialIdHigh << 32 | c->MaterialIdLow;
+                var mask2 = (ulong)c->MaterialMaskHigh << 32 | c->MaterialMaskLow; ;
+                return SceneExtractor.ExtractMaterialFlags(id2 & mask2);
             default:
                 return default;
         }
@@ -232,6 +239,8 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
         LastLoadedZone = zoneId;
         Customization = NavmeshCustomizationRegistry.ForTerritory(zoneId);
         RowLength = Customization.Settings.NumTiles[0];
+
+        _objects.Clear();
     }
 
     private unsafe void ActivateExistingLayout(LayoutManager* layout)
@@ -276,13 +285,50 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
             obj.Destroyed = true;
     }
 
+    private unsafe void BoxTransDetour(TriggerBoxLayoutInstance* thisPtr, Vector3* value)
+    {
+        _boxTrans.Original(thisPtr, value);
+        if (thisPtr->Id.Type == InstanceType.CollisionBox)
+        {
+            var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+            Service.Log.Verbose($"changing translation of {k:X16} to {*value}");
+            CreateObject((CollisionBoxLayoutInstance*)thisPtr);
+        }
+    }
+
+    private unsafe void BoxRotDetour(TriggerBoxLayoutInstance* thisPtr, Quaternion* value)
+    {
+        _boxRot.Original(thisPtr, value);
+        if (thisPtr->Id.Type == InstanceType.CollisionBox)
+        {
+            var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+            Service.Log.Verbose($"changing rotation of {k:X16} to {*value}");
+            CreateObject((CollisionBoxLayoutInstance*)thisPtr);
+        }
+    }
+
+    private unsafe void BoxScaleDetour(TriggerBoxLayoutInstance* thisPtr, Vector3* value)
+    {
+        _boxScale.Original(thisPtr, value);
+        if (thisPtr->Id.Type == InstanceType.CollisionBox)
+        {
+            var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+            Service.Log.Verbose($"changing scale of {k:X16} to {*value}");
+            CreateObject((CollisionBoxLayoutInstance*)thisPtr);
+        }
+    }
+
     private unsafe void CreateObject(BgPartsLayoutInstance* thisPtr)
     {
+        var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+        //Service.Log.Debug($"creating object {k:X16}");
         _objects[&thisPtr->ILayoutInstance] = new() { Instance = SceneTool.Get().CreateInstance(thisPtr), Dirty = true };
     }
 
     private unsafe void CreateObject(CollisionBoxLayoutInstance* thisPtr)
     {
+        var k = SceneTool.GetKey(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance);
+        //Service.Log.Debug($"creating object {k:X16}");
         _objects[&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance] = new() { Instance = SceneTool.Get().CreateInstance(thisPtr), Dirty = true };
     }
 }
@@ -295,7 +341,15 @@ public sealed class Grid : Subscribable<Grid.TileChangeArgs>
 
     private readonly Lock _lock = new();
 
-    public void Apply(ColliderSet.InstanceChangeArgs change)
+    public IObservable<IList<TileChangeArgs>> Debounced(TimeSpan delay) => this.Window(() => this.Throttle(delay)).SelectMany(result => result.Distinct(t => (t.X, t.Z)).ToList());
+
+    public void Watch(ColliderSet set, CancellationToken token)
+    {
+        set.ForEachAsync(Apply, token);
+        set.ZoneChanged += Clear;
+    }
+
+    private void Apply(ColliderSet.InstanceChangeArgs change)
     {
         HashSet<(int, int)> modified = [];
         lock (_lock)
@@ -317,6 +371,15 @@ public sealed class Grid : Subscribable<Grid.TileChangeArgs>
             }
             foreach (var (x, z) in modified)
                 Notify(new(x, z, _tiles[x, z]));
+        }
+    }
+
+    private void Clear(ColliderSet _)
+    {
+        lock (_lock)
+        {
+            foreach (var t in _tiles)
+                t?.Clear();
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Numerics;
@@ -19,6 +20,8 @@ public class FloodFill
 
     private static FloodFill? _instance;
 
+    public Action<FloodFill> Modified = delegate { };
+
     internal static void Clear() => _instance = null;
 
     public static FloodFill? Get() => _instance;
@@ -33,6 +36,7 @@ public class FloodFill
     {
         Seeds.TryAdd(zone, []);
         Seeds[zone].Add(point);
+        Modified.Invoke(this);
     }
 
     public async Task Serialize()

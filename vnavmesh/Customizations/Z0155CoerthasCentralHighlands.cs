@@ -1,28 +1,15 @@
-﻿using System.Numerics;
+﻿using DotRecast.Detour;
+using System.Numerics;
 
 namespace Navmesh.Customizations;
 
 [CustomizationTerritory(155)]
 class Z0155CoerthasCentralHighlands : NavmeshCustomization
 {
-    public override int Version => 5;
+    public override int Version => 6;
 
-    public override void CustomizeScene(SceneExtractor scene)
+    public override void CustomizeSettings(DtNavMeshCreateParams config)
     {
-        // add a fake stair in front of the disconnected second staircase on the second floor of the building in Whitebrim Front
-        scene.InsertAABoxCollider(new Vector3(1.5f, 0.15f, 0.2f), new(-417.5f, 221.5f, -288.8f));
-
-        // set the doorstep of Monument Tower as walkable, though you can't land on it
-        if (scene.Meshes.TryGetValue("bg/ffxiv/roc_r1/fld/r1f1/collision/r1f1_b7_astr1.pcb", out var tower))
-            foreach (var inst in tower.Instances)
-                inst.ForceSetPrimFlags |= SceneExtractor.PrimitiveFlags.ForceWalkable;
-    }
-
-    public override void CustomizeTile(Tile tile)
-    {
-        tile.AddBox(new Vector3(1.5f, 0.15f, 0.2f), new(-417.5f, 221.5f, -288.8f));
-
-        foreach (var obj in tile.ObjectsByPath("bg/ffxiv/roc_r1/fld/r1f1/collision/r1f1_b7_astr1.pcb"))
-            obj.Instance.ForceSetPrimFlags |= SceneExtractor.PrimitiveFlags.ForceWalkable;
+        config.AddOffMeshConnection(new Vector3(-418.71f, 221.50f, -288.00f), new Vector3(-418.28f, 222.75f, -290.65f), bidirectional: true);
     }
 }

@@ -141,11 +141,11 @@ public class NavmeshRasterizer
     }
 
     public void Rasterize(SceneExtractor geom, MeshType types, bool perMeshInteriors, bool solidBelowNonManifold) =>
-        RasterizeFlat(geom.Meshes.SelectMany(kv => kv.Value.Instances.Select(i => new InstanceWithMesh(kv.Value, i))), types, perMeshInteriors, solidBelowNonManifold);
+        RasterizeFlat(geom.Meshes.SelectMany(kv => kv.Value.Instances.Select(i => new InstanceWithMesh(kv.Value, i, default))), types, perMeshInteriors, solidBelowNonManifold);
 
     public void RasterizeFlat(IEnumerable<InstanceWithMesh> instances, MeshType types, bool perMeshInteriors, bool solidBelowNonManifold, CancellationToken? token = null)
     {
-        foreach (var (mesh, instance) in instances)
+        foreach (var (mesh, instance, _) in instances)
         {
             if ((mesh.MeshType & types) == MeshType.None)
                 continue;
@@ -202,11 +202,12 @@ public class NavmeshRasterizer
 
                 var flags = (p.Flags & ~instance.ForceClearPrimFlags) | instance.ForceSetPrimFlags;
 
+                // this specific primitive is not solid, skip (usually part of a water surface or similar)
+                if (flags.HasFlag(PrimitiveFlags.Transparent))
+                    continue;
+
                 bool realSolid = !flags.HasFlag(PrimitiveFlags.FlyThrough);
-                bool unwalkable = flags.HasFlag(PrimitiveFlags.ForceUnwalkable)
-                    || normal.Y < _walkableNormalThreshold
-                    // for flyable scenes, assume unlandable == unwalkable, unless explicitly set
-                    || _voxelizer != null && flags.HasFlag(PrimitiveFlags.Unlandable) && !flags.HasFlag(PrimitiveFlags.ForceWalkable);
+                bool unwalkable = flags.HasFlag(PrimitiveFlags.ForceUnwalkable) || normal.Y < _walkableNormalThreshold;
                 var areaId = unwalkable ? 0 : RcConstants.RC_WALKABLE_AREA;
 
                 // prepare for clipping: while iterating over z, we'll keep the 'remaining polygon' in clipRemainingZ

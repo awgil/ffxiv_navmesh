@@ -59,14 +59,16 @@ public sealed class NavmeshBuilder
 
     private readonly DtNavMesh navmesh;
     private readonly VoxelMap? volume;
+    private readonly NavmeshCustomization Customization;
 
     public NavmeshBuilder(Tile data, NavmeshCustomization customization, bool flyable)
     {
         Tile = data;
 
-        Settings = customization.Settings;
-        Settings.NumTiles = [.. customization.Settings.NumTiles];
-        customization.CustomizeTile(data);
+        Customization = customization;
+        Settings = Customization.Settings;
+        Settings.NumTiles = [.. Customization.Settings.NumTiles];
+        Customization.CustomizeTile(data);
 
         var NumTilesX = Settings.NumTiles[0];
         var NumTilesZ = NumTilesX;
@@ -228,6 +230,8 @@ public sealed class NavmeshBuilder
 
             buildBvTree = true, // TODO: false if using layers?
         };
+
+        Customization.CustomizeSettings(navmeshConfig);
 
         var meshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
 

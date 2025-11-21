@@ -13,7 +13,7 @@ using Mesh = Navmesh.SceneExtractor.Mesh;
 
 namespace Navmesh;
 
-public record class InstanceWithMesh(Mesh Mesh, MeshInstance Instance);
+public record class InstanceWithMesh(Mesh Mesh, MeshInstance Instance, InstanceType Type);
 
 public class SceneTool
 {
@@ -208,13 +208,13 @@ public class SceneTool
                 switch ((FileLayerGroupAnalyticCollider.Type)shape.Transform.Type)
                 {
                     case FileLayerGroupAnalyticCollider.Type.Box:
-                        return new(Meshes[_keyAnalyticBox], new MeshInstance(key, resultingTransform, CalculateBoxBounds(ref resultingTransform), matFlags, default));
+                        return new(Meshes[_keyAnalyticBox], new MeshInstance(key, resultingTransform, CalculateBoxBounds(ref resultingTransform), matFlags, default), InstanceType.BgPart);
                     case FileLayerGroupAnalyticCollider.Type.Sphere:
-                        return new(Meshes[_keyAnalyticSphere], new(key, resultingTransform, CalculateSphereBounds(key, ref resultingTransform), matFlags, default));
+                        return new(Meshes[_keyAnalyticSphere], new(key, resultingTransform, CalculateSphereBounds(key, ref resultingTransform), matFlags, default), InstanceType.BgPart);
                     case FileLayerGroupAnalyticCollider.Type.Cylinder:
-                        return new(Meshes[_keyMeshCylinder], new(key, resultingTransform, CalculateBoxBounds(ref resultingTransform), matFlags, default));
+                        return new(Meshes[_keyMeshCylinder], new(key, resultingTransform, CalculateBoxBounds(ref resultingTransform), matFlags, default), InstanceType.BgPart);
                     case FileLayerGroupAnalyticCollider.Type.Plane:
-                        return new(Meshes[_keyAnalyticPlaneSingle], new(key, resultingTransform, CalculatePlaneBounds(ref resultingTransform), matFlags, default));
+                        return new(Meshes[_keyAnalyticPlaneSingle], new(key, resultingTransform, CalculatePlaneBounds(ref resultingTransform), matFlags, default), InstanceType.BgPart);
                 }
             }
             else
@@ -232,7 +232,7 @@ public class SceneTool
             var t2 = new Matrix4x3(transform.Compose());
             var bounds = CalculateMeshBounds(mesh, ref t2);
 
-            return new(mesh, new(key, t2, bounds, matFlags, default));
+            return new(mesh, new(key, t2, bounds, matFlags, default), InstanceType.BgPart);
         }
 
         return null;
@@ -249,21 +249,21 @@ public class SceneTool
         switch (cast->TriggerBoxLayoutInstance.Type)
         {
             case ColliderType.Box:
-                return new(Meshes[_keyAnalyticBox], new(key, transform, CalculateBoxBounds(ref transform), matFlags, default));
+                return new(Meshes[_keyAnalyticBox], new(key, transform, CalculateBoxBounds(ref transform), matFlags, default), InstanceType.CollisionBox);
             case ColliderType.Sphere:
-                return new(Meshes[_keyAnalyticSphere], new(key, transform, CalculateSphereBounds(key, ref transform), matFlags, default));
+                return new(Meshes[_keyAnalyticSphere], new(key, transform, CalculateSphereBounds(key, ref transform), matFlags, default), InstanceType.CollisionBox);
             case ColliderType.Cylinder:
-                return new(Meshes[_keyAnalyticCylinder], new(key, transform, CalculateBoxBounds(ref transform), matFlags, default));
+                return new(Meshes[_keyAnalyticCylinder], new(key, transform, CalculateBoxBounds(ref transform), matFlags, default), InstanceType.CollisionBox);
             case ColliderType.Plane:
-                return new(Meshes[_keyAnalyticPlaneSingle], new(key, transform, CalculatePlaneBounds(ref transform), matFlags, default));
+                return new(Meshes[_keyAnalyticPlaneSingle], new(key, transform, CalculatePlaneBounds(ref transform), matFlags, default), InstanceType.CollisionBox);
             case ColliderType.PlaneTwoSided:
-                return new(Meshes[_keyAnalyticPlaneDouble], new(key, transform, CalculatePlaneBounds(ref transform), matFlags, default));
+                return new(Meshes[_keyAnalyticPlaneDouble], new(key, transform, CalculatePlaneBounds(ref transform), matFlags, default), InstanceType.CollisionBox);
             case ColliderType.Mesh:
                 if (cast->PcbPathCrc != 0)
                 {
                     var path = GetCollisionMeshPathByCrc(cast->PcbPathCrc, cast->Layout);
                     var mesh = GetMeshByPath(path, MeshType.FileMesh);
-                    return new(mesh, new(key, transform, CalculateMeshBounds(mesh, ref transform), matFlags, default));
+                    return new(mesh, new(key, transform, CalculateMeshBounds(mesh, ref transform), matFlags, default), InstanceType.CollisionBox);
                 }
                 break;
         }
@@ -295,7 +295,7 @@ public class SceneTool
                     {
                         var path = $"{terr}/tr{entry.MeshId:d4}.pcb";
                         var mesh = GetMeshByPath(path, MeshType.Terrain);
-                        obj.Add(new(mesh, new(0, Matrix4x3.Identity, entry.Bounds, 0ul, 0ul)));
+                        obj.Add(new(mesh, new(0, Matrix4x3.Identity, entry.Bounds, 0ul, 0ul), InstanceType.ColliderLayer10));
                     }
                 }
             }

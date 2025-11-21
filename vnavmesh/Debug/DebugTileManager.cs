@@ -1,6 +1,15 @@
-﻿namespace Navmesh.Debug;
+﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+using Navmesh.Render;
+using System;
+using System.Linq;
+using System.Numerics;
+using System.Threading.Tasks;
 
-/*
+namespace Navmesh.Debug;
+
 public sealed unsafe class DebugTileManager : IDisposable
 {
     private readonly NavmeshManager _tiles;
@@ -15,7 +24,7 @@ public sealed unsafe class DebugTileManager : IDisposable
     private readonly DebugNavmeshCustom.PerTile?[,] _perTile = new DebugNavmeshCustom.PerTile?[16, 16];
 
     (int X, int Z) Focused => _hovered.Item1 >= 0 && _hovered.Item2 >= 0 ? (_hovered.Item1, _hovered.Item2) : _selected;
-    ColliderSet.TileInternal? FocusedTile => Focused.X >= 0 && Focused.Z >= 0 ? _tiles.Scene._tiles[Focused.X, Focused.Z] : null;
+    NavmeshManager.IntermediatesData? FocusedTile => Focused.X >= 0 && Focused.Z >= 0 ? _tiles.Intermediates[Focused.X, Focused.Z] : null;
 
     public static readonly Vector2 TileSize = new(40, 40);
     public static readonly Vector3 BoundsMin = new(-1024);
@@ -49,7 +58,6 @@ public sealed unsafe class DebugTileManager : IDisposable
     {
         var pos2 = Service.ClientState.LocalPlayer?.Position ?? new();
 
-        ImGui.TextUnformatted($"Num objects: {Scene.NumObjects}");
         ImGui.Checkbox("Track intermediates", ref _tiles.TrackIntermediates);
 
         _hovered = (-1, -1);
@@ -64,7 +72,7 @@ public sealed unsafe class DebugTileManager : IDisposable
                 {
                     for (var i = 0; i < len; i++)
                     {
-                        var task = _tiles.Tasks[i, j];
+                        var task = _tiles.Intermediates[i, j] == null ? null : Task.FromResult(0);
                         uint col = task == null ? 0 : _selected == (i, j) ? 0xffba7917 : (task.Status switch
                         {
                             TaskStatus.RanToCompletion => 0xff76db3a,
@@ -99,9 +107,9 @@ public sealed unsafe class DebugTileManager : IDisposable
             }
         }
 
-        if (FocusedTile is { } tile)
+        if (FocusedTile is (var tile, var inter))
         {
-            using var nt = _tree.Node($"Tile {tile.X}x{tile.Z} ({tile.Objects.Count} objects)###focused");
+            using var nt = _tree.Node($"Tile {tile.X}x{tile.Z}###focused");
             if (!nt.Opened)
                 return;
 
@@ -120,7 +128,12 @@ public sealed unsafe class DebugTileManager : IDisposable
                             highlightAll = false;
                             var coll = FindCollider(obj.Type, key);
                             if (coll != null)
+                            {
                                 _coll.VisualizeCollider(coll, default, default);
+                                Vector3 t;
+                                coll->GetTranslation(&t);
+                                _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, t, 0xFFFF00FF);
+                            }
                         }
                     }
                 }
@@ -129,7 +142,6 @@ public sealed unsafe class DebugTileManager : IDisposable
             if (highlightAll)
                 _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVisualizer(tile));
 
-            var inter = _tiles.Intermediates[tile.X, tile.Z];
             if (inter == null)
                 return;
 
@@ -145,7 +157,7 @@ public sealed unsafe class DebugTileManager : IDisposable
         }
     }
 
-    private EffectMesh.Data GetOrInitVisualizer(ColliderSet.TileInternal tile)
+    private EffectMesh.Data GetOrInitVisualizer(Tile tile)
     {
         ref var visu = ref _drawMeshes[tile.X, tile.Z];
 
@@ -204,4 +216,3 @@ public sealed unsafe class DebugTileManager : IDisposable
         return coll;
     }
 }
-*/

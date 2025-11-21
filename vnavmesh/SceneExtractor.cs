@@ -29,8 +29,9 @@ public class SceneExtractor
         None = 0,
         ForceUnwalkable = 1 << 0, // this primitive can't be walked on, even if normal is fine
         FlyThrough = 1 << 1, // this primitive should not be present in voxel map
-        Unlandable = 1 << 2, // this primitive can't be landed on (fly->walk transition)
-        ForceWalkable = 1 << 3, // this primitive can be walked on, even though it isn't landable
+        // obsoleted by FloodFill. certain parts of terrain that the player is intended to walk on are incidentally marked as unlandable; see the entrance to the turtle village in Ruby Sea for an example
+        // Unlandable = 1 << 2, // this primitive can't be landed on (fly->walk transition)
+        //ForceWalkable = 1 << 3, // this primitive can be walked on, even though it isn't landable
         Transparent = 1 << 4, // no collision at all, skipped by rasterizer
     }
 
@@ -325,21 +326,13 @@ public class SceneExtractor
         if (m.HasFlag(MaterialFlags.Water))
             res |= PrimitiveFlags.Transparent;
 
-        // all conditional colliders have the Temporary bit set
-        // but to make it annoying, most underwater geometry (seafloor etc) has it set too, so we have to check for two flags
-        if (m.HasFlag(MaterialFlags.Temporary) /* && !m.HasFlag(MaterialFlags.NoLand) */)
+        // all conditional colliders have the Temporary bit set, but a few non-conditional ones do as well
+        if (m.HasFlag(MaterialFlags.Temporary) && !(m.HasFlag(MaterialFlags.Swim) || m.HasFlag(MaterialFlags.DiveDown)))
             res |= PrimitiveFlags.Transparent;
 
         // in addition to actual fly-through materials, divable water should be excluded from the volume
         if (m.HasFlag(MaterialFlags.FlyThrough) || m.HasFlag(MaterialFlags.DiveDown) || m.HasFlag(MaterialFlags.DiveUp))
             res |= PrimitiveFlags.FlyThrough;
-
-        if (m.HasFlag(MaterialFlags.NoLand))
-            res |= PrimitiveFlags.Unlandable;
-
-        // divable water surfaces have the unlandable bit, so we need to ensure that regular mesh tiles still get generated
-        if (m.HasFlag(MaterialFlags.Swim) || m.HasFlag(MaterialFlags.DiveDown))
-            res |= PrimitiveFlags.ForceWalkable;
 
         // only object i've seen with this flag set was the yuweyawata hole
         if (m.HasFlag(MaterialFlags.Unk25))

@@ -59,6 +59,7 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
     {
         public InstanceWithMesh? Instance { get; set; }
         public bool Enabled { get; set; }
+        public bool ColliderEnabled { get; set; }
         public bool Destroyed { get; set; }
         public bool Dirty { get; set; }
     }
@@ -67,6 +68,9 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
 
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.CreatePrimary> _bgCreate;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.DestroyPrimary> _bgDestroy;
+    private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetTranslationImpl> _bgTrans;
+    private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetRotationImpl> _bgRot;
+    private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetScaleImpl> _bgScale;
 
     private readonly HookAddress<CollisionBoxLayoutInstance.Delegates.CreatePrimary> _boxCreate;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.DestroyPrimary> _boxDestroy;
@@ -90,18 +94,20 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
     {
         Service.ClientState.ZoneInit += OnZoneInit;
 
-        var bgpVtbl = (BgPartsLayoutInstance.BgPartsLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 90 48 89 50 F8 ");
-        var collVtbl = (CollisionBoxLayoutInstance.CollisionBoxLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 85 FF 74 20 48 8B CF E8 ?? ?? ?? ?? 4C 8B F0 48 8D 55 C7 45 33 C0 49 8B CE 48 8B 00 FF 50 08 E9 ?? ?? ?? ?? 66 44 39 73 ?? 75 45 44 38 73 1F 74 0A 48 8B 43 08 83 78 1C 06 75 35 48 8B 4B 08 4C 39 B1 ?? ?? ?? ?? 74 28 85 F6 75 24 45 84 FF 74 1F B2 3A ", 0x17);
+        var bgVt = (BgPartsLayoutInstance.BgPartsLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 90 48 89 50 F8 ");
+        var boxVt = (CollisionBoxLayoutInstance.CollisionBoxLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 85 FF 74 20 48 8B CF E8 ?? ?? ?? ?? 4C 8B F0 48 8D 55 C7 45 33 C0 49 8B CE 48 8B 00 FF 50 08 E9 ?? ?? ?? ?? 66 44 39 73 ?? 75 45 44 38 73 1F 74 0A 48 8B 43 08 83 78 1C 06 75 35 48 8B 4B 08 4C 39 B1 ?? ?? ?? ?? 74 28 85 F6 75 24 45 84 FF 74 1F B2 3A ", 0x17);
 
-        _bgCreate = new((nint)bgpVtbl->CreatePrimary, BgCreateDetour, false);
-        _bgDestroy = new((nint)bgpVtbl->DestroyPrimary, BgDestroyDetour, false);
+        _bgCreate = new((nint)bgVt->CreatePrimary, BgCreateDetour, false);
+        _bgDestroy = new((nint)bgVt->DestroyPrimary, BgDestroyDetour, false);
+        _bgTrans = new((nint)bgVt->SetTranslationImpl, BgTransDetour, false);
+        _bgRot = new((nint)bgVt->SetRotationImpl, BgRotDetour, false);
+        _bgScale = new((nint)bgVt->SetScaleImpl, BoxScaleDetour, false);
 
-        // collisionboxes often get resized *after* being initialized instead of before, how annoying
-        _boxCreate = new((nint)collVtbl->CreatePrimary, BoxCreateDetour, false);
-        _boxDestroy = new((nint)collVtbl->DestroyPrimary, BoxDestroyDetour, false);
-        _boxTrans = new((nint)collVtbl->SetTranslationImpl, BoxTransDetour, false);
-        _boxRot = new((nint)collVtbl->SetRotationImpl, BoxRotDetour, false);
-        _boxScale = new((nint)collVtbl->SetScaleImpl, BoxScaleDetour, false);
+        _boxCreate = new((nint)boxVt->CreatePrimary, BoxCreateDetour, false);
+        _boxDestroy = new((nint)boxVt->DestroyPrimary, BoxDestroyDetour, false);
+        _boxTrans = new((nint)boxVt->SetTranslationImpl, BoxTransDetour, false);
+        _boxRot = new((nint)boxVt->SetRotationImpl, BoxRotDetour, false);
+        _boxScale = new((nint)boxVt->SetScaleImpl, BoxScaleDetour, false);
     }
 
     public unsafe void Initialize()
@@ -114,9 +120,12 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
 
         _bgCreate.Enabled = true;
         _bgDestroy.Enabled = true;
+        //_bgTrans.Enabled = true;
+        //_bgRot.Enabled = true;
+        //_bgScale.Enabled = true;
+
         _boxCreate.Enabled = true;
         _boxDestroy.Enabled = true;
-
         _boxTrans.Enabled = true;
         _boxRot.Enabled = true;
         _boxScale.Enabled = true;
@@ -178,6 +187,14 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
             Service.Log.Verbose($"object {k:X16} was " + (wasEnabled ? "disabled" : "enabled"));
         modified |= obj.Enabled != wasEnabled;
 
+        /*
+        var wasColliderEnabled = obj.ColliderEnabled;
+        obj.ColliderEnabled = GetColliderActive(pointer.Value);
+        if (obj.ColliderEnabled != wasColliderEnabled)
+            Service.Log.Verbose($"object {k:X16} collider was " + (wasColliderEnabled ? "disabled" : "enabled"));
+        modified |= obj.ColliderEnabled != wasColliderEnabled;
+        */
+
         var matPrev = obj.Instance.Instance.ForceSetPrimFlags;
         var matCur = GetMaterialFlags(pointer.Value);
         if (matPrev != matCur)
@@ -217,14 +234,35 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
                 var v = (BgPartsLayoutInstance*)val;
                 var id = (ulong)v->CollisionMaterialIdHigh << 32 | v->CollisionMaterialIdLow;
                 var mask = (ulong)v->CollisionMaterialMaskHigh << 32 | v->CollisionMaterialMaskLow;
-                return SceneExtractor.ExtractMaterialFlags(id & mask);
+                // note about collision mask: steel doors in front of amal'jaa encampment (in southern thanalan) consist of two objects: a large box collider covering the entire door, and a small box collider with material 206400 but no mask at all
+                // the smaller collider moves up when the player approaches, and i have no idea why it's missing a mask
+                // TODO: to ensure correctness, could we instead skip objects that are inside a DoorRange?
+                return SceneExtractor.ExtractMaterialFlags(mask > 0 ? id & mask : id);
+
             case InstanceType.CollisionBox:
                 var c = (CollisionBoxLayoutInstance*)val;
                 var id2 = (ulong)c->MaterialIdHigh << 32 | c->MaterialIdLow;
                 var mask2 = (ulong)c->MaterialMaskHigh << 32 | c->MaterialMaskLow; ;
-                return SceneExtractor.ExtractMaterialFlags(id2 & mask2);
+                return SceneExtractor.ExtractMaterialFlags(mask2 > 0 ? id2 & mask2 : id2);
             default:
                 return default;
+        }
+    }
+
+    private unsafe bool GetColliderActive(ILayoutInstance* val)
+    {
+        switch (val->Id.Type)
+        {
+            case InstanceType.BgPart:
+                var v = (BgPartsLayoutInstance*)val;
+                var c1 = v->Collider;
+                return c1 != null && (c1->VisibilityFlags & 1) == 1;
+            case InstanceType.CollisionBox:
+                var b = (CollisionBoxLayoutInstance*)val;
+                var c2 = b->Collider;
+                return c2 != null && (c2->VisibilityFlags & 1) == 1;
+            default:
+                return false;
         }
     }
 
@@ -269,12 +307,42 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
     {
         _bgDestroy.Original(thisPtr);
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
+        {
+            var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+            Service.Log.Verbose($"DestroyPrimary(bgpart) called on {k:X}");
             obj.Destroyed = true;
+        }
+    }
+
+    private unsafe void BgTransDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
+    {
+        _bgTrans.Original(thisPtr, value);
+        var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+        Service.Log.Verbose($"changing translation of {k:X16} to {*value}");
+        CreateObject(thisPtr);
+    }
+
+    private unsafe void BgRotDetour(BgPartsLayoutInstance* thisPtr, Quaternion* value)
+    {
+        _bgRot.Original(thisPtr, value);
+        var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+        Service.Log.Verbose($"changing rotation of {k:X16} to {*value}");
+        CreateObject(thisPtr);
+    }
+
+    private unsafe void BoxScaleDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
+    {
+        _bgScale.Original(thisPtr, value);
+        var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+        Service.Log.Verbose($"changing scale of {k:X16} to {*value}");
+        CreateObject(thisPtr);
     }
 
     private unsafe void BoxCreateDetour(CollisionBoxLayoutInstance* thisPtr, Transform* transform, void* pathOrType)
     {
         _boxCreate.Original(thisPtr, transform, pathOrType);
+        var k = SceneTool.GetKey(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance);
+        Service.Log.Verbose($"CreatePrimary(box) called on {k:X}");
         CreateObject(thisPtr);
     }
 
@@ -282,7 +350,11 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
     {
         _boxDestroy.Original(thisPtr);
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
+        {
+            var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+            Service.Log.Verbose($"DestroyPrimary(box) called on {k:X}");
             obj.Destroyed = true;
+        }
     }
 
     private unsafe void BoxTransDetour(TriggerBoxLayoutInstance* thisPtr, Vector3* value)
@@ -320,16 +392,19 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
 
     private unsafe void CreateObject(BgPartsLayoutInstance* thisPtr)
     {
+        // there's one BgPart per interactable item on island sanctuary, and they constantly get destroyed and recreated (with collider toggled) (like streaming colliders, but on the underlying object)
+        // hardcoding the high bytes of the ID is easier than introducing logic to not destroy an object for X seconds, i guess
+        if (thisPtr->Id.InstanceKey >= 0xFFFA0275)
+            return;
+
         var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-        //Service.Log.Debug($"creating object {k:X16}");
-        _objects[&thisPtr->ILayoutInstance] = new() { Instance = SceneTool.Get().CreateInstance(thisPtr), Dirty = true };
+        _objects[&thisPtr->ILayoutInstance] = new() { Instance = SceneTool.Get().CreateInstance(thisPtr), Enabled = (thisPtr->Flags3 & 0x10) != 0, ColliderEnabled = thisPtr->Collider != null && (thisPtr->Collider->VisibilityFlags & 1) != 0, Dirty = true };
     }
 
     private unsafe void CreateObject(CollisionBoxLayoutInstance* thisPtr)
     {
         var k = SceneTool.GetKey(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance);
-        //Service.Log.Debug($"creating object {k:X16}");
-        _objects[&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance] = new() { Instance = SceneTool.Get().CreateInstance(thisPtr), Dirty = true };
+        _objects[&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance] = new() { Instance = SceneTool.Get().CreateInstance(thisPtr), Enabled = (thisPtr->Flags3 & 0x10) != 0, ColliderEnabled = thisPtr->Collider != null && (thisPtr->Collider->VisibilityFlags & 1) != 0, Dirty = true };
     }
 }
 

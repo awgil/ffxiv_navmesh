@@ -9,11 +9,11 @@ internal class Z0152EastShroud : NavmeshCustomization
 
     public override void CustomizeScene(SceneExtractor scene)
     {
-        scene.InsertCylinderCollider(new Vector3(2), new(-40, -8, 225), SceneExtractor.PrimitiveFlags.Unlandable);
+        scene.InsertCylinderCollider(new Vector3(2), new(-40, -8, 225));
     }
 
     public override void CustomizeTile(Tile tile)
     {
-        tile.AddCylinder(new Vector3(2), new(-40, -8, 225), SceneExtractor.PrimitiveFlags.Unlandable);
+        tile.AddCylinder(new Vector3(2), new(-40, -8, 225));
     }
 }

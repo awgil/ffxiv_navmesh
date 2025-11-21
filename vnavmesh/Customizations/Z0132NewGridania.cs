@@ -7,6 +7,11 @@ internal class Z0132NewGridania : NavmeshCustomization
 {
     public override int Version => 2;
 
+    public override void CustomizeSettings(DtNavMeshCreateParams config)
+    {
+        config.AddOffMeshConnection(new(45.03f, -0.13f, 83.1f), new(46.78f, -8.5f, 91.75f));
+    }
+
     public override void CustomizeScene(SceneExtractor scene)
     {
         if (scene.Meshes.TryGetValue("bg/ffxiv/fst_f1/twn/common/collision/f1t0_a0_plnt1.pcb", out var mesh))
@@ -19,10 +24,5 @@ internal class Z0132NewGridania : NavmeshCustomization
     {
         foreach (var obj in tile.ObjectsByPath("bg/ffxiv/fst_f1/twn/common/collision/f1t0_a0_plnt1.pcb"))
             obj.Instance.WorldTransform.M22 *= 2;
-    }
-
-    public override void CustomizeSettings(DtNavMeshCreateParams config)
-    {
-        config.AddOffMeshConnection(new(45.03f, -0.13f, 83.1f), new(46.78f, -8.5f, 91.75f));
     }
 }

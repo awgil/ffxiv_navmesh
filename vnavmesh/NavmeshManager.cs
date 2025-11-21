@@ -57,8 +57,10 @@ public sealed partial class NavmeshManager : IDisposable
     public NavmeshCustomization Customization => Scene.Customization;
     public uint[] ActiveFestivals { get; private set; } = new uint[4];
 
-    public bool TrackIntermediates;
-    public RcBuilderResult?[,] Intermediates { get; private set; } = new RcBuilderResult?[0, 0];
+    public record class IntermediatesData(Tile Tile, RcBuilderResult Data);
+
+    public bool TrackIntermediates = true;
+    public IntermediatesData?[,] Intermediates { get; private set; } = new IntermediatesData?[16, 16];
 
     private int Concurrency;
     private readonly Lock meshLock = new();
@@ -172,7 +174,7 @@ public sealed partial class NavmeshManager : IDisposable
     {
         ClearState();
         Array.Fill<uint>(ActiveFestivals, 0);
-        Intermediates = new RcBuilderResult?[scene.RowLength, scene.RowLength];
+        Intermediates = new IntermediatesData?[scene.RowLength, scene.RowLength];
         Mesh = new(new()
         {
             orig = BoundsMin.SystemToRecast(),
@@ -319,7 +321,7 @@ public sealed partial class NavmeshManager : IDisposable
         var (tile, vox, intermediates) = builder.Build(token);
 
         if (TrackIntermediates)
-            Intermediates[x, z] = intermediates;
+            Intermediates[x, z] = new(data, intermediates);
 
         VoxelMap? map = null;
         if (vox != null)
@@ -485,7 +487,8 @@ public sealed partial class NavmeshManager : IDisposable
         ExecuteWhenIdle(() =>
         {
             Log("Clearing state");
-            FloodFill.Clear();
+            if (Service.PluginInterface.IsDev)
+                FloodFill.Clear();
             _numActivePathfinds = 0;
             _seeding = false;
             cts.Dispose();

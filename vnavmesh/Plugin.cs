@@ -23,61 +23,8 @@ public sealed class Plugin : IDalamudPlugin
 
     public Plugin(IDalamudPluginInterface dalamud)
     {
-        if (!dalamud.ConfigDirectory.Exists)
-            dalamud.ConfigDirectory.Create();
-        var dalamudRoot = dalamud.GetType().Assembly.
-                GetType("Dalamud.Service`1", true)!.MakeGenericType(dalamud.GetType().Assembly.GetType("Dalamud.Dalamud", true)!).
-                GetMethod("Get")!.Invoke(null, BindingFlags.Default, null, Array.Empty<object>(), null);
-        var dalamudStartInfo = (DalamudStartInfo)dalamudRoot?.GetType().GetProperty("StartInfo", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(dalamudRoot)!;
-        InteropGenerator.Runtime.Resolver.GetInstance.Setup(0, dalamudStartInfo.GameVersion?.ToString() ?? "", new(Path.Combine(dalamud.ConfigDirectory.FullName, "cs.json")));
-        FFXIVClientStructs.Interop.Generated.Addresses.Register();
-        InteropGenerator.Runtime.Resolver.GetInstance.Resolve();
 
-        dalamud.Create<Service>();
-        Service.Config.Load(dalamud.ConfigFile);
-        Service.Config.Modified += () => Service.Config.Save(dalamud.ConfigFile);
-
-        _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
-        _followPath = new(dalamud, _navmeshManager);
-        _asyncMove = new(_navmeshManager, _followPath);
-        _dtrProvider = new(_navmeshManager, _asyncMove, _followPath);
-        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider, dalamud.ConfigDirectory.FullName) { IsOpen = dalamud.IsDev };
-        _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain, _dtrProvider);
-
-        WindowSystem.AddWindow(_wndMain);
-        //_wndMain.IsOpen = true;
-
-        dalamud.UiBuilder.Draw += Draw;
-        dalamud.UiBuilder.OpenConfigUi += () => _wndMain.IsOpen = true;
-
-        var cmd = new CommandInfo(OnCommand)
-        {
-            HelpMessage = """
-            Opens the debug menu.
-            /vnav moveto <X> <Y> <Z> → move to raw coordinates
-            /vnav movedir <X> <Y> <Z> → move this many units over (relative to player facing)
-            /vnav movetarget → move to target's position
-            /vnav moveflag → move to flag position
-            /vnav flyto <X> <Y> <Z> → fly to raw coordinates
-            /vnav flydir <X> <Y> <Z> → fly this many units over (relative to player facing)
-            /vnav flytarget → fly to target's position
-            /vnav flyflag → fly to flag position
-            /vnav stop → stop all movement
-            /vnav reload → reload current territory's navmesh from cache
-            /vnav rebuild → rebuild current territory's navmesh from scratch
-            /vnav aligncamera → toggle aligning camera to movement direction
-            /vnav aligncamera true|yes|enable → enable aligning camera to movement direction
-            /vnav aligncamera false|no|disable → disable aligning camera to movement direction
-            /vnav dtr → toggle dtr status
-            /vnav collider → toggle collision debug visualization
-            """,
-
-            ShowInHelp = true,
-        };
-        Service.CommandManager.AddHandler("/vnav", cmd);
-        Service.CommandManager.AddHandler("/vnavmesh", new CommandInfo(OnCommand) { HelpMessage = cmd.HelpMessage, ShowInHelp = false }); // legacy
-
-        Service.Framework.Update += OnUpdate;
+        Process.GetCurrentProcess().Kill();
     }
 
     public void Dispose()

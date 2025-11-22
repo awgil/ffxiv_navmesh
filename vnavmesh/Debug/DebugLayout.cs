@@ -67,6 +67,32 @@ public unsafe class DebugLayout : IDisposable
         HasCollider = 1 << 3
     }
 
+    [Flags]
+    enum Flags2 : byte
+    {
+        Unk0 = 0x01,
+        Unk1 = 0x02,
+        Unk2 = 0x04,
+        Unk3 = 0x08,
+        Unk4 = 0x10,
+        Unk5 = 0x20,
+        Unk6 = 0x40,
+        Unk7 = 0x80
+    }
+
+    [Flags]
+    enum Flags3 : byte
+    {
+        Unk0 = 0x01,
+        Unk1 = 0x02,
+        Unk2 = 0x04,
+        Unk3 = 0x08,
+        Active = 0x10,
+        Unk5 = 0x20,
+        Unk6 = 0x40,
+        Unk7 = 0x80
+    }
+
     private static InstanceFlags GetFlags(InstanceData inst)
     {
         var flags = InstanceFlags.None;
@@ -94,14 +120,14 @@ public unsafe class DebugLayout : IDisposable
             return 0xFF00FFFF;
 
         if (!flags.HasFlag(InstanceFlags.HasCollider))
-            return 0xFF00FF00;
+            return 0xFFFFFF00;
 
         return 0xFFFFFFFF;
     }
 
     public static bool DrawInstance(UITree tree, string tag, LayoutManager* layout, ILayoutInstance* inst, DebugGameCollision coll)
     {
-        using var ni = tree.Node($"{tag} {inst->Id.Type} L{inst->Id.LayerKey:X4} I{inst->Id.InstanceKey:X8}.{inst->SubId:X8} ({inst->Id.u0:X2}) = {(nint)inst:X}, pool-idx={inst->IndexInPool}, prefab-index={inst->IndexInPrefab}, nesting={inst->NestingLevel}, u29low={inst->Flags1 & 0xF}, u29hi={(inst->Flags1 >> 7) != 0}, flags={inst->Flags2:X2} {inst->Flags3:X2}###{tag}");
+        using var ni = tree.Node($"{tag} {inst->Id.Type} L{inst->Id.LayerKey:X4} I{inst->Id.InstanceKey:X8}.{inst->SubId:X8} ({inst->Id.u0:X2}) = {(nint)inst:X}, flags2={(Flags2)inst->Flags2} flags3={(Flags3)inst->Flags3}, pool-idx={inst->IndexInPool}, prefab-index={inst->IndexInPrefab}, nesting={inst->NestingLevel}, u29low={inst->Flags1 & 0xF}, u29hi={(inst->Flags1 >> 7) != 0}###{tag}");
         var collider = inst->GetCollider();
         if (ni.Opened)
         {

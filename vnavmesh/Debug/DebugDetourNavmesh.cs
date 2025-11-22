@@ -236,7 +236,7 @@ public class DebugDetourNavmesh : DebugRecast
                     builder.AddMesh(0, startingPrimitive, 0, 0, 0);
                 }
             }
-            Service.Log.Debug($"navmesh rough visualization tile #{tileIndex} build time: {timer.Value().TotalMilliseconds:f3}ms");
+            Service.Log.Verbose($"navmesh rough visualization tile #{tileIndex} build time: {timer.Value().TotalMilliseconds:f3}ms");
         }
         return perTile.VisuRough;
     }
@@ -283,7 +283,7 @@ public class DebugDetourNavmesh : DebugRecast
                 builder.AddMesh(0, startingPrimitive, sub.triCount, 0, 1);
                 startingPrimitive += sub.triCount;
             }
-            Service.Log.Debug($"navmesh detail visualization tile #{tileIndex} build time: {timer.Value().TotalMilliseconds:f3}ms");
+            Service.Log.Verbose($"navmesh detail visualization tile #{tileIndex} build time: {timer.Value().TotalMilliseconds:f3}ms");
         }
         return perTile.VisuDetail;
     }

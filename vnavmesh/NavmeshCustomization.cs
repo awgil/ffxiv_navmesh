@@ -27,6 +27,8 @@ public class NavmeshCustomization
 
     public virtual void CustomizeTile(Tile tile) { }
 
+    public virtual bool FilterObject(InstanceWithMesh inst) => true;
+
     public virtual void CustomizeSettings(DtNavMeshCreateParams config) { }
 
     public virtual void CustomizeMesh(DtNavMesh mesh, List<uint> festivalLayers) { }

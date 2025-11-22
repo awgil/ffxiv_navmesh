@@ -8,6 +8,8 @@ using System.Numerics;
 using System.Reactive.Linq;
 using System.Threading;
 
+using MotionBase = FFXIVClientStructs.FFXIV.Client.LayoutEngine.Motion.Base;
+
 namespace Navmesh;
 
 public abstract class Subscribable<TVal> : IObservable<TVal>, IDisposable
@@ -59,7 +61,8 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
     {
         public InstanceWithMesh? Instance { get; set; }
         public bool Enabled { get; set; }
-        public bool ColliderEnabled { get; set; }
+        //public Transform Transform { get; set; }
+        //public bool ColliderEnabled { get; set; }
         public bool Destroyed { get; set; }
         public bool Dirty { get; set; }
     }
@@ -68,6 +71,7 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
 
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.CreatePrimary> _bgCreate;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.DestroyPrimary> _bgDestroy;
+    private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetTransformImpl> _bgTransF;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetTranslationImpl> _bgTrans;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetRotationImpl> _bgRot;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetScaleImpl> _bgScale;
@@ -77,6 +81,10 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetTranslationImpl> _boxTrans;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetRotationImpl> _boxRot;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetScaleImpl> _boxScale;
+
+    private readonly HookAddress<MotionBase.Delegates.SetTranslation> _motionTrans;
+    private readonly HookAddress<MotionBase.Delegates.SetRotation> _motionRot;
+    private readonly HookAddress<MotionBase.Delegates.SetScale> _motionScale;
 
     public NavmeshCustomization Customization { get; private set; } = new();
 
@@ -99,15 +107,20 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
 
         _bgCreate = new((nint)bgVt->CreatePrimary, BgCreateDetour, false);
         _bgDestroy = new((nint)bgVt->DestroyPrimary, BgDestroyDetour, false);
+        _bgTransF = new((nint)bgVt->SetTransformImpl, BgTransFDetour, false);
         _bgTrans = new((nint)bgVt->SetTranslationImpl, BgTransDetour, false);
         _bgRot = new((nint)bgVt->SetRotationImpl, BgRotDetour, false);
-        _bgScale = new((nint)bgVt->SetScaleImpl, BoxScaleDetour, false);
+        _bgScale = new((nint)bgVt->SetScaleImpl, BgScaleDetour, false);
 
         _boxCreate = new((nint)boxVt->CreatePrimary, BoxCreateDetour, false);
         _boxDestroy = new((nint)boxVt->DestroyPrimary, BoxDestroyDetour, false);
         _boxTrans = new((nint)boxVt->SetTranslationImpl, BoxTransDetour, false);
         _boxRot = new((nint)boxVt->SetRotationImpl, BoxRotDetour, false);
         _boxScale = new((nint)boxVt->SetScaleImpl, BoxScaleDetour, false);
+
+        _motionTrans = new(MotionBase.Addresses.SetTranslation, MotionTransDetour, false);
+        _motionRot = new(MotionBase.Addresses.SetRotation, MotionRotDetour, false);
+        _motionScale = new(MotionBase.Addresses.SetScale, MotionScaleDetour, false);
     }
 
     public unsafe void Initialize()
@@ -120,15 +133,20 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
 
         _bgCreate.Enabled = true;
         _bgDestroy.Enabled = true;
+        _bgTransF.Enabled = true;
         //_bgTrans.Enabled = true;
         //_bgRot.Enabled = true;
         //_bgScale.Enabled = true;
 
         _boxCreate.Enabled = true;
         _boxDestroy.Enabled = true;
-        _boxTrans.Enabled = true;
-        _boxRot.Enabled = true;
-        _boxScale.Enabled = true;
+        //_boxTrans.Enabled = true;
+        //_boxRot.Enabled = true;
+        //_boxScale.Enabled = true;
+
+        _motionTrans.Enabled = true;
+        _motionRot.Enabled = true;
+        _motionScale.Enabled = true;
 
         ZoneChanged.Invoke(this);
     }
@@ -140,11 +158,20 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
             Service.ClientState.ZoneInit -= OnZoneInit;
             _bgCreate.Dispose();
             _bgDestroy.Dispose();
+            _bgTransF.Dispose();
+            _bgTrans.Dispose();
+            _bgRot.Dispose();
+            _bgScale.Dispose();
+
             _boxCreate.Dispose();
             _boxDestroy.Dispose();
             _boxTrans.Dispose();
             _boxRot.Dispose();
             _boxScale.Dispose();
+
+            _motionTrans.Dispose();
+            _motionRot.Dispose();
+            _motionScale.Dispose();
         }
     }
 
@@ -171,7 +198,7 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
 
     private unsafe void UpdateObject(Pointer<ILayoutInstance> pointer, MaybeEnabled obj)
     {
-        // this layout instance doesn't have a mesh/collider associated with it, so it doesn't actually have collision - ignore it
+        // this layout instance doesn't have a collider associated with it for some reason (i.e. broken crc)
         if (obj.Instance == null)
             return;
 
@@ -181,13 +208,15 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
         if (modified)
             Service.Log.Verbose($"object {k:X16} was dirty");
 
+        // we could also track this by hooking the vfunc, but i would like to hook as few functions as realistically possible, and this is an extremely cheap check (just a bit test)
         var wasEnabled = obj.Enabled;
-        obj.Enabled = (pointer.Value->Flags3 & 0x10) != 0;
+        obj.Enabled = pointer.Value->HasEnabledFlag();
         if (obj.Enabled != wasEnabled)
             Service.Log.Verbose($"object {k:X16} was " + (wasEnabled ? "disabled" : "enabled"));
         modified |= obj.Enabled != wasEnabled;
 
         /*
+        // colliders are toggled by streaming manager, which updates as the player moves around the world, so we can't really track them because we would spam change events
         var wasColliderEnabled = obj.ColliderEnabled;
         obj.ColliderEnabled = GetColliderActive(pointer.Value);
         if (obj.ColliderEnabled != wasColliderEnabled)
@@ -195,6 +224,7 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
         modified |= obj.ColliderEnabled != wasColliderEnabled;
         */
 
+        // material flags can be changed by sources other than SetMaterial vfunc and i'm not sure how many there are; this check is also cheap (comparing ulongs)
         var matPrev = obj.Instance.Instance.ForceSetPrimFlags;
         var matCur = GetMaterialFlags(pointer.Value);
         if (matPrev != matCur)
@@ -289,18 +319,18 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
         var bgParts = layout->InstancesByType.FindPtr(InstanceType.BgPart);
         if (bgParts != null)
             foreach (var (k, v) in *bgParts)
-                CreateObject((BgPartsLayoutInstance*)v.Value);
+                CreateObject((BgPartsLayoutInstance*)v.Value, "init");
 
         var boxes = layout->InstancesByType.FindPtr(InstanceType.CollisionBox);
         if (boxes != null)
             foreach (var (k, v) in *boxes)
-                CreateObject((CollisionBoxLayoutInstance*)v.Value);
+                CreateObject((CollisionBoxLayoutInstance*)v.Value, "init");
     }
 
     private unsafe void BgCreateDetour(BgPartsLayoutInstance* thisPtr, Transform* transform, void* pathOrType)
     {
         _bgCreate.Original(thisPtr, transform, pathOrType);
-        CreateObject(thisPtr);
+        CreateObject(thisPtr, "primary");
     }
 
     private unsafe void BgDestroyDetour(BgPartsLayoutInstance* thisPtr)
@@ -314,36 +344,45 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
         }
     }
 
+    // 00885333.03010000 - yellow crystals inside Bestways Burrow that move up and down 0.8 units on the y axis; sitting on top of the crystal (with a flying mount) and allowing it to move upward doesn't displace the player
+    // flags2 = 2, 4
+    // flags3 = 0, 2, active, 5, 6, 7
+    private unsafe void BgTransFDetour(BgPartsLayoutInstance* thisPtr, Transform* t)
+    {
+        _bgTransF.Original(thisPtr, t);
+        if (thisPtr->HasCollision())
+        {
+            var t2 = thisPtr->GetTransformImpl();
+            if (thisPtr->Id.InstanceKey == 0x00885333)
+            {
+                Service.Log.Verbose($"new transform: {t2->Display()}");
+            }
+            CreateObject(thisPtr, "transform");
+        }
+    }
+
     private unsafe void BgTransDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
     {
         _bgTrans.Original(thisPtr, value);
-        var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-        Service.Log.Verbose($"changing translation of {k:X16} to {*value}");
-        CreateObject(thisPtr);
+        CreateObject(thisPtr, "translation");
     }
 
     private unsafe void BgRotDetour(BgPartsLayoutInstance* thisPtr, Quaternion* value)
     {
         _bgRot.Original(thisPtr, value);
-        var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-        Service.Log.Verbose($"changing rotation of {k:X16} to {*value}");
-        CreateObject(thisPtr);
+        CreateObject(thisPtr, "rotation");
     }
 
-    private unsafe void BoxScaleDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
+    private unsafe void BgScaleDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
     {
         _bgScale.Original(thisPtr, value);
-        var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-        Service.Log.Verbose($"changing scale of {k:X16} to {*value}");
-        CreateObject(thisPtr);
+        CreateObject(thisPtr, "scale");
     }
 
     private unsafe void BoxCreateDetour(CollisionBoxLayoutInstance* thisPtr, Transform* transform, void* pathOrType)
     {
         _boxCreate.Original(thisPtr, transform, pathOrType);
-        var k = SceneTool.GetKey(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance);
-        Service.Log.Verbose($"CreatePrimary(box) called on {k:X}");
-        CreateObject(thisPtr);
+        CreateObject(thisPtr, "primary");
     }
 
     private unsafe void BoxDestroyDetour(TriggerBoxLayoutInstance* thisPtr)
@@ -351,8 +390,7 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
         _boxDestroy.Original(thisPtr);
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
         {
-            var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-            Service.Log.Verbose($"DestroyPrimary(box) called on {k:X}");
+            Service.Log.Verbose($"DestroyPrimary(box) called on {obj.Instance?.Instance.Id ?? 0:X}");
             obj.Destroyed = true;
         }
     }
@@ -361,54 +399,77 @@ public sealed partial class ColliderSet : Subscribable<ColliderSet.InstanceChang
     {
         _boxTrans.Original(thisPtr, value);
         if (thisPtr->Id.Type == InstanceType.CollisionBox)
-        {
-            var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-            Service.Log.Verbose($"changing translation of {k:X16} to {*value}");
-            CreateObject((CollisionBoxLayoutInstance*)thisPtr);
-        }
+            CreateObject((CollisionBoxLayoutInstance*)thisPtr, "translation");
     }
 
     private unsafe void BoxRotDetour(TriggerBoxLayoutInstance* thisPtr, Quaternion* value)
     {
         _boxRot.Original(thisPtr, value);
         if (thisPtr->Id.Type == InstanceType.CollisionBox)
-        {
-            var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-            Service.Log.Verbose($"changing rotation of {k:X16} to {*value}");
-            CreateObject((CollisionBoxLayoutInstance*)thisPtr);
-        }
+            CreateObject((CollisionBoxLayoutInstance*)thisPtr, "rotation");
     }
 
     private unsafe void BoxScaleDetour(TriggerBoxLayoutInstance* thisPtr, Vector3* value)
     {
         _boxScale.Original(thisPtr, value);
         if (thisPtr->Id.Type == InstanceType.CollisionBox)
-        {
-            var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-            Service.Log.Verbose($"changing scale of {k:X16} to {*value}");
-            CreateObject((CollisionBoxLayoutInstance*)thisPtr);
-        }
+            CreateObject((CollisionBoxLayoutInstance*)thisPtr, "scale");
     }
 
-    private unsafe void CreateObject(BgPartsLayoutInstance* thisPtr)
+    private unsafe void MotionTransDetour(MotionBase* thisPtr, ILayoutInstance* obj, Vector3* value)
     {
-        // there's one BgPart per interactable item on island sanctuary, and they constantly get destroyed and recreated (with collider toggled) (like streaming colliders, but on the underlying object)
-        // hardcoding the high bytes of the ID is easier than introducing logic to not destroy an object for X seconds, i guess
-        if (thisPtr->Id.InstanceKey >= 0xFFFA0275)
+        if (obj->Id.Type == InstanceType.BgPart && ((BgPartsLayoutInstance*)obj)->HasCollision())
+            return;
+        _motionTrans.Original(thisPtr, obj, value);
+    }
+
+    private unsafe void MotionRotDetour(MotionBase* thisPtr, ILayoutInstance* obj, Quaternion* value)
+    {
+        if (obj->Id.Type == InstanceType.BgPart && ((BgPartsLayoutInstance*)obj)->HasCollision())
+            return;
+        _motionRot.Original(thisPtr, obj, value);
+    }
+
+    private unsafe void MotionScaleDetour(MotionBase* thisPtr, ILayoutInstance* obj, Vector3* value)
+    {
+        if (obj->Id.Type == InstanceType.BgPart && ((BgPartsLayoutInstance*)obj)->HasCollision())
+            return;
+        _motionScale.Original(thisPtr, obj, value);
+    }
+
+    private unsafe void CreateObject(BgPartsLayoutInstance* thisPtr, string source)
+    {
+        if (!thisPtr->HasCollision())
             return;
 
         var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-        _objects[&thisPtr->ILayoutInstance] = new() { Instance = SceneTool.Get().CreateInstance(thisPtr), Enabled = (thisPtr->Flags3 & 0x10) != 0, ColliderEnabled = thisPtr->Collider != null && (thisPtr->Collider->VisibilityFlags & 1) != 0, Dirty = true };
+        Service.Log.Verbose($"create(bgpart): source={source}: {k:X16}");
+        _objects[&thisPtr->ILayoutInstance] = new()
+        {
+            Instance = SceneTool.Get().CreateInstance(thisPtr),
+            Enabled = thisPtr->HasEnabledFlag(),
+            //Transform = *(Transform*)&thisPtr->GraphicsObject->Position,
+            //ColliderEnabled = thisPtr->Collider != null && (thisPtr->Collider->VisibilityFlags & 1) != 0,
+            Dirty = true
+        };
     }
 
-    private unsafe void CreateObject(CollisionBoxLayoutInstance* thisPtr)
+    private unsafe void CreateObject(CollisionBoxLayoutInstance* thisPtr, string source)
     {
         var k = SceneTool.GetKey(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance);
-        _objects[&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance] = new() { Instance = SceneTool.Get().CreateInstance(thisPtr), Enabled = (thisPtr->Flags3 & 0x10) != 0, ColliderEnabled = thisPtr->Collider != null && (thisPtr->Collider->VisibilityFlags & 1) != 0, Dirty = true };
+        Service.Log.Verbose($"create(box): source={source}: {k:X16}");
+        _objects[&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance] = new()
+        {
+            Instance = SceneTool.Get().CreateInstance(thisPtr),
+            Enabled = thisPtr->HasEnabledFlag(),
+            //Transform = thisPtr->Transform,
+            //ColliderEnabled = thisPtr->Collider != null && (thisPtr->Collider->VisibilityFlags & 1) != 0,
+            Dirty = true
+        };
     }
 }
 
-public sealed class Grid : Subscribable<Grid.TileChangeArgs>
+public sealed class Tileset : Subscribable<Tileset.TileChangeArgs>
 {
     public record struct TileChangeArgs(uint Zone, int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects);
 
@@ -416,7 +477,13 @@ public sealed class Grid : Subscribable<Grid.TileChangeArgs>
 
     private readonly Lock _lock = new();
 
-    public IObservable<IList<TileChangeArgs>> Debounced(TimeSpan delay) => this.Window(() => this.Throttle(delay)).SelectMany(result => result.Distinct(t => (t.X, t.Z)).ToList());
+    private NavmeshCustomization Customization = new();
+
+    public IObservable<IList<TileChangeArgs>> Debounced(TimeSpan delay) => this.Select(t =>
+    {
+        Service.Log.Verbose($"tile change event {t.X}x{t.Z}");
+        return t;
+    }).Window(() => this.Throttle(delay)).SelectMany(result => result.Distinct(t => (t.X, t.Z)).ToList());
 
     public void Watch(ColliderSet set, CancellationToken token)
     {
@@ -434,25 +501,31 @@ public sealed class Grid : Subscribable<Grid.TileChangeArgs>
             {
                 if (_tiles[change.X, change.Z].Remove(change.Key))
                 {
-                    //Service.Log.Debug($"Removed object {change.Key:X16} from tile {change.X}x{change.Z}, count is now {_tiles[change.X, change.Z].Count}");
+                    //Service.Log.Verbose($"removed object {change.Key:X16} from tile {change.X}x{change.Z}, count is now {_tiles[change.X, change.Z].Count}");
                     modified.Add((change.X, change.Z));
                 }
             }
-            else
+            else if (Customization.FilterObject(change.Instance))
             {
                 _tiles[change.X, change.Z][change.Key] = change.Instance;
-                //Service.Log.Debug($"Added object {change.Key:X16} to tile {change.X}x{change.Z}, count is now {_tiles[change.X, change.Z].Count}");
+                //Service.Log.Verbose($"added object {change.Key:X16} to tile {change.X}x{change.Z}, count is now {_tiles[change.X, change.Z].Count}");
                 modified.Add((change.X, change.Z));
             }
+            else
+            {
+                //Service.Log.Verbose($"object {change.Key:X16} was excluded by customization");
+            }
+
             foreach (var (x, z) in modified)
                 Notify(new(change.Zone, x, z, _tiles[x, z]));
         }
     }
 
-    private void Clear(ColliderSet _)
+    private void Clear(ColliderSet cs)
     {
         lock (_lock)
         {
+            Customization = NavmeshCustomizationRegistry.ForTerritory(cs.LastLoadedZone);
             foreach (var t in _tiles)
                 t?.Clear();
         }

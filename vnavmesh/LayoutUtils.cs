@@ -1,6 +1,7 @@
 ﻿using Dalamud.Memory;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.Interop;
 using FFXIVClientStructs.STD;
 using System;
@@ -167,4 +168,14 @@ public unsafe static class LayoutUtils
 
     public static string FestivalString(GameMain.Festival f) => $"{(uint)(f.Phase << 16) | f.Id:X}";
     public static string FestivalsString(ReadOnlySpan<GameMain.Festival> f) => $"{FestivalString(f[0])}.{FestivalString(f[1])}.{FestivalString(f[2])}.{FestivalString(f[3])}";
+}
+
+static class LayoutExtensions
+{
+    public static bool HasCollision(ref readonly this BgPartsLayoutInstance p) => p.AnalyticShapeDataCrc > 0 || p.CollisionMeshPathCrc > 0;
+    public static bool HasEnabledFlag(ref readonly this BgPartsLayoutInstance p) => p.ILayoutInstance.HasEnabledFlag();
+    public static bool HasEnabledFlag(ref readonly this CollisionBoxLayoutInstance p) => p.TriggerBoxLayoutInstance.ILayoutInstance.HasEnabledFlag();
+    public static bool HasEnabledFlag(ref readonly this ILayoutInstance p) => (p.Flags3 & 0x10) != 0;
+
+    public static string Display(this Transform t) => $"Transform {{ Translation = {t.Translation}, Type = {t.Type}, Rotation = {t.Rotation}, Scale = {t.Scale} }}";
 }

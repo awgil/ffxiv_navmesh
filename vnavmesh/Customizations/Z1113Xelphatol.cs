@@ -3,10 +3,7 @@
 [CustomizationTerritory(1113)]
 class Z1113Xelphatol : NavmeshCustomization
 {
-    public override int Version => 1;
+    public override int Version => 2;
 
-    public override void CustomizeScene(SceneExtractor scene)
-    {
-        scene.Meshes.Remove("<box>");
-    }
+    public override bool FilterObject(InstanceWithMesh inst) => inst.Mesh.Path != "<box>";
 }

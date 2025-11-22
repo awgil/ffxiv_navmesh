@@ -49,7 +49,7 @@ public sealed partial class NavmeshManager : IDisposable
     public DirectoryInfo CacheDir { get; private set; }
 
     public readonly ColliderSet Scene = new();
-    private readonly Grid Grid = new();
+    private readonly Tileset Grid = new();
 
     private readonly CancellationTokenSource _taskSrc = new();
     private CancellationTokenSource? _queryToken = new();
@@ -229,6 +229,9 @@ public sealed partial class NavmeshManager : IDisposable
             return;
 
         if (Service.Condition.Any(ConditionFlag.InFlight, ConditionFlag.Diving, ConditionFlag.BetweenAreas51, ConditionFlag.Jumping, ConditionFlag.Mounted) || Service.ClientState.TerritoryType == 0)
+            return;
+
+        if (Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(Service.ClientState.TerritoryType)?.TerritoryIntendedUse.RowId != 1)
             return;
 
         if (Navmesh == null || Query == null || _loadTaskProgress >= 0)

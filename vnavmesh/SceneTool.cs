@@ -188,7 +188,7 @@ public class SceneTool
 
     public static unsafe ulong GetKey(ILayoutInstance* obj) => (ulong)obj->Id.InstanceKey << 32 | obj->SubId;
 
-    public unsafe InstanceWithMesh? CreateInstance(BgPartsLayoutInstance* bgPart)
+    public unsafe InstanceWithMesh? CreateInstance(BgPartsLayoutInstance* bgPart, Transform transform)
     {
         var key = GetKey(&bgPart->ILayoutInstance);
 
@@ -199,7 +199,6 @@ public class SceneTool
         {
             if (TryGetAnalyticShapeData(bgPart->AnalyticShapeDataCrc, bgPart->Layout, out var shape))
             {
-                var transform = *bgPart->GetTransformImpl();
                 var mtxBounds = Matrix4x4.CreateScale((shape.BoundsMax - shape.BoundsMin) * 0.5f);
                 mtxBounds.Translation = (shape.BoundsMax + shape.BoundsMin) * 0.5f;
                 var fullTransform = mtxBounds * shape.Transform.Compose() * transform.Compose();
@@ -228,7 +227,6 @@ public class SceneTool
             var path = GetCollisionMeshPathByCrc(bgPart->CollisionMeshPathCrc, bgPart->Layout);
             var mesh = GetMeshByPath(path, MeshType.FileMesh);
 
-            var transform = *bgPart->GetTransformImpl();
             var t2 = new Matrix4x3(transform.Compose());
             var bounds = CalculateMeshBounds(mesh, ref t2);
 
@@ -238,32 +236,32 @@ public class SceneTool
         return null;
     }
 
-    public unsafe InstanceWithMesh? CreateInstance(CollisionBoxLayoutInstance* cast)
+    public unsafe InstanceWithMesh? CreateInstance(CollisionBoxLayoutInstance* cast, Transform transform)
     {
         var key = GetKey(&cast->TriggerBoxLayoutInstance.ILayoutInstance);
 
         ulong mat = (ulong)cast->MaterialIdHigh << 32 | cast->MaterialIdLow;
         var matFlags = ExtractMaterialFlags(mat);
 
-        var transform = new Matrix4x3(cast->Transform.Compose());
+        var transM = new Matrix4x3(transform.Compose());
         switch (cast->TriggerBoxLayoutInstance.Type)
         {
             case ColliderType.Box:
-                return new(Meshes[_keyAnalyticBox], new(key, transform, CalculateBoxBounds(ref transform), matFlags, default), InstanceType.CollisionBox);
+                return new(Meshes[_keyAnalyticBox], new(key, transM, CalculateBoxBounds(ref transM), matFlags, default), InstanceType.CollisionBox);
             case ColliderType.Sphere:
-                return new(Meshes[_keyAnalyticSphere], new(key, transform, CalculateSphereBounds(key, ref transform), matFlags, default), InstanceType.CollisionBox);
+                return new(Meshes[_keyAnalyticSphere], new(key, transM, CalculateSphereBounds(key, ref transM), matFlags, default), InstanceType.CollisionBox);
             case ColliderType.Cylinder:
-                return new(Meshes[_keyAnalyticCylinder], new(key, transform, CalculateBoxBounds(ref transform), matFlags, default), InstanceType.CollisionBox);
+                return new(Meshes[_keyAnalyticCylinder], new(key, transM, CalculateBoxBounds(ref transM), matFlags, default), InstanceType.CollisionBox);
             case ColliderType.Plane:
-                return new(Meshes[_keyAnalyticPlaneSingle], new(key, transform, CalculatePlaneBounds(ref transform), matFlags, default), InstanceType.CollisionBox);
+                return new(Meshes[_keyAnalyticPlaneSingle], new(key, transM, CalculatePlaneBounds(ref transM), matFlags, default), InstanceType.CollisionBox);
             case ColliderType.PlaneTwoSided:
-                return new(Meshes[_keyAnalyticPlaneDouble], new(key, transform, CalculatePlaneBounds(ref transform), matFlags, default), InstanceType.CollisionBox);
+                return new(Meshes[_keyAnalyticPlaneDouble], new(key, transM, CalculatePlaneBounds(ref transM), matFlags, default), InstanceType.CollisionBox);
             case ColliderType.Mesh:
                 if (cast->PcbPathCrc != 0)
                 {
                     var path = GetCollisionMeshPathByCrc(cast->PcbPathCrc, cast->Layout);
                     var mesh = GetMeshByPath(path, MeshType.FileMesh);
-                    return new(mesh, new(key, transform, CalculateMeshBounds(mesh, ref transform), matFlags, default), InstanceType.CollisionBox);
+                    return new(mesh, new(key, transM, CalculateMeshBounds(mesh, ref transM), matFlags, default), InstanceType.CollisionBox);
                 }
                 break;
         }

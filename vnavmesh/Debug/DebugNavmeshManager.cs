@@ -121,6 +121,12 @@ class DebugNavmeshManager : IDisposable
 
     private void DrawPosition(string tag, Vector3 position)
     {
+        if (position == default)
+        {
+            _tree.LeafNode($"{tag} position: <none>");
+            return;
+        }
+
         _manager.Navmesh!.Mesh.CalcTileLoc(position.SystemToRecast(), out var tileX, out var tileZ);
         _tree.LeafNode($"{tag} position: {position:f3}, tile: {tileX}x{tileZ}, poly: {_manager.Query!.FindNearestMeshPoly(position):X}");
         var voxel = _manager.Query.FindNearestVolumeVoxel(position);

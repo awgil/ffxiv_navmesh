@@ -206,8 +206,8 @@ public unsafe class DebugLayout : IDisposable
                 case InstanceType.SharedGroup:
                 case InstanceType.HelperObject:
                     var instPrefab = (SharedGroupLayoutInstance*)inst;
-                    tree.LeafNode($"Motion controller (1): {(nint)instPrefab->MotionController1:X}");
-                    tree.LeafNode($"Motion controller (2): {(nint)instPrefab->MotionController2:X}");
+                    tree.LeafNode($"Action controller (1): {(nint)instPrefab->ActionController1:X}");
+                    tree.LeafNode($"Action controller (2): {(nint)instPrefab->ActionController2:X}");
                     tree.LeafNode($"Resource: {(instPrefab->ResourceHandle != null ? instPrefab->ResourceHandle->FileName : "<null>")}");
                     tree.LeafNode($"Flags: {instPrefab->PrefabFlags1:X8} {instPrefab->PrefabFlags2:X8}");
                     tree.LeafNode($"Timeline object: {(nint)instPrefab->TimelineObject:X}");
@@ -258,7 +258,6 @@ public unsafe class DebugLayout : IDisposable
                 case InstanceType.Timeline:
                     var instTime = (TimeLineLayoutInstance*)inst;
                     tree.LeafNode($"Parent: {SceneTool.GetKey(&instTime->Parent->ILayoutInstance):X}");
-                    tree.LeafNode($"Playback flags: {instTime->PlaybackFlags:X}");
                     var ptr = instTime->DataPtr;
                     tree.LeafNode($"Timeline data: autoplay={ptr->AutoPlay == 1}, loop={ptr->Loop == 1}");
                     var tobj = (LayoutObjectGroup*)instTime->TimelineObject;

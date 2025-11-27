@@ -69,7 +69,7 @@ public sealed partial class NavmeshManager : IDisposable
     private bool _initialized;
     private bool _enableCache = true;
 
-    public bool Paused = true;
+    public bool Paused = false;
 
     public NavmeshManager(DirectoryInfo cacheDir)
     {

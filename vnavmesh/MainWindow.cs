@@ -15,7 +15,8 @@ public class MainWindow : Window, IDisposable
     private DebugNavmeshCustom _debugNavmeshCustom;
     private DebugLayout _debugLayout;
     private DebugTileManager _debugTiles;
-    private DebugFloodFill _debugFF;
+    //private DebugFloodFill _debugFF;
+    private DebugTimeline _debugTimeline;
     private string _configDirectory;
 
     public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, string configDir) : base("Navmesh")
@@ -27,7 +28,7 @@ public class MainWindow : Window, IDisposable
         _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _configDirectory);
         _debugLayout = new(_dd, _debugGameColl);
         _debugTiles = new(manager, _dd, _debugGameColl);
-        _debugFF = new();
+        _debugTimeline = new();
     }
 
     public void Dispose()
@@ -96,9 +97,9 @@ public class MainWindow : Window, IDisposable
                 using (var tab = ImRaii.TabItem("Tabs"))
                     if (tab)
                         _debugTiles.Draw();
-                using (var tab = ImRaii.TabItem("Flood fill"))
+                using (var tab = ImRaii.TabItem("Action timeline"))
                     if (tab)
-                        _debugFF.Draw();
+                        _debugTimeline.Draw();
             }
         }
     }

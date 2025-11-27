@@ -2,11 +2,14 @@
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using FFXIVClientStructs.Interop;
 using FFXIVClientStructs.STD;
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Navmesh;
 
@@ -168,6 +171,27 @@ public unsafe static class LayoutUtils
 
     public static string FestivalString(GameMain.Festival f) => $"{(uint)(f.Phase << 16) | f.Id:X}";
     public static string FestivalsString(ReadOnlySpan<GameMain.Festival> f) => $"{FestivalString(f[0])}.{FestivalString(f[1])}.{FestivalString(f[2])}.{FestivalString(f[3])}";
+    public static unsafe T ReadField<T>(void* address, int offset) where T : unmanaged => *(T*)((IntPtr)address + offset);
+
+    public static string DumpBytes(ReadOnlySpan<byte> data)
+    {
+        var sb = new StringBuilder();
+        for (var i = 0; i < data.Length; i++)
+        {
+            sb.Append(data[i].ToString("X2"));
+            sb.Append(' ');
+        }
+        return sb.ToString();
+    }
+
+    public static void DumpVt(void* ptr)
+    {
+        if (ptr == null)
+            return;
+        var vt = *(nint*)ptr;
+        var m = Process.GetCurrentProcess().MainModule.BaseAddress;
+        Service.Log.Debug($"VT of {(nint)ptr:X}: +{vt - m:X}");
+    }
 }
 
 static class LayoutExtensions
@@ -178,4 +202,5 @@ static class LayoutExtensions
     public static bool HasEnabledFlag(ref readonly this ILayoutInstance p) => (p.Flags3 & 0x10) != 0;
 
     public static string Display(this Transform t) => $"Transform {{ Translation = {t.Translation}, Type = {t.Type}, Rotation = {t.Rotation}, Scale = {t.Scale} }}";
+    public static string Display(this Matrix4x3 m) => $"Matrix {{ {m.M11}, {m.M12}, {m.M13}; {m.M21}, {m.M22}, {m.M23}; {m.M31}, {m.M32}, {m.M33}; {m.M41}, {m.M42}, {m.M43} }}";
 }

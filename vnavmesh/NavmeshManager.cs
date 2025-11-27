@@ -48,8 +48,8 @@ public sealed partial class NavmeshManager : IDisposable
 
     public DirectoryInfo CacheDir { get; private set; }
 
-    public readonly ColliderSet Scene = new();
-    private readonly Tileset Grid = new();
+    public readonly LayoutObjectSet Scene = new();
+    private readonly TileSet Grid = new();
 
     private readonly CancellationTokenSource _taskSrc = new();
     private CancellationTokenSource? _queryToken = new();
@@ -69,6 +69,8 @@ public sealed partial class NavmeshManager : IDisposable
     private bool _initialized;
     private bool _enableCache = true;
 
+    public bool Paused = true;
+
     public NavmeshManager(DirectoryInfo cacheDir)
     {
         CacheDir = cacheDir;
@@ -83,7 +85,8 @@ public sealed partial class NavmeshManager : IDisposable
         Grid.Watch(Scene, _taskSrc.Token);
 
         // trigger rebuilds when updates stop
-        Grid.Debounced(TimeSpan.FromMilliseconds(500))
+        Grid.Debounced(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(10))
+            .Where(_ => !Paused)
             .ForEachAsync(async changes =>
             {
                 _numStarted += changes.Count;
@@ -125,7 +128,12 @@ public sealed partial class NavmeshManager : IDisposable
                 _numFinished = _numStarted = 0;
                 _loadTaskProgress = -1;
                 _enableCache = true;
-            }, _taskSrc.Token);
+            }, _taskSrc.Token)
+            .ContinueWith(t =>
+            {
+                Log(t.Exception, "Tile watcher terminated.");
+                _taskSrc.Cancel();
+            });
 
         // prepare a task with correct task scheduler that other tasks can be chained off
         _lastLoadQueryTask = Task.Run(async () =>
@@ -153,7 +161,8 @@ public sealed partial class NavmeshManager : IDisposable
         if (!_initialized || Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
             return;
 
-        Scene.Poll();
+        if (!Paused)
+            Scene.Poll();
 
         unsafe
         {
@@ -170,7 +179,7 @@ public sealed partial class NavmeshManager : IDisposable
             RunSeedMode();
     }
 
-    public void OnZoneChange(ColliderSet scene)
+    public void OnZoneChange(LayoutObjectSet scene)
     {
         ClearState();
         Array.Fill<uint>(ActiveFestivals, 0);
@@ -304,20 +313,25 @@ public sealed partial class NavmeshManager : IDisposable
         var dir = new DirectoryInfo($"{CacheDir}/z{data.Zone}");
         var cacheFile = new FileInfo(dir.FullName + $"/{x:d2}-{z:d2}-{cacheKey}.tile");
 
-        try
+        if (allowCache)
         {
-            if (cacheFile.Exists && allowCache)
+            try
             {
-                using var stream = cacheFile.OpenRead();
-                using var reader = new BinaryReader(stream);
-                var tile2 = Navmesh.DeserializeSingleTile(reader, customization.Version);
-                Log($"loaded tile {data.X}x{data.Z} from cache");
-                return tile2;
+                if (cacheFile.Exists)
+                {
+                    using var stream = cacheFile.OpenRead();
+                    using var reader = new BinaryReader(stream);
+                    var tile2 = Navmesh.DeserializeSingleTile(reader, customization.Version);
+                    Log($"loaded tile {data.X}x{data.Z} from cache");
+                    return tile2;
+                }
+                else if (dir.Exists)
+                    ShowDiff(data, dir);
             }
-        }
-        catch (Exception ex)
-        {
-            Log(ex, "unable to load tile from cache");
+            catch (Exception ex)
+            {
+                Log(ex, "unable to load tile from cache");
+            }
         }
 
         var builder = new NavmeshBuilder(data, customization, customization.IsFlyingSupported(data.Zone));
@@ -542,7 +556,8 @@ public sealed partial class NavmeshManager : IDisposable
     }
 
     public static void Log(string message) => Service.Log.Debug($"[NavmeshManager] [{Environment.CurrentManagedThreadId,4}] {message}");
-    private static void Log(Exception ex, string message) => Service.Log.Warning(ex, $"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
+    private static void LogV(string message) => Service.Log.Verbose($"[NavmeshManager] [{Environment.CurrentManagedThreadId,4}] {message}");
+    private static void Log(Exception? ex, string message) => Service.Log.Warning(ex, $"[TileManager] [{Environment.CurrentManagedThreadId,4}] {message}");
     private static void LogTaskError(Task task)
     {
         if (task.IsFaulted)
@@ -562,7 +577,71 @@ public sealed partial class NavmeshManager : IDisposable
         {
             using var writer = new StreamWriter(wstream);
             foreach (var (key, tileobj) in data.Objects)
-                writer.WriteLine($"{key:X16} {tileobj.Mesh.Path}");
+                writer.WriteLine($"{key:X16} {tileobj.Mesh.Path} {(int)tileobj.Instance.WorldBounds.Min.X} {(int)tileobj.Instance.WorldBounds.Min.Y} {(int)tileobj.Instance.WorldBounds.Min.Z} {(int)tileobj.Instance.WorldBounds.Max.X} {(int)tileobj.Instance.WorldBounds.Max.Y} {(int)tileobj.Instance.WorldBounds.Max.Z}");
+        }
+    }
+
+    private static void ShowDiff(Tile t, DirectoryInfo cacheDir)
+    {
+        var tileKeys = t.Objects.Select(kv => (kv.Key, kv.Value.Mesh.Path)).ToList();
+
+        foreach (var listfile in cacheDir.GetFiles($"{t.X:d2}-{t.Z:d2}-*.txt"))
+        {
+            List<(ulong, string)> keys = [];
+
+            using var stream = listfile.OpenRead();
+            using var reader = new StreamReader(stream);
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                var parts = line.Split(' ', 2);
+                keys.Add((ulong.Parse(parts[0], System.Globalization.NumberStyles.HexNumber), parts[1]));
+            }
+            LogV($"testing tile contents against {listfile.Name}");
+            CompareLists(tileKeys, keys);
+        }
+    }
+
+    private static void CompareLists(List<(ulong, string)> sourceKeys, List<(ulong, string)> cacheKeys)
+    {
+        int i = 0, j = 0;
+
+        while (true)
+        {
+            if (i >= sourceKeys.Count)
+            {
+                for (; j < cacheKeys.Count; j++)
+                {
+                    LogV($"trailing item in cache: {cacheKeys[j].Item1:X16} {cacheKeys[j].Item2}");
+                }
+                return;
+            }
+            if (j >= cacheKeys.Count)
+            {
+                for (; i < sourceKeys.Count; i++)
+                {
+                    LogV($"trailing item in tile: {sourceKeys[i].Item1:X16} {sourceKeys[i].Item2}");
+                }
+                return;
+            }
+
+            var (k1, path1) = sourceKeys[i];
+            var (k2, path2) = cacheKeys[j];
+            if (k1 == k2)
+            {
+                i++;
+                j++;
+            }
+            else if (k1 < k2)
+            {
+                LogV($"missing from cache: {k1:X16} {path1}");
+                i++;
+            }
+            else if (k1 > k2)
+            {
+                LogV($"missing from tile: {k2:X16} {path2}");
+                j++;
+            }
         }
     }
 }

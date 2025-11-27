@@ -4,6 +4,7 @@ using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Security.Cryptography;
@@ -25,10 +26,24 @@ public readonly record struct Tile(int X, int Z, SortedDictionary<ulong, Instanc
 
     public readonly string GetCacheKey()
     {
-        var span = Objects.Keys.ToArray();
-        var bytes = new byte[span.Length * sizeof(ulong)];
-        Buffer.BlockCopy(span, 0, bytes, 0, bytes.Length);
-        return Convert.ToHexString(MD5.HashData(bytes));
+        var buf = new MemoryStream();
+        var writer = new BinaryWriter(buf);
+        foreach (var (key, inst) in Objects)
+        {
+            writer.Write(key);
+            writer.Write((int)inst.Instance.WorldBounds.Min.X);
+            writer.Write((int)inst.Instance.WorldBounds.Min.Y);
+            writer.Write((int)inst.Instance.WorldBounds.Min.Z);
+            writer.Write((int)inst.Instance.WorldBounds.Max.X);
+            writer.Write((int)inst.Instance.WorldBounds.Max.Y);
+            writer.Write((int)inst.Instance.WorldBounds.Max.Z);
+        }
+        writer.Flush();
+        buf.Position = 0;
+        var contents = MD5.HashData(buf);
+        writer.Dispose();
+        buf.Dispose();
+        return Convert.ToHexString(contents);
     }
 }
 

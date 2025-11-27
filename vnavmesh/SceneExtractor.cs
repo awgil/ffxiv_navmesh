@@ -85,6 +85,8 @@ public class SceneExtractor
         public PrimitiveFlags ForceClearPrimFlags = forceClearPrimFlags;
 
         public MeshInstance Clone() => new(Id, WorldTransform, WorldBounds, ForceSetPrimFlags, ForceClearPrimFlags);
+
+        public override string ToString() => $"MeshInstance {{ Id = {Id:X16}, WorldTransform = {WorldTransform.Display()}, Bounds = {WorldBounds.Min} - {WorldBounds.Max}, Flags = {ForceSetPrimFlags}, ~Flags = {ForceClearPrimFlags} }}";
     }
 
     public class Mesh

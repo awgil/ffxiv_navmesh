@@ -18,7 +18,7 @@ public sealed unsafe class DebugTileManager : IDisposable
     private readonly DebugGameCollision _coll;
     private (int, int) _hovered;
     private (int, int) _selected = (-1, -1);
-    private ColliderSet Scene => _tiles.Scene;
+    private LayoutObjectSet Scene => _tiles.Scene;
 
     private readonly EffectMesh.Data[,] _drawMeshes = new EffectMesh.Data[16, 16];
     private readonly DebugNavmeshCustom.PerTile?[,] _perTile = new DebugNavmeshCustom.PerTile?[16, 16];

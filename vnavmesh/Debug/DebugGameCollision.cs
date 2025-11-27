@@ -520,6 +520,9 @@ public unsafe class DebugGameCollision : IDisposable
 
     public void VisualizeCollider(Collider* coll, BitMask filterId, BitMask filterMask)
     {
+        if (coll == null)
+            return;
+
         switch (coll->GetColliderType())
         {
             case ColliderType.Streamed:

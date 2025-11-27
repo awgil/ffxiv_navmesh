@@ -104,6 +104,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.CreatePrimary> _bgCreate;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.DestroyPrimary> _bgDestroy;
+    private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetActive> _bgToggle;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetTransformImpl> _bgTransF;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetTranslationImpl> _bgTrans;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetRotationImpl> _bgRot;
@@ -111,6 +112,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
     private readonly HookAddress<CollisionBoxLayoutInstance.Delegates.CreatePrimary> _boxCreate;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.DestroyPrimary> _boxDestroy;
+    private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetActive> _boxToggle;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetTranslationImpl> _boxTrans;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetRotationImpl> _boxRot;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetScaleImpl> _boxScale;
@@ -153,6 +155,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
         _bgCreate = new((nint)bgVt->CreatePrimary, BgCreateDetour, false);
         _bgDestroy = new((nint)bgVt->DestroyPrimary, BgDestroyDetour, false);
+        _bgToggle = new((nint)bgVt->SetActive, BgToggleDetour, false);
         _bgTransF = new((nint)bgVt->SetTransformImpl, BgTransFDetour, false);
         _bgTrans = new((nint)bgVt->SetTranslationImpl, BgTransDetour, false);
         _bgRot = new((nint)bgVt->SetRotationImpl, BgRotDetour, false);
@@ -160,6 +163,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
         _boxCreate = new((nint)boxVt->CreatePrimary, BoxCreateDetour, false);
         _boxDestroy = new((nint)boxVt->DestroyPrimary, BoxDestroyDetour, false);
+        _boxToggle = new((nint)boxVt->SetActive, BoxToggleDetour, false);
         _boxTrans = new((nint)boxVt->SetTranslationImpl, BoxTransDetour, false);
         _boxRot = new((nint)boxVt->SetRotationImpl, BoxRotDetour, false);
         _boxScale = new((nint)boxVt->SetScaleImpl, BoxScaleDetour, false);
@@ -178,21 +182,19 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
         _bgCreate.Enabled = true;
         _bgDestroy.Enabled = true;
-        //_bgTransF.Enabled = true;
-        //_bgTrans.Enabled = true;
-        //_bgRot.Enabled = true;
-        //_bgScale.Enabled = true;
+        _bgToggle.Enabled = true;
+        _bgTransF.Enabled = true;
+        _bgTrans.Enabled = true;
+        _bgRot.Enabled = true;
+        _bgScale.Enabled = true;
 
         _boxCreate.Enabled = true;
         _boxDestroy.Enabled = true;
-        //_boxTrans.Enabled = true;
-        //_boxRot.Enabled = true;
-        //_boxScale.Enabled = true;
+        _boxToggle.Enabled = true;
+        _boxTrans.Enabled = true;
+        _boxRot.Enabled = true;
+        _boxScale.Enabled = true;
         _boxColl.Enabled = true;
-
-        //_motionTrans.Enabled = true;
-        //_motionRot.Enabled = true;
-        //_motionScale.Enabled = true;
 
         _sgInit.Enabled = true;
 
@@ -206,6 +208,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
             Service.ClientState.ZoneInit -= OnZoneInit;
             _bgCreate.Dispose();
             _bgDestroy.Dispose();
+            _bgToggle.Dispose();
             _bgTransF.Dispose();
             _bgTrans.Dispose();
             _bgRot.Dispose();
@@ -213,6 +216,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
             _boxCreate.Dispose();
             _boxDestroy.Dispose();
+            _boxToggle.Dispose();
             _boxTrans.Dispose();
             _boxRot.Dispose();
             _boxScale.Dispose();
@@ -261,13 +265,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         if (modified && isTrace)
             Service.Log.Verbose($"object {k:X16} was dirty");
 
-        // we could also track this by hooking the vfunc, but i would like to hook as few functions as realistically possible, and this is an extremely cheap check (just a bit test)
-        var wasEnabled = obj.Enabled;
-        obj.Enabled = pointer.Value->HasEnabledFlag();
-        if (obj.Enabled != wasEnabled && isTrace)
-            Service.Log.Verbose($"object {k:X16} was " + (wasEnabled ? "disabled" : "enabled"));
-        modified |= obj.Enabled != wasEnabled;
-
+        // material flags can get modified "at random" by other sources
         var matPrev = obj.Instance.Instance.ForceSetPrimFlags;
         var matCur = GetMaterialFlags(pointer.Value);
         if (matPrev != matCur)
@@ -278,42 +276,11 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
             modified = true;
         }
 
-        if (!obj.IsBgPart)
-        {
-            // bgpart colliders are toggled by streamingmanager, so we can't track them, it would cause too many rebuilds
-            // collisionboxes are not streamed; almost all collisionboxes that get toggled have the 0x400 flag, but there are just enough missing ones to be annoying
-            var wasColliderEnabled = obj.ColliderEnabled;
-            obj.ColliderEnabled = pointer.Value->IsColliderActive();
-            if (obj.ColliderEnabled != wasColliderEnabled && !matCur.HasFlag(SceneExtractor.PrimitiveFlags.Transparent))
-                Service.Log.Verbose($"object {k:X16} collider was " + (wasColliderEnabled ? "disabled" : "enabled"));
-            modified |= obj.ColliderEnabled != wasColliderEnabled;
-        }
-
-        if (!_transformOverride.ContainsKey(SceneTool.GetKey(pointer.Value)))
-        {
-            if (isTrace)
-                Service.Log.Verbose($"checking transform of {k:X16}");
-            var tPrev = obj.Transform;
-            var tCurPtr = pointer.Value->GetTransformImpl();
-            var tCur = new Span<byte>((byte*)tCurPtr, sizeof(Transform));
-            var tPrevSpan = new Span<byte>((byte*)&tPrev, tCur.Length);
-            if (!MemoryExtensions.SequenceEqual(tCur, tPrevSpan))
-            {
-                if (isTrace)
-                    Service.Log.Verbose($"object {k:X16} was moved in game world: previous was {tPrev.Display()}, current is {tCurPtr->Display()}");
-                obj.Recreate(pointer.Value, *tCurPtr);
-
-                modified = true;
-            }
-        }
-
         if (modified)
         {
             TraceObject(pointer.Value, "trigger-modify " + obj.Transform.Display());
             NotifyObject(obj.Instance, obj.Enabled && obj.ColliderEnabled);
         }
-        //else if (isTrace)
-        //    Service.Log.Verbose("traced object was not modified, doing nothing");
     }
 
     private void NotifyObject(InstanceWithMesh inst, bool enabled)
@@ -400,32 +367,93 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         }
     }
 
+    private unsafe void BgToggleDetour(BgPartsLayoutInstance* thisPtr, bool active)
+    {
+        _bgToggle.Original(thisPtr, active);
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
+        {
+            if (obj.Enabled != active)
+            {
+                obj.Enabled = active;
+                obj.Dirty = true;
+            }
+        }
+    }
+
     private unsafe void BgTransFDetour(BgPartsLayoutInstance* thisPtr, Transform* t)
     {
-        if (thisPtr->HasCollision())
-            TraceObject(&thisPtr->ILayoutInstance, "transform (bg)");
         _bgTransF.Original(thisPtr, t);
+
+        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+            return;
+
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
+        {
+            var cur = inst.Transform;
+            if (t->Translation != cur.Translation || t->Rotation != cur.Rotation || t->Scale != cur.Scale)
+            {
+                TraceObject(&thisPtr->ILayoutInstance, "transform(bg)");
+                inst.Recreate(&thisPtr->ILayoutInstance, cur);
+                inst.Dirty = true;
+            }
+        }
     }
 
     private unsafe void BgTransDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
     {
-        if (thisPtr->HasCollision())
-            TraceObject(&thisPtr->ILayoutInstance, "translation (bg)");
         _bgTrans.Original(thisPtr, value);
+
+        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+            return;
+
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
+        {
+            if (*value != inst.Transform.Translation)
+            {
+                TraceObject(&thisPtr->ILayoutInstance, "translation(bg)");
+                var tnew = inst.Transform with { Translation = *value };
+                inst.Recreate(&thisPtr->ILayoutInstance, tnew);
+                inst.Dirty = true;
+            }
+        }
     }
 
     private unsafe void BgRotDetour(BgPartsLayoutInstance* thisPtr, Quaternion* value)
     {
-        if (thisPtr->HasCollision())
-            TraceObject(&thisPtr->ILayoutInstance, "rotation (bg)");
         _bgRot.Original(thisPtr, value);
+
+        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+            return;
+
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
+        {
+            if (*value != inst.Transform.Rotation)
+            {
+                TraceObject(&thisPtr->ILayoutInstance, "rotation(bg)");
+                var tnew = inst.Transform with { Rotation = *value };
+                inst.Recreate(&thisPtr->ILayoutInstance, tnew);
+                inst.Dirty = true;
+            }
+        }
     }
 
     private unsafe void BgScaleDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
     {
-        if (thisPtr->HasCollision())
-            TraceObject(&thisPtr->ILayoutInstance, "scale (bg)");
         _bgScale.Original(thisPtr, value);
+
+        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+            return;
+
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
+        {
+            if (*value != inst.Transform.Scale)
+            {
+                TraceObject(&thisPtr->ILayoutInstance, "scale(bg)");
+                var tnew = inst.Transform with { Scale = *value };
+                inst.Recreate(&thisPtr->ILayoutInstance, tnew);
+                inst.Dirty = true;
+            }
+        }
     }
 
     private unsafe void BoxCreateDetour(CollisionBoxLayoutInstance* thisPtr, Transform* transform, void* pathOrType)
@@ -444,29 +472,88 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         }
     }
 
+    private unsafe void BoxToggleDetour(TriggerBoxLayoutInstance* thisPtr, bool active)
+    {
+        _boxToggle.Original(thisPtr, active);
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
+        {
+            if (obj.Enabled != active)
+            {
+                obj.Enabled = active;
+                obj.Dirty = true;
+            }
+        }
+    }
+
     private unsafe void BoxTransDetour(TriggerBoxLayoutInstance* thisPtr, Vector3* value)
     {
-        TraceObject(&thisPtr->ILayoutInstance, "translation (box)");
         _boxTrans.Original(thisPtr, value);
+
+        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+            return;
+
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
+        {
+            if (*value != inst.Transform.Translation)
+            {
+                TraceObject(&thisPtr->ILayoutInstance, "translation(box)");
+                var tnew = inst.Transform with { Translation = *value };
+                inst.Recreate(&thisPtr->ILayoutInstance, tnew);
+                inst.Dirty = true;
+            }
+        }
     }
 
     private unsafe void BoxRotDetour(TriggerBoxLayoutInstance* thisPtr, Quaternion* value)
     {
-        TraceObject(&thisPtr->ILayoutInstance, "rotation (box)");
         _boxRot.Original(thisPtr, value);
+
+        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+            return;
+
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
+        {
+            if (*value != inst.Transform.Rotation)
+            {
+                TraceObject(&thisPtr->ILayoutInstance, "rotation(box)");
+                var tnew = inst.Transform with { Rotation = *value };
+                inst.Recreate(&thisPtr->ILayoutInstance, tnew);
+                inst.Dirty = true;
+            }
+        }
     }
 
     private unsafe void BoxScaleDetour(TriggerBoxLayoutInstance* thisPtr, Vector3* value)
     {
-        TraceObject(&thisPtr->ILayoutInstance, "scale (box)");
         _boxScale.Original(thisPtr, value);
+
+        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+            return;
+
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
+        {
+            if (*value != inst.Transform.Scale)
+            {
+                TraceObject(&thisPtr->ILayoutInstance, "scale(box)");
+                var tnew = inst.Transform with { Scale = *value };
+                inst.Recreate(&thisPtr->ILayoutInstance, tnew);
+                inst.Dirty = true;
+            }
+        }
     }
 
     private unsafe void BoxCollDetour(TriggerBoxLayoutInstance* thisPtr, bool active)
     {
         _boxColl.Original(thisPtr, active);
-        //if (thisPtr->Id.Type == InstanceType.CollisionBox)
-        //    Service.Log.Debug($"toggling collider of object {SceneTool.GetKey(&thisPtr->ILayoutInstance):X}");
+
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
+        {
+            if (inst.ColliderEnabled != active)
+            {
+                inst.ColliderEnabled = active;
+                inst.Dirty = true;
+            }
+        }
     }
 
     private unsafe void SgInitDetour(SharedGroupLayoutInstance* thisPtr, void* data)

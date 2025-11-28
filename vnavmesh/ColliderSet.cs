@@ -1,4 +1,5 @@
-﻿using Dalamud.Plugin.Services;
+﻿using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
@@ -229,7 +230,6 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
     protected override void OnUnsubscribeAll()
     {
-        Service.ClientState.ZoneInit -= OnZoneInit;
         Service.Framework.Update -= Tick;
 
         if (_initTaskSrc != null)
@@ -307,6 +307,8 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
     public override void Dispose(bool disposing)
     {
+        Service.ClientState.ZoneInit -= OnZoneInit;
+
         _bgCreate.Dispose();
         _bgProps.Dispose();
         _bgDestroy.Dispose();
@@ -337,6 +339,9 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
             Service.Log.Warning("not calling Tick() while init task is running");
             return;
         }
+
+        if (Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
+            return;
 
         foreach (var (ptr, obj) in _dirtyObjects)
         {

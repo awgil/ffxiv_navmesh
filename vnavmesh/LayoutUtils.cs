@@ -201,6 +201,7 @@ static class LayoutExtensions
     public static bool HasEnabledFlag(ref readonly this CollisionBoxLayoutInstance p) => p.TriggerBoxLayoutInstance.ILayoutInstance.HasEnabledFlag();
     public static bool HasEnabledFlag(ref readonly this ILayoutInstance p) => (p.Flags3 & 0x10) != 0;
 
+    public static string Display(this AABB b) => $"AABB {{ Min = {b.Min}, Max = {b.Max} }}";
     public static string Display(this Transform t) => $"Transform {{ Translation = {t.Translation}, Type = {t.Type}, Rotation = {t.Rotation}, Scale = {t.Scale} }}";
     public static string Display(this Matrix4x3 m) => $"Matrix {{ {m.M11}, {m.M12}, {m.M13}; {m.M21}, {m.M22}, {m.M23}; {m.M31}, {m.M32}, {m.M33}; {m.M41}, {m.M42}, {m.M43} }}";
 }

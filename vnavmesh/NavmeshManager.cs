@@ -49,7 +49,8 @@ public sealed partial class NavmeshManager : IDisposable
     public DirectoryInfo CacheDir { get; private set; }
 
     public readonly LayoutObjectSet Scene = new();
-    private readonly TileSet Grid = new();
+    private TileSet? Grid;
+    private IDisposable? _tileSubscription;
 
     private readonly CancellationTokenSource _taskSrc = new();
     private CancellationTokenSource? _queryToken = new();
@@ -66,7 +67,6 @@ public sealed partial class NavmeshManager : IDisposable
     private readonly Lock meshLock = new();
     private readonly SemaphoreSlim _sem = new(0);
 
-    private bool _initialized;
     private bool _enableCache = true;
 
     public bool Paused = false;
@@ -81,88 +81,23 @@ public sealed partial class NavmeshManager : IDisposable
 
         Scene.ZoneChanged += OnZoneChange;
 
-        // update object list whenever scene changes
-        Grid.Watch(Scene, _taskSrc.Token);
-
-        // trigger rebuilds when updates stop
-        Grid.Debounced(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(10))
-            .Where(_ => !Paused)
-            .ForEachAsync(async changes =>
-            {
-                _numStarted += changes.Count;
-                var zone = changes[0].Zone;
-                List<Task> tiles = [];
-                var enableCache = _enableCache;
-                foreach (var tile in changes)
-                {
-                    var t = new Tile(tile.X, tile.Z, new SortedDictionary<ulong, InstanceWithMesh>(tile.Objects.ToDictionary(k => k.Key, k => k.Value with { Instance = k.Value.Instance.Clone() })), Customization, zone);
-                    tiles.Add(
-                        Task.Run(async () => await BuildTile(t, enableCache, _taskSrc.Token), _taskSrc.Token)
-                            .ContinueWith(_ =>
-                            {
-                                Interlocked.Add(ref _numFinished, 1);
-                                _loadTaskProgress = (float)_numFinished / _numStarted;
-                            })
-                    );
-                }
-
-                await Task.WhenAll(tiles);
-                if (_numFinished < _numStarted)
-                    return;
-
-                if (Mesh != null && zone == Service.ClientState.TerritoryType)
-                {
-                    _queryToken?.Cancel();
-                    _queryToken = new();
-                    Customization.CustomizeMesh(Mesh, [.. ActiveFestivals]);
-                    Navmesh = new(Customization.Version, Mesh, Volume);
-                    Query = new(Navmesh);
-
-                    var ff = await FloodFill.GetAsync();
-                    if (ff.Seeds.TryGetValue(zone, out var ss))
-                        Prune(ss.Select(s => (Vector3)s));
-
-                    OnNavmeshChanged?.Invoke(Navmesh, Query);
-                }
-
-                _numFinished = _numStarted = 0;
-                _loadTaskProgress = -1;
-                _enableCache = true;
-            }, _taskSrc.Token)
-            .ContinueWith(t =>
-            {
-                Log(t.Exception, "Tile watcher terminated.");
-                _taskSrc.Cancel();
-            });
-
-        // prepare a task with correct task scheduler that other tasks can be chained off
-        _lastLoadQueryTask = Task.Run(async () =>
-        {
-            // fire change events for all existing layout objects when the plugin loads
-            await Service.Framework.Run(() => Scene.Initialize());
-
-            _initialized = true;
-
-            Log("Tasks kicked off");
-        });
+        _lastLoadQueryTask = Service.Framework.Run(InitGrid);
     }
 
     public void Dispose()
     {
         Log("Disposing");
         _taskSrc.Cancel();
-        Grid.Dispose();
+        _tileSubscription?.Dispose();
+        Grid?.Dispose();
         Scene.Dispose();
         ClearState();
     }
 
-    public void Update()
+    public unsafe void Update()
     {
-        if (!_initialized || Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
+        if (Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
             return;
-
-        if (!Paused)
-            Scene.Poll();
 
         unsafe
         {
@@ -218,11 +153,74 @@ public sealed partial class NavmeshManager : IDisposable
             });
     }
 
+    public void InitGrid()
+    {
+        Log("Initializing tile watch");
+        _tileSubscription?.Dispose();
+        Grid?.Dispose();
+        Grid = new();
+
+        // update object list whenever scene changes
+        Grid.Watch(Scene);
+
+        // trigger rebuilds when updates stop
+        _tileSubscription = Grid.Debounced(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(10))
+            .SelectMany(changes => Observable.FromAsync(async () =>
+            {
+                _numStarted += changes.Count;
+                var zone = changes[0].Zone;
+                List<Task> tiles = [];
+                var enableCache = _enableCache;
+                foreach (var tile in changes)
+                {
+                    var t = new Tile(tile.X, tile.Z, new SortedDictionary<ulong, InstanceWithMesh>(tile.Objects.ToDictionary(k => k.Key, k => k.Value with { Instance = k.Value.Instance.Clone() })), Customization, zone);
+                    tiles.Add(
+                        Task.Run(async () => await BuildTile(t, enableCache, _taskSrc.Token), _taskSrc.Token)
+                            .ContinueWith(_ =>
+                            {
+                                Interlocked.Add(ref _numFinished, 1);
+                                _loadTaskProgress = (float)_numFinished / _numStarted;
+                            })
+                    );
+                }
+
+                await Task.WhenAll(tiles);
+                if (_numFinished < _numStarted)
+                    return;
+
+                if (Mesh != null && zone == Service.ClientState.TerritoryType)
+                {
+                    _queryToken?.Cancel();
+                    _queryToken = new();
+                    Customization.CustomizeMesh(Mesh, [.. ActiveFestivals]);
+                    Navmesh = new(Customization.Version, Mesh, Volume);
+                    Query = new(Navmesh);
+
+                    var ff = await FloodFill.GetAsync();
+                    if (ff.Seeds.TryGetValue(zone, out var ss))
+                        Prune(ss.Select(s => (Vector3)s));
+
+                    OnNavmeshChanged?.Invoke(Navmesh, Query);
+                }
+
+                _numFinished = _numStarted = 0;
+                _loadTaskProgress = -1;
+                _enableCache = true;
+            }))
+            .Subscribe(_ =>
+            {
+                Log("tile batch completed");
+            }, ex =>
+            {
+                Log(ex, "tile batch failed");
+            });
+    }
+
     public bool Reload(bool allowLoadFromCache)
     {
         _enableCache = allowLoadFromCache;
         ClearState();
-        Scene.Initialize();
+        InitGrid();
         return true;
     }
 
@@ -260,6 +258,11 @@ public sealed partial class NavmeshManager : IDisposable
             }, default);
         }
     }
+
+    //private async Task BuildManyTiles(IList<TileSet.TileChangeArgs> changes)
+    //{
+
+    //}
 
     private async Task BuildTile(Tile data, bool allowCache, CancellationToken token)
     {

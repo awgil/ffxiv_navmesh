@@ -59,6 +59,10 @@ public sealed unsafe class DebugTileManager : IDisposable
         var pos2 = Service.ClientState.LocalPlayer?.Position ?? new();
 
         ImGui.Checkbox("Track intermediates", ref _tiles.TrackIntermediates);
+        var timeSinceUpd = (DateTime.Now - Scene.LastUpdate).TotalSeconds;
+        ImGui.TextUnformatted($"Last update: {timeSinceUpd:f3}s ago");
+        if (ImGui.Button("Restart tile watch"))
+            _tiles.InitGrid();
 
         _hovered = (-1, -1);
 

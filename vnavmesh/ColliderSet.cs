@@ -1,15 +1,19 @@
-﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+﻿using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.Interop;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Reactive.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Navmesh;
 
@@ -20,14 +24,28 @@ public abstract class Subscribable<TVal> : IObservable<TVal>, IDisposable
     public IDisposable Subscribe(IObserver<TVal> observer)
     {
         var sub = new Subscription<TVal>(this, observer);
+        var cnt = _subscribers.Count;
         _subscribers.Add(sub);
+        if (cnt == 0)
+        {
+            Service.Log.Verbose($"{GetType()}: OnSubscribeFirst");
+            OnSubscribeFirst();
+        }
         return sub;
     }
 
     public void Unsubscribe(Subscription<TVal> subscriber)
     {
         _subscribers.Remove(subscriber);
+        if (_subscribers.Count == 0)
+        {
+            Service.Log.Verbose($"{GetType()}: OnUnsubscribeAll");
+            OnUnsubscribeAll();
+        }
     }
+
+    protected virtual void OnSubscribeFirst() { }
+    protected virtual void OnUnsubscribeAll() { }
 
     protected void Notify(TVal val)
     {
@@ -35,10 +53,17 @@ public abstract class Subscribable<TVal> : IObservable<TVal>, IDisposable
             s.Observer.OnNext(val);
     }
 
+    protected void NotifyError(Exception e)
+    {
+        foreach (var s in _subscribers.ToList())
+            s.Observer.OnError(e);
+    }
+
     public virtual void Dispose(bool disposing) { }
     public void Dispose()
     {
         _subscribers.Clear();
+        OnUnsubscribeAll();
         Dispose(true);
         GC.SuppressFinalize(this);
     }
@@ -71,7 +96,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
             set;
         }
         public bool Destroyed { get; set; }
-        public bool Dirty { get; set; }
+        //public bool Dirty { get; set; }
 
         public void Recreate(ILayoutInstance* ptr, Transform transform)
         {
@@ -97,18 +122,39 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
         public readonly bool IsSet => Full > 0;
         public readonly bool IsAll => Full == ulong.MaxValue;
+
+        public static readonly TraceObjectKey ALL = new() { Full = ulong.MaxValue };
+        public static readonly TraceObjectKey NONE = new() { Full = 0 };
+
+        // random boat in Western Thanalan with oscillating movement; member of SharedGroup that has a timeline with autoplay and loop enabled
+        public static readonly TraceObjectKey BOAT = new() { Full = 0x003BDC3D_03000000 };
+
+        // floating aetheryte-like crystals in Bestways Burrow which have collision; movement is controlled by SGActionController
+        public static readonly TraceObjectKey RABBIT_AETHERYTE = new() { Full = 0x00885333_0401000 };
+
+        // example of a SharedGroup that has multiple animation timelines attached to it (easily visible and has a long duration, so helps with debugging)
+        public static readonly TraceObjectKey ARF_ELEVATOR = new() { Full = 0x0058BE03_3A250000 };
+
+        // out of bounds background object in Coerthas Central Highlands near the Xelphatol entrance; has collision but some timeline thing adds the 0x400 flag to it shortly after it's created (example of SetProperties/CreatePrimary not being a reliable source of truth)
+        public static readonly TraceObjectKey IXAL_BLIMP = new() { Full = 0x0031D5D9_0B000000 };
+
+        // part of the Camp Dragonhead castle thing that is placed exactly at whole-number coordinates, but the imprecision incurred by recalculating the rotation quaternion during setup causes its world bounds to expand by 1 unit on the Z axis
+        public static readonly TraceObjectKey DRAGONHEAD_WALL = new() { Full = 0x003F8983_0B000000 };
     }
 
     private readonly ConcurrentDictionary<Pointer<ILayoutInstance>, MaybeEnabled> _objects = [];
     private readonly ConcurrentDictionary<ulong, Transform> _transformOverride = [];
+    private readonly ConcurrentDictionary<Pointer<ILayoutInstance>, MaybeEnabled> _dirtyObjects = [];
 
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.CreatePrimary> _bgCreate;
+    private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetProperties> _bgProps;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.DestroyPrimary> _bgDestroy;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetActive> _bgToggle;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetTransformImpl> _bgTransF;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetTranslationImpl> _bgTrans;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetRotationImpl> _bgRot;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetScaleImpl> _bgScale;
+    private readonly HookAddress<BgPartsLayoutInstance.Delegates.GetCollider2> _bgCollHack;
 
     private readonly HookAddress<CollisionBoxLayoutInstance.Delegates.CreatePrimary> _boxCreate;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.DestroyPrimary> _boxDestroy;
@@ -122,17 +168,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
     private bool _watchColliders;
 
-    // western thanalan boat
-    //private static readonly TraceObjectKey TRACE_OBJECT = new() { Full = 0x003BDC3D_03000000 };
-    // moon crystal
-    //private static readonly TraceObjectKey TRACE_OBJECT = new() { Full = 0x00885333_04010000 };
-    // ARF elevator background
-    //private static readonly TraceObjectKey TRACE_OBJECT = new() { Full = 0x0058BE03_3A250000 };
-    private static readonly TraceObjectKey TRACE_OBJECT = new() { Full = 0x0031D5C7_0B000000 };
-    // trace everything
-    //private static readonly TraceObjectKey TRACE_OBJECT = new() { Full = ulong.MaxValue };
-    // nothing
-    //private static readonly TraceObjectKey TRACE_OBJECT = default;
+    private static readonly TraceObjectKey TRACE_OBJECT = TraceObjectKey.NONE;
 
     public NavmeshCustomization Customization { get; private set; } = new();
 
@@ -154,12 +190,14 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         var boxVt = (CollisionBoxLayoutInstance.CollisionBoxLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 85 FF 74 20 48 8B CF E8 ?? ?? ?? ?? 4C 8B F0 48 8D 55 C7 45 33 C0 49 8B CE 48 8B 00 FF 50 08 E9 ?? ?? ?? ?? 66 44 39 73 ?? 75 45 44 38 73 1F 74 0A 48 8B 43 08 83 78 1C 06 75 35 48 8B 4B 08 4C 39 B1 ?? ?? ?? ?? 74 28 85 F6 75 24 45 84 FF 74 1F B2 3A ", 0x17);
 
         _bgCreate = new((nint)bgVt->CreatePrimary, BgCreateDetour, false);
+        _bgProps = new((nint)bgVt->SetProperties, BgPropsDetour, false);
         _bgDestroy = new((nint)bgVt->DestroyPrimary, BgDestroyDetour, false);
         _bgToggle = new((nint)bgVt->SetActive, BgToggleDetour, false);
         _bgTransF = new((nint)bgVt->SetTransformImpl, BgTransFDetour, false);
         _bgTrans = new((nint)bgVt->SetTranslationImpl, BgTransDetour, false);
         _bgRot = new((nint)bgVt->SetRotationImpl, BgRotDetour, false);
         _bgScale = new((nint)bgVt->SetScaleImpl, BgScaleDetour, false);
+        _bgCollHack = new((nint)bgVt->GetCollider2, BgCollHackDetour, false);
 
         _boxCreate = new((nint)boxVt->CreatePrimary, BoxCreateDetour, false);
         _boxDestroy = new((nint)boxVt->DestroyPrimary, BoxDestroyDetour, false);
@@ -172,145 +210,162 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         _sgInit = new(SharedGroupLayoutInstance.Addresses.InitTimelines, SgInitDetour, false);
     }
 
-    public unsafe void Initialize()
+    private CancellationTokenSource? _initTaskSrc;
+    private Task? _initTask;
+
+    protected override void OnSubscribeFirst()
+    {
+        if (_initTask != null)
+            throw new InvalidOperationException("_initTask has already been set even though we had no subscribers, this is a bug");
+
+        var src = _initTaskSrc = new();
+        _initTask = Service.Framework.Run(() =>
+        {
+            Initialize();
+            _initTask = null;
+            Service.Framework.Update += Tick;
+        }, src.Token);
+    }
+
+    protected override void OnUnsubscribeAll()
+    {
+        Service.ClientState.ZoneInit -= OnZoneInit;
+        Service.Framework.Update -= Tick;
+
+        if (_initTaskSrc != null)
+        {
+            _initTaskSrc.Cancel();
+            _initTaskSrc = null;
+            _initTask = null;
+        }
+
+        _bgCreate.Enabled = false;
+        _bgProps.Enabled = false;
+        _bgDestroy.Enabled = false;
+        _bgToggle.Enabled = false;
+        _bgTransF.Enabled = false;
+        _bgTrans.Enabled = false;
+        _bgRot.Enabled = false;
+        _bgScale.Enabled = false;
+        _bgCollHack.Enabled = false;
+
+        _boxCreate.Enabled = false;
+        _boxDestroy.Enabled = false;
+        _boxToggle.Enabled = false;
+        _boxTrans.Enabled = false;
+        _boxRot.Enabled = false;
+        _boxScale.Enabled = false;
+        _boxColl.Enabled = false;
+
+        _sgInit.Enabled = false;
+    }
+
+    private unsafe void Initialize()
     {
         InitZone(Service.ClientState.TerritoryType);
 
         var world = LayoutWorld.Instance();
-        ActivateExistingLayout(world->GlobalLayout);
-        ActivateExistingLayout(world->ActiveLayout);
+        Time("global", () => ActivateExistingLayout(world->GlobalLayout));
+        Time("active", () => ActivateExistingLayout(world->ActiveLayout));
 
-        _bgCreate.Enabled = true;
-        _bgDestroy.Enabled = true;
-        _bgToggle.Enabled = true;
-        _bgTransF.Enabled = true;
-        _bgTrans.Enabled = true;
-        _bgRot.Enabled = true;
-        _bgScale.Enabled = true;
+        Time("hooks", () =>
+        {
+            _bgCreate.Enabled = true;
+            _bgProps.Enabled = true;
+            _bgDestroy.Enabled = true;
+            _bgToggle.Enabled = true;
+            _bgTransF.Enabled = true;
+            _bgTrans.Enabled = true;
+            _bgRot.Enabled = true;
+            _bgScale.Enabled = true;
+            _bgCollHack.Enabled = true;
 
-        _boxCreate.Enabled = true;
-        _boxDestroy.Enabled = true;
-        _boxToggle.Enabled = true;
-        _boxTrans.Enabled = true;
-        _boxRot.Enabled = true;
-        _boxScale.Enabled = true;
-        _boxColl.Enabled = true;
+            _boxCreate.Enabled = true;
+            _boxDestroy.Enabled = true;
+            _boxToggle.Enabled = true;
+            _boxTrans.Enabled = true;
+            _boxRot.Enabled = true;
+            _boxScale.Enabled = true;
+            _boxColl.Enabled = true;
 
-        _sgInit.Enabled = true;
+            _sgInit.Enabled = true;
+        });
 
-        ZoneChanged.Invoke(this);
+        Time("ZoneChange", () =>
+        {
+            ZoneChanged.Invoke(this);
+        });
+    }
+
+    private static void Time(string label, Action t)
+    {
+        var s = Stopwatch.StartNew();
+        t();
+        s.Stop();
+        Service.Log.Debug($"[LayoutObjectSet] [init] {label} took {s.ElapsedMilliseconds:f3}ms");
     }
 
     public override void Dispose(bool disposing)
     {
-        if (disposing)
-        {
-            Service.ClientState.ZoneInit -= OnZoneInit;
-            _bgCreate.Dispose();
-            _bgDestroy.Dispose();
-            _bgToggle.Dispose();
-            _bgTransF.Dispose();
-            _bgTrans.Dispose();
-            _bgRot.Dispose();
-            _bgScale.Dispose();
+        _bgCreate.Dispose();
+        _bgProps.Dispose();
+        _bgDestroy.Dispose();
+        _bgToggle.Dispose();
+        _bgTransF.Dispose();
+        _bgTrans.Dispose();
+        _bgRot.Dispose();
+        _bgScale.Dispose();
+        _bgCollHack.Dispose();
 
-            _boxCreate.Dispose();
-            _boxDestroy.Dispose();
-            _boxToggle.Dispose();
-            _boxTrans.Dispose();
-            _boxRot.Dispose();
-            _boxScale.Dispose();
-            _boxColl.Dispose();
+        _boxCreate.Dispose();
+        _boxDestroy.Dispose();
+        _boxToggle.Dispose();
+        _boxTrans.Dispose();
+        _boxRot.Dispose();
+        _boxScale.Dispose();
+        _boxColl.Dispose();
 
-            _sgInit.Dispose();
-        }
+        _sgInit.Dispose();
     }
 
-    private readonly List<Pointer<ILayoutInstance>> _destroyed = [];
+    private bool _infinite = false;
 
-    public void Poll()
+    private unsafe void Tick(IFramework fwk)
     {
-        _destroyed.Clear();
-        foreach (var (ptr, inst) in _objects)
+        if (_initTask != null)
         {
-            if (inst.Destroyed)
-                _destroyed.Add(ptr);
-            else
-                UpdateObject(ptr, inst);
-        }
-
-        foreach (var d in _destroyed)
-        {
-            if (_objects.Remove(d, out var destroyed))
-                if (destroyed.Instance is { } destroyedObject)
-                    NotifyObject(destroyedObject, false);
-        }
-    }
-
-    private unsafe void UpdateObject(Pointer<ILayoutInstance> pointer, MaybeEnabled obj)
-    {
-        var isTrace = TRACE_OBJECT.IsSet && pointer != null && pointer.Value->Id.InstanceKey == TRACE_OBJECT.InstanceKey && pointer.Value->SubId == TRACE_OBJECT.SubId;
-
-        // this layout instance doesn't have a collider associated with it for some reason (i.e. broken crc)
-        if (obj.Instance == null)
-        {
-            if (isTrace)
-                Service.Log.Verbose("skipping traced object, it has no instance");
+            Service.Log.Warning("not calling Tick() while init task is running");
             return;
         }
 
-        var modified = obj.Dirty;
-        obj.Dirty = false;
-        var k = obj.Instance.Instance.Id;
-        if (modified && isTrace)
-            Service.Log.Verbose($"object {k:X16} was dirty");
-
-        // material flags can get modified "at random" by other sources
-        var matPrev = obj.Instance.Instance.ForceSetPrimFlags;
-        var matCur = GetMaterialFlags(pointer.Value);
-        if (matPrev != matCur)
+        foreach (var (ptr, obj) in _dirtyObjects)
         {
-            if (isTrace)
-                Service.Log.Verbose($"object {k:X16} material changed from {matPrev} to {matCur}");
-            obj.Instance.Instance.ForceSetPrimFlags = matCur;
-            modified = true;
+            if (obj.Destroyed)
+            {
+                if (_objects.Remove(ptr, out var destroyed) && destroyed.Instance is { } destroyedObject)
+                    NotifyObject(destroyedObject, false);
+            }
+            else if (obj.Instance != null)
+                NotifyObject(obj.Instance, obj.Enabled && obj.ColliderEnabled);
         }
+        _dirtyObjects.Clear();
 
-        if (modified)
+        if (_infinite)
         {
-            TraceObject(pointer.Value, "trigger-modify " + obj.Transform.Display());
-            NotifyObject(obj.Instance, obj.Enabled && obj.ColliderEnabled);
+            var (_, o) = _objects.First();
+            if (o.Instance != null)
+                NotifyObject(o.Instance, o.Enabled);
         }
     }
+
+    public DateTime LastUpdate { get; private set; }
 
     private void NotifyObject(InstanceWithMesh inst, bool enabled)
     {
         enabled &= !inst.Instance.ForceSetPrimFlags.HasFlag(SceneExtractor.PrimitiveFlags.Transparent);
 
+        LastUpdate = DateTime.Now;
         Notify(new(LastLoadedZone, inst.Instance.Id, enabled ? inst : null));
-    }
-
-    private unsafe SceneExtractor.PrimitiveFlags GetMaterialFlags(ILayoutInstance* val)
-    {
-        switch (val->Id.Type)
-        {
-            case InstanceType.BgPart:
-                var v = (BgPartsLayoutInstance*)val;
-                var id = (ulong)v->CollisionMaterialIdHigh << 32 | v->CollisionMaterialIdLow;
-                var mask = (ulong)v->CollisionMaterialMaskHigh << 32 | v->CollisionMaterialMaskLow;
-                // note about collision mask: steel doors in front of amal'jaa encampment (in southern thanalan) consist of two objects: a large box collider covering the entire door, and a small box collider with material 206400 but no mask at all
-                // the smaller collider moves up when the player approaches, and i have no idea why it's missing a mask
-                // TODO: to ensure correctness, could we instead skip objects that are inside a DoorRange?
-                return SceneExtractor.ExtractMaterialFlags(mask > 0 ? id & mask : id);
-
-            case InstanceType.CollisionBox:
-                var c = (CollisionBoxLayoutInstance*)val;
-                var id2 = (ulong)c->MaterialIdHigh << 32 | c->MaterialIdLow;
-                var mask2 = (ulong)c->MaterialMaskHigh << 32 | c->MaterialMaskLow; ;
-                return SceneExtractor.ExtractMaterialFlags(mask2 > 0 ? id2 & mask2 : id2);
-            default:
-                return default;
-        }
     }
 
     private unsafe void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
@@ -356,6 +411,12 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         CreateObject(thisPtr, "primary");
     }
 
+    private unsafe void BgPropsDetour(BgPartsLayoutInstance* thisPtr, FileLayerGroupInstance* data)
+    {
+        _bgProps.Original(thisPtr, data);
+        CreateObject(thisPtr, "props");
+    }
+
     private unsafe void BgDestroyDetour(BgPartsLayoutInstance* thisPtr)
     {
         _bgDestroy.Original(thisPtr);
@@ -375,11 +436,13 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
             if (obj.Enabled != active)
             {
                 obj.Enabled = active;
-                obj.Dirty = true;
+                _dirtyObjects[&thisPtr->ILayoutInstance] = obj;
             }
         }
     }
 
+    // note that all BgParts transform modifications update the entire matrix
+    // the methods other than SetTransformImpl still call SetTransform on the graphics object and collider, which can result in a SetTranslation call causing miniscule changes to the rotation quaternion, which can result in different world bounds (when truncated to int) on the same mesh
     private unsafe void BgTransFDetour(BgPartsLayoutInstance* thisPtr, Transform* t)
     {
         _bgTransF.Original(thisPtr, t);
@@ -387,16 +450,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
             return;
 
-        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
-        {
-            var cur = inst.Transform;
-            if (t->Translation != cur.Translation || t->Rotation != cur.Rotation || t->Scale != cur.Scale)
-            {
-                TraceObject(&thisPtr->ILayoutInstance, "transform(bg)");
-                inst.Recreate(&thisPtr->ILayoutInstance, cur);
-                inst.Dirty = true;
-            }
-        }
+        UpdateBgTransform(thisPtr);
     }
 
     private unsafe void BgTransDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
@@ -406,16 +460,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
             return;
 
-        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
-        {
-            if (*value != inst.Transform.Translation)
-            {
-                TraceObject(&thisPtr->ILayoutInstance, "translation(bg)");
-                var tnew = inst.Transform with { Translation = *value };
-                inst.Recreate(&thisPtr->ILayoutInstance, tnew);
-                inst.Dirty = true;
-            }
-        }
+        UpdateBgTransform(thisPtr);
     }
 
     private unsafe void BgRotDetour(BgPartsLayoutInstance* thisPtr, Quaternion* value)
@@ -425,16 +470,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
             return;
 
-        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
-        {
-            if (*value != inst.Transform.Rotation)
-            {
-                TraceObject(&thisPtr->ILayoutInstance, "rotation(bg)");
-                var tnew = inst.Transform with { Rotation = *value };
-                inst.Recreate(&thisPtr->ILayoutInstance, tnew);
-                inst.Dirty = true;
-            }
-        }
+        UpdateBgTransform(thisPtr);
     }
 
     private unsafe void BgScaleDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
@@ -444,16 +480,43 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
             return;
 
+        UpdateBgTransform(thisPtr);
+    }
+
+    private unsafe void UpdateBgTransform(BgPartsLayoutInstance* thisPtr)
+    {
+        var tx = thisPtr->GetTransformImpl();
+
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
         {
-            if (*value != inst.Transform.Scale)
+            if (tx->Translation != inst.Transform.Translation || tx->Rotation != inst.Transform.Rotation || tx->Scale != inst.Transform.Scale)
             {
-                TraceObject(&thisPtr->ILayoutInstance, "scale(bg)");
-                var tnew = inst.Transform with { Scale = *value };
-                inst.Recreate(&thisPtr->ILayoutInstance, tnew);
-                inst.Dirty = true;
+                inst.Recreate(&thisPtr->ILayoutInstance, *tx);
+                if (inst.Instance != null)
+                    TraceObject(&thisPtr->ILayoutInstance, $"transform(bg): {inst.Instance.Instance.WorldBounds.Display()}, stored={inst.Transform.Display()}");
+                _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
         }
+    }
+
+    // some scheduler thing sets material flags on some BgParts directly, which sucks because i really don't feel like reversing more of the scheduler
+    // the same code incidentally calls GetCollider2 to try to update the collider flags (though in this case, there is no attached collider, so hooking Collider::SetMaterial would do nothing)
+    // GetCollider2 seems to only be called during zone transition/setup, as opposed to GetCollider, which is called dozens of times per frame during player movement thanks to streaming manager
+    private unsafe Collider* BgCollHackDetour(BgPartsLayoutInstance* thisPtr)
+    {
+        if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst) && inst.Instance != null)
+        {
+            var oldFlags = inst.Instance.Instance.ForceSetPrimFlags;
+            var newFlags = SceneExtractor.ExtractMaterialFlags(thisPtr->CollisionMaterialIdHigh << 32 | thisPtr->CollisionMaterialIdLow);
+            if (oldFlags != newFlags)
+            {
+                TraceObject(&thisPtr->ILayoutInstance, "coll2(material)");
+                inst.Instance.Instance.ForceSetPrimFlags = newFlags;
+                _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
+            }
+        }
+
+        return _bgCollHack.Original(thisPtr);
     }
 
     private unsafe void BoxCreateDetour(CollisionBoxLayoutInstance* thisPtr, Transform* transform, void* pathOrType)
@@ -480,7 +543,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
             if (obj.Enabled != active)
             {
                 obj.Enabled = active;
-                obj.Dirty = true;
+                _dirtyObjects[&thisPtr->ILayoutInstance] = obj;
             }
         }
     }
@@ -499,7 +562,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
                 TraceObject(&thisPtr->ILayoutInstance, "translation(box)");
                 var tnew = inst.Transform with { Translation = *value };
                 inst.Recreate(&thisPtr->ILayoutInstance, tnew);
-                inst.Dirty = true;
+                _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
         }
     }
@@ -518,7 +581,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
                 TraceObject(&thisPtr->ILayoutInstance, "rotation(box)");
                 var tnew = inst.Transform with { Rotation = *value };
                 inst.Recreate(&thisPtr->ILayoutInstance, tnew);
-                inst.Dirty = true;
+                _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
         }
     }
@@ -537,7 +600,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
                 TraceObject(&thisPtr->ILayoutInstance, "scale(box)");
                 var tnew = inst.Transform with { Scale = *value };
                 inst.Recreate(&thisPtr->ILayoutInstance, tnew);
-                inst.Dirty = true;
+                _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
         }
     }
@@ -551,7 +614,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
             if (inst.ColliderEnabled != active)
             {
                 inst.ColliderEnabled = active;
-                inst.Dirty = true;
+                _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
         }
     }
@@ -560,36 +623,28 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
     {
         _sgInit.Original(thisPtr, data);
         if (thisPtr != null)
-        {
-            Service.Log.Verbose($"[SgInit] DetectAnimations");
             DetectAnimations(thisPtr);
-        }
     }
 
     private unsafe void DetectAnimations(SharedGroupLayoutInstance* thisPtr)
     {
         var thisGrp = SceneTool.GetKey(&thisPtr->ILayoutInstance);
 
-        string? animationSrc = null;
-        if (thisPtr->ActionController1 != null)
-            animationSrc = "motion1";
-        else if (thisPtr->ActionController1 != null)
-            animationSrc = "motion2";
+        string? animationSrc = thisPtr->ActionController1 != null ? "motion1"
+            : thisPtr->ActionController2 != null ? "motion2"
+            : thisPtr->TimeLineContainer.Instances.Any(i => i.Value->DataPtr->Loop == 1) ? "loop"
+            : null;
 
-        Service.Log.Verbose($"[SgInit] {thisGrp:X} number of instances in timeline: {thisPtr->TimeLineContainer.Instances.Count}");
-        foreach (var inst in thisPtr->TimeLineContainer.Instances)
-        {
-            Service.Log.Verbose($"[SgInit] {thisGrp:X} flags auto={inst.Value->DataPtr->AutoPlay} loop={inst.Value->DataPtr->Loop}");
-            if (inst.Value->DataPtr->Loop == 1)
-            {
-                animationSrc = "timeline-loop";
-                break;
-            }
-        }
+        if (animationSrc != null)
+            MarkIgnored(thisPtr, *thisPtr->GetTransformImpl(), animationSrc);
+    }
 
-        if (animationSrc == null)
+    private unsafe void MarkIgnored(SharedGroupLayoutInstance* thisPtr, Transform t, string animType)
+    {
+        var thisKey = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+        if (_transformOverride.ContainsKey(thisKey))
         {
-            Service.Log.Verbose($"[SgInit] {thisGrp:X} no motion and nothing interesting in timeline");
+            Service.Log.Verbose($"Group {thisKey:X} is already ignored, doing nothing");
             return;
         }
 
@@ -597,19 +652,22 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         {
             switch (inst.Value->Instance->Id.Type)
             {
-                // SharedGroup children are skipped since they will be iterated over separately
                 case InstanceType.BgPart:
                 case InstanceType.CollisionBox:
                     var key = SceneTool.GetKey(inst.Value->Instance);
-                    Service.Log.Verbose($"[SgInit] ignoring {inst.Value->Instance->Id.Type} {key:X}, which has animation type={animationSrc}");
-                    var t = *thisPtr->GetTransformImpl();
+                    Service.Log.Verbose($"[SgInit] ignoring {inst.Value->Instance->Id.Type} {key:X}, which has animation type={animType}");
                     _transformOverride[key] = t;
                     if (_objects.TryGetValue(inst.Value->Instance, out var m))
                     {
                         Service.Log.Verbose($"correcting transform of {key:X} to {t.Display()}");
                         m.Recreate(inst.Value->Instance, t);
-                        m.Dirty = true;
+                        _dirtyObjects[inst.Value->Instance] = m;
                     }
+                    break;
+                case InstanceType.SharedGroup:
+                    MarkIgnored((SharedGroupLayoutInstance*)inst.Value->Instance, t, animType);
+                    var key2 = SceneTool.GetKey(inst.Value->Instance);
+                    _transformOverride[key2] = t;
                     break;
             }
         }
@@ -620,22 +678,23 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
         if (!thisPtr->HasCollision())
         {
-            Service.Log.Verbose($"create(bgpart): skip (no collision): {k:X16}");
+            //Service.Log.Verbose($"create(bgpart): skip (no collision): {k:X16}");
             return;
         }
 
         if (!_transformOverride.TryGetValue(k, out var trans))
-            trans = *(Transform*)&thisPtr->GraphicsObject->Position;
+            trans = *thisPtr->GetTransformImpl();
 
-        Service.Log.Verbose($"create(bgpart): source={source}: {k:X16}; enabled={thisPtr->HasEnabledFlag()}");
-        _objects[&thisPtr->ILayoutInstance] = new()
+        //Service.Log.Verbose($"create(bgpart): source={source}: {k:X16}; enabled={thisPtr->HasEnabledFlag()}, mat={(ulong)thisPtr->CollisionMaterialIdHigh << 32 | thisPtr->CollisionMaterialIdLow:X}");
+        var obj = new MaybeEnabled()
         {
             Instance = SceneTool.Get().CreateInstance(thisPtr, trans),
             Enabled = thisPtr->HasEnabledFlag(),
             IsBgPart = true,
             Transform = trans,
-            Dirty = true
         };
+        TraceObject(&thisPtr->ILayoutInstance, $"create({source}): {obj.Instance!.Instance.WorldBounds.Display()}, stored={obj.Transform.Display()}");
+        _dirtyObjects[&thisPtr->ILayoutInstance] = _objects[&thisPtr->ILayoutInstance] = obj;
     }
 
     private unsafe void CreateObject(CollisionBoxLayoutInstance* thisPtr, string source)
@@ -646,15 +705,17 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         if (!_transformOverride.TryGetValue(k, out var trans))
             trans = thisPtr->Transform;
 
-        _objects[&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance] = new()
+        var obj = new MaybeEnabled()
         {
             Instance = SceneTool.Get().CreateInstance(thisPtr, trans),
             Enabled = thisPtr->HasEnabledFlag(),
             IsBgPart = false,
             Transform = trans,
             ColliderEnabled = thisPtr->IsColliderActive(),
-            Dirty = true
         };
+        _dirtyObjects[&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance]
+            = _objects[&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance]
+            = obj;
     }
 
     private unsafe void TraceObject(ILayoutInstance* inst, string label)
@@ -678,17 +739,20 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
     private NavmeshCustomization Customization = new();
 
     public IObservable<IList<TileChangeArgs>> Debounced(TimeSpan delay, TimeSpan timeout) => this
-        .Window(() => this.Throttle(delay)/*.Timeout(timeout)*/)
-        .SelectMany(result => result.Distinct(t => (t.X, t.Z)).ToList())
-        .Catch<IList<TileChangeArgs>, TimeoutException>(ex =>
-        {
-            Service.Log.Warning(ex, $"Waited too long for scene modifications to finish. Last event was: {LastEvent}");
-            return Observable.Empty<IList<TileChangeArgs>>();
-        });
+        .GroupByUntil(_ => 1, g => g.Throttle(delay).Timeout(timeout))
+        .SelectMany(x => x.ToList())
+        .Select(result => result.DistinctBy(t => (t.X, t.Z)).ToList());
 
-    public void Watch(LayoutObjectSet set, CancellationToken token)
+    private IDisposable? _sceneSubscription;
+
+    protected override void OnUnsubscribeAll()
     {
-        set.ForEachAsync(Apply, token);
+        _sceneSubscription?.Dispose();
+    }
+
+    public void Watch(LayoutObjectSet set)
+    {
+        _sceneSubscription = set.Subscribe(Apply);
         set.ZoneChanged += Clear;
     }
 
@@ -705,7 +769,6 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
         {
             LastEvent = change;
 
-            //Service.Log.Verbose($"applying change {change.Key:X}");
             // remove all existing copies of instance, in case previous transform occupied different set of tiles
             modified.UnionWith(Remove(change.Key));
 
@@ -718,6 +781,12 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
                 var imax = (int)max.X / TileUnits;
                 var jmin = (int)min.Z / TileUnits;
                 var jmax = (int)max.Z / TileUnits;
+
+                if (imax < 0 || jmax < 0 || imin > 15 || jmin > 15)
+                {
+                    //Service.Log.Warning($"object {change.Instance} is outside world bounds, which will break the cache");
+                    return;
+                }
 
                 for (var i = Math.Max(0, imin); i <= Math.Min(imax, RowLength - 1); i++)
                     for (var j = Math.Max(0, jmin); j <= Math.Min(jmax, RowLength - 1); j++)

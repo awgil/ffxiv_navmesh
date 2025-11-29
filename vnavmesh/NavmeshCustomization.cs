@@ -1,6 +1,8 @@
 ﻿using DotRecast.Detour;
 using DotRecast.Recast;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+using FFXIVClientStructs.Interop;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -27,7 +29,8 @@ public class NavmeshCustomization
 
     public virtual void CustomizeTile(Tile tile) { }
 
-    public virtual bool FilterObject(InstanceWithMesh inst) => true;
+    // this impl should be cheap, since it will be called very frequently
+    public virtual bool FilterObject(ulong key, Pointer<ILayoutInstance> inst) => true;
 
     public virtual void CustomizeSettings(DtNavMeshCreateParams config) { }
 

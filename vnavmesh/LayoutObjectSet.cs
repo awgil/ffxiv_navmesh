@@ -11,76 +11,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
-using System.Reactive.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Navmesh;
-
-public abstract class Subscribable<TVal> : IObservable<TVal>, IDisposable
-{
-    protected readonly List<Subscription<TVal>> _subscribers = [];
-
-    public IDisposable Subscribe(IObserver<TVal> observer)
-    {
-        var sub = new Subscription<TVal>(this, observer);
-        var cnt = _subscribers.Count;
-        _subscribers.Add(sub);
-        if (cnt == 0)
-        {
-            Service.Log.Verbose($"{GetType()}: OnSubscribeFirst");
-            OnSubscribeFirst();
-        }
-        return sub;
-    }
-
-    public void Unsubscribe(Subscription<TVal> subscriber)
-    {
-        _subscribers.Remove(subscriber);
-        if (_subscribers.Count == 0)
-        {
-            Service.Log.Verbose($"{GetType()}: OnUnsubscribeAll");
-            OnUnsubscribeAll();
-        }
-    }
-
-    protected virtual void OnSubscribeFirst() { }
-    protected virtual void OnUnsubscribeAll() { }
-
-    protected void Notify(TVal val)
-    {
-        foreach (var s in _subscribers.ToList())
-            s.Observer.OnNext(val);
-    }
-
-    protected void NotifyError(Exception e)
-    {
-        foreach (var s in _subscribers.ToList())
-            s.Observer.OnError(e);
-    }
-
-    public virtual void Dispose(bool disposing) { }
-    public void Dispose()
-    {
-        _subscribers.Clear();
-        OnUnsubscribeAll();
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-}
-
-public sealed class Subscription<TVal>(Subscribable<TVal>? parent, IObserver<TVal> observer) : IDisposable
-{
-    private Subscribable<TVal>? parent = parent;
-    public IObserver<TVal> Observer { get; } = observer;
-
-    public void Dispose()
-    {
-        parent?.Unsubscribe(this);
-        parent = null;
-    }
-}
 
 // tracks "enabled" flag, material flags, and world transforms of all objects in the current zone that have an attached collider
 public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.InstanceChangeArgs>
@@ -170,6 +105,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
     private static readonly TraceObjectKey TRACE_OBJECT = TraceObjectKey.NONE;
 
+    public DateTime LastUpdate { get; private set; }
     public NavmeshCustomization Customization { get; private set; } = new();
 
     public Action<LayoutObjectSet> TerritoryChanged = delegate { };
@@ -353,8 +289,6 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         _dirtyObjects.Clear();
     }
 
-    public DateTime LastUpdate { get; private set; }
-
     private void NotifyObject(InstanceWithMesh inst, bool enabled)
     {
         enabled &= !inst.Instance.ForceSetPrimFlags.HasFlag(SceneExtractor.PrimitiveFlags.Transparent);
@@ -373,7 +307,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
     {
         LastLoadedTerritory = terr;
         Customization = NavmeshCustomizationRegistry.ForTerritory(terr);
-        // TODO: support different tile sizes, maybe?
+        // TODO: support different tile sizes
         RowLength = 16; //  Customization.Settings.NumTiles[0];
 
         _objects.Clear();
@@ -679,6 +613,9 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
             return;
         }
 
+        if (!Customization.FilterObject(k, &thisPtr->ILayoutInstance))
+            return;
+
         if (!_transformOverride.TryGetValue(k, out var trans))
             trans = *thisPtr->GetTransformImpl();
 
@@ -697,7 +634,10 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
     private unsafe void CreateObject(CollisionBoxLayoutInstance* thisPtr, string source)
     {
         var k = SceneTool.GetKey(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance);
-        Service.Log.Verbose($"create(box): source={source}: {k:X16}; enabled={thisPtr->HasEnabledFlag()}");
+
+        //Service.Log.Verbose($"create(box): source={source}: {k:X16}; enabled={thisPtr->HasEnabledFlag()}");
+        if (!Customization.FilterObject(k, &thisPtr->TriggerBoxLayoutInstance.ILayoutInstance))
+            return;
 
         if (!_transformOverride.TryGetValue(k, out var trans))
             trans = thisPtr->Transform;
@@ -721,107 +661,5 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         {
             Service.Log.Verbose($"traced object modification: {inst->Id.InstanceKey:X8}.{inst->SubId:X8} {label}");
         }
-    }
-}
-
-// sorts and groups change events from LayoutObjectSet
-public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
-{
-    public record struct TileChangeArgs(uint Territory, int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects);
-
-    private readonly SortedDictionary<ulong, InstanceWithMesh>[,] _tiles = new SortedDictionary<ulong, InstanceWithMesh>[16, 16];
-
-    private readonly Lock _lock = new();
-
-    private NavmeshCustomization Customization = new();
-
-    public IObservable<IList<TileChangeArgs>> Debounced(TimeSpan delay, TimeSpan timeout) => this
-        .GroupByUntil(_ => 1, g => g.Throttle(delay).Timeout(timeout))
-        .SelectMany(x => x.ToList())
-        .Select(result => result.DistinctBy(t => (t.X, t.Z)).ToList());
-
-    private IDisposable? _sceneSubscription;
-
-    protected override void OnUnsubscribeAll()
-    {
-        _sceneSubscription?.Dispose();
-    }
-
-    public void Watch(LayoutObjectSet set)
-    {
-        _sceneSubscription = set.Subscribe(Apply);
-        set.TerritoryChanged += Clear;
-    }
-
-    private const int TileUnits = 128;
-    private const int RowLength = 16;
-
-    public LayoutObjectSet.InstanceChangeArgs? LastEvent;
-
-    private void Apply(LayoutObjectSet.InstanceChangeArgs change)
-    {
-        HashSet<(int, int)> modified = [];
-
-        lock (_lock)
-        {
-            LastEvent = change;
-
-            // remove all existing copies of instance, in case previous transform occupied different set of tiles
-            modified.UnionWith(Remove(change.Key));
-
-            if (change.Instance != null && Customization.FilterObject(change.Instance))
-            {
-                var min = change.Instance.Instance.WorldBounds.Min - new Vector3(-1024);
-                var max = change.Instance.Instance.WorldBounds.Max - new Vector3(-1024);
-
-                var imin = (int)min.X / TileUnits;
-                var imax = (int)max.X / TileUnits;
-                var jmin = (int)min.Z / TileUnits;
-                var jmax = (int)max.Z / TileUnits;
-
-                if (imax < 0 || jmax < 0 || imin > 15 || jmin > 15)
-                {
-                    //Service.Log.Warning($"object {change.Instance} is outside world bounds, which will break the cache");
-                    return;
-                }
-
-                for (var i = Math.Max(0, imin); i <= Math.Min(imax, RowLength - 1); i++)
-                    for (var j = Math.Max(0, jmin); j <= Math.Min(jmax, RowLength - 1); j++)
-                    {
-                        _tiles[i, j] ??= [];
-                        _tiles[i, j][change.Instance.Instance.Id] = change.Instance;
-                        modified.Add((i, j));
-                    }
-            }
-        }
-
-        foreach (var (x, z) in modified)
-            Notify(new(change.Zone, x, z, _tiles[x, z]));
-    }
-
-    private HashSet<(int, int)> Remove(ulong key)
-    {
-        var changes = new HashSet<(int, int)>();
-
-        for (var i = 0; i < _tiles.GetLength(0); i++)
-            for (var j = 0; j < _tiles.GetLength(1); j++)
-                if (_tiles[i, j]?.Remove(key) == true)
-                    changes.Add((i, j));
-        return changes;
-    }
-
-    private void Clear(LayoutObjectSet cs)
-    {
-        lock (_lock)
-        {
-            Customization = NavmeshCustomizationRegistry.ForTerritory(cs.LastLoadedTerritory);
-            foreach (var t in _tiles)
-                t?.Clear();
-        }
-    }
-
-    public void Reload(uint zone, int x, int z)
-    {
-        Notify(new(zone, x, z, _tiles[x, z]));
     }
 }

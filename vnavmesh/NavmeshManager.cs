@@ -19,7 +19,7 @@ namespace Navmesh;
 
 public class NavmeshDebug
 {
-    public bool Enabled = true;
+    public bool Enabled = Service.PluginInterface.IsDev;
     public record class IntermediatesData(Tile Tile, RcBuilderResult Data);
     public IntermediatesData?[,] Intermediates { get; private set; } = new IntermediatesData?[16, 16];
     public Task?[,] BuildTasks = new Task?[16, 16];

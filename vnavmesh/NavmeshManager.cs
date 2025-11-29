@@ -17,6 +17,24 @@ using System.Threading.Tasks;
 
 namespace Navmesh;
 
+public class NavmeshDebug
+{
+    public bool Enabled = true;
+    public record class IntermediatesData(Tile Tile, RcBuilderResult Data);
+    public IntermediatesData?[,] Intermediates { get; private set; } = new IntermediatesData?[16, 16];
+    public Task?[,] BuildTasks = new Task?[16, 16];
+
+    public void Reset()
+    {
+        for (var i = 0; i < Intermediates.GetLength(0); i++)
+            for (var j = 0; j < Intermediates.GetLength(1); j++)
+            {
+                Intermediates[i, j] = null;
+                BuildTasks[i, j] = null;
+            }
+    }
+}
+
 // manager that loads navmesh matching current zone and performs async pathfinding queries
 public sealed partial class NavmeshManager : IDisposable
 {
@@ -58,18 +76,13 @@ public sealed partial class NavmeshManager : IDisposable
     public NavmeshCustomization Customization => Scene.Customization;
     public uint[] ActiveFestivals { get; private set; } = new uint[4];
 
-    public record class IntermediatesData(Tile Tile, RcBuilderResult Data);
-
-    public bool TrackIntermediates = true;
-    public IntermediatesData?[,] Intermediates { get; private set; } = new IntermediatesData?[16, 16];
-
     private int Concurrency;
     private readonly Lock meshLock = new();
     private readonly SemaphoreSlim _sem = new(0);
 
     private bool _enableCache = true;
 
-    public bool Paused = false;
+    public NavmeshDebug DebugData = new();
 
     public NavmeshManager(DirectoryInfo cacheDir)
     {
@@ -79,7 +92,7 @@ public sealed partial class NavmeshManager : IDisposable
         Service.Config.Modified += OnConfigModified;
         OnConfigModified();
 
-        Scene.ZoneChanged += OnZoneChange;
+        Scene.TerritoryChanged += OnTerritoryChanged;
 
         _lastLoadQueryTask = Service.Framework.Run(InitGrid);
     }
@@ -99,26 +112,29 @@ public sealed partial class NavmeshManager : IDisposable
         if (Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
             return;
 
-        unsafe
-        {
-            var w = LayoutWorld.Instance()->ActiveLayout;
-            if (w == null)
-                return;
-            if (w->FestivalStatus is > 0 and < 5)
-                return;
-
-            MemoryMarshal.Cast<GameMain.Festival, uint>(w->ActiveFestivals).CopyTo(ActiveFestivals);
-        }
-
         if (SeedMode)
             RunSeedMode();
     }
 
-    public void OnZoneChange(LayoutObjectSet scene)
+    public List<uint> GetActiveFestivals()
+    {
+        unsafe
+        {
+            var w = LayoutWorld.Instance()->ActiveLayout;
+            if (w == null)
+                return [0, 0, 0, 0];
+            if (w->FestivalStatus is > 0 and < 5)
+                return [0, 0, 0, 0];
+
+            return MemoryMarshal.Cast<GameMain.Festival, uint>(w->ActiveFestivals).ToArray().ToList();
+        }
+    }
+
+    public void OnTerritoryChanged(LayoutObjectSet scene)
     {
         ClearState();
         Array.Fill<uint>(ActiveFestivals, 0);
-        Intermediates = new IntermediatesData?[scene.RowLength, scene.RowLength];
+        DebugData.Reset();
         Mesh = new(new()
         {
             orig = BoundsMin.SystemToRecast(),
@@ -168,37 +184,40 @@ public sealed partial class NavmeshManager : IDisposable
         _tileSubscription = Grid.Debounced(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(30))
             .SelectMany(changes => Observable.FromAsync(async () =>
             {
+                var fest = GetActiveFestivals();
+
                 _numStarted += changes.Count;
-                var zone = changes[0].Zone;
+                var terr = changes[0].Territory;
                 List<Task> tiles = [];
                 var enableCache = _enableCache;
                 foreach (var tile in changes)
                 {
-                    var t = new Tile(tile.X, tile.Z, new SortedDictionary<ulong, InstanceWithMesh>(tile.Objects.ToDictionary(k => k.Key, k => k.Value with { Instance = k.Value.Instance.Clone() })), Customization, zone);
-                    tiles.Add(
+                    var t = new Tile(tile.X, tile.Z, new SortedDictionary<ulong, InstanceWithMesh>(tile.Objects.ToDictionary(k => k.Key, k => k.Value with { Instance = k.Value.Instance.Clone() })), Customization, terr);
+                    var spawned =
                         Task.Run(async () => await BuildTile(t, enableCache, _taskSrc.Token), _taskSrc.Token)
                             .ContinueWith(_ =>
                             {
                                 Interlocked.Add(ref _numFinished, 1);
                                 _loadTaskProgress = (float)_numFinished / _numStarted;
-                            })
-                    );
+                            });
+                    DebugData.BuildTasks[tile.X, tile.Z] = spawned;
+                    tiles.Add(spawned);
                 }
 
                 await Task.WhenAll(tiles);
                 if (_numFinished < _numStarted)
                     return;
 
-                if (Mesh != null && zone == Service.ClientState.TerritoryType)
+                if (Mesh != null && terr == Service.ClientState.TerritoryType)
                 {
                     _queryToken?.Cancel();
                     _queryToken = new();
-                    Customization.CustomizeMesh(Mesh, [.. ActiveFestivals]);
+                    Customization.CustomizeMesh(Mesh, fest);
                     Navmesh = new(Customization.Version, Mesh, Volume);
                     Query = new(Navmesh);
 
                     var ff = await FloodFill.GetAsync();
-                    if (ff.Seeds.TryGetValue(zone, out var ss))
+                    if (ff.Seeds.TryGetValue(terr, out var ss))
                         Prune(ss.Select(s => (Vector3)s));
 
                     OnNavmeshChanged?.Invoke(Navmesh, Query);
@@ -223,6 +242,12 @@ public sealed partial class NavmeshManager : IDisposable
         ClearState();
         InitGrid();
         return true;
+    }
+
+    internal void RebuildTile(int x, int z)
+    {
+        _enableCache = false;
+        Grid?.Reload(Scene.LastLoadedTerritory, x, z);
     }
 
     private bool _seeding;
@@ -271,7 +296,7 @@ public sealed partial class NavmeshManager : IDisposable
             var (tile, vox) = LoadOrBuildTile(data, allowCache, token);
 
             // if tile zone doesn't match current zone, the player changed areas while we were building, so we don't modify the loaded mesh (tile will still be saved to cache)
-            if (Mesh != null && data.Zone == Scene.LastLoadedZone)
+            if (Mesh != null && data.Territory == Scene.LastLoadedTerritory)
             {
                 lock (meshLock)
                 {
@@ -309,7 +334,7 @@ public sealed partial class NavmeshManager : IDisposable
 
         var x = data.X;
         var z = data.Z;
-        var dir = new DirectoryInfo($"{CacheDir}/z{data.Zone}");
+        var dir = new DirectoryInfo($"{CacheDir}/z{data.Territory}");
         var cacheFile = new FileInfo(dir.FullName + $"/{x:d2}-{z:d2}-{cacheKey}.tile");
 
         if (allowCache)
@@ -333,11 +358,11 @@ public sealed partial class NavmeshManager : IDisposable
             }
         }
 
-        var builder = new NavmeshBuilder(data, customization, customization.IsFlyingSupported(data.Zone));
+        var builder = new NavmeshBuilder(data, customization, customization.IsFlyingSupported(data.Territory));
         var (tile, vox, intermediates) = builder.Build(token);
 
-        if (TrackIntermediates)
-            Intermediates[x, z] = new(data, intermediates);
+        if (DebugData.Enabled)
+            DebugData.Intermediates[x, z] = new(data, intermediates);
 
         VoxelMap? map = null;
         if (vox != null)
@@ -380,7 +405,7 @@ public sealed partial class NavmeshManager : IDisposable
         parent.RootTile.Subdivision.AddRange(child.RootTile.Subdivision);
     }
 
-    public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, CancellationToken externalCancel = default, float range = 0)
+    public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, float range = 0, CancellationToken externalCancel = default)
     {
         if (_queryToken == null)
             throw new Exception($"Can't initiate query - navmesh is not loaded");

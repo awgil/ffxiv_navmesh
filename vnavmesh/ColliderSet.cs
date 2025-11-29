@@ -173,19 +173,19 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
     public NavmeshCustomization Customization { get; private set; } = new();
 
-    public Action<LayoutObjectSet> ZoneChanged = delegate { };
+    public Action<LayoutObjectSet> TerritoryChanged = delegate { };
 
     public int RowLength { get; private set; } = 0;
     public int NumTiles => RowLength * RowLength;
     public int TileUnits => 2048 / RowLength;
 
-    public uint LastLoadedZone;
+    public uint LastLoadedTerritory;
 
     public readonly record struct InstanceChangeArgs(uint Zone, ulong Key, InstanceWithMesh? Instance);
 
     public unsafe LayoutObjectSet()
     {
-        Service.ClientState.ZoneInit += OnZoneInit;
+        Service.ClientState.TerritoryChanged += OnTerritoryChanged;
 
         var bgVt = (BgPartsLayoutInstance.BgPartsLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 90 48 89 50 F8 ");
         var boxVt = (CollisionBoxLayoutInstance.CollisionBoxLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 85 FF 74 20 48 8B CF E8 ?? ?? ?? ?? 4C 8B F0 48 8D 55 C7 45 33 C0 49 8B CE 48 8B 00 FF 50 08 E9 ?? ?? ?? ?? 66 44 39 73 ?? 75 45 44 38 73 1F 74 0A 48 8B 43 08 83 78 1C 06 75 35 48 8B 4B 08 4C 39 B1 ?? ?? ?? ?? 74 28 85 F6 75 24 45 84 FF 74 1F B2 3A ", 0x17);
@@ -262,7 +262,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
     private unsafe void Initialize()
     {
-        InitZone(Service.ClientState.TerritoryType);
+        InitTerritory(Service.ClientState.TerritoryType);
 
         var world = LayoutWorld.Instance();
         Time("global", () => ActivateExistingLayout(world->GlobalLayout));
@@ -293,7 +293,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
         Time("ZoneChange", () =>
         {
-            ZoneChanged.Invoke(this);
+            TerritoryChanged.Invoke(this);
         });
     }
 
@@ -307,7 +307,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
     public override void Dispose(bool disposing)
     {
-        Service.ClientState.ZoneInit -= OnZoneInit;
+        Service.ClientState.TerritoryChanged -= OnTerritoryChanged;
 
         _bgCreate.Dispose();
         _bgProps.Dispose();
@@ -361,19 +361,19 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         enabled &= !inst.Instance.ForceSetPrimFlags.HasFlag(SceneExtractor.PrimitiveFlags.Transparent);
 
         LastUpdate = DateTime.Now;
-        Notify(new(LastLoadedZone, inst.Instance.Id, enabled ? inst : null));
+        Notify(new(LastLoadedTerritory, inst.Instance.Id, enabled ? inst : null));
     }
 
-    private unsafe void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
+    private unsafe void OnTerritoryChanged(ushort terr)
     {
-        InitZone(obj.TerritoryType.RowId);
-        ZoneChanged.Invoke(this);
+        InitTerritory(terr);
+        TerritoryChanged.Invoke(this);
     }
 
-    private unsafe void InitZone(uint zoneId)
+    private unsafe void InitTerritory(ushort terr)
     {
-        LastLoadedZone = zoneId;
-        Customization = NavmeshCustomizationRegistry.ForTerritory(zoneId);
+        LastLoadedTerritory = terr;
+        Customization = NavmeshCustomizationRegistry.ForTerritory(terr);
         // TODO: support different tile sizes, maybe?
         RowLength = 16; //  Customization.Settings.NumTiles[0];
 
@@ -728,7 +728,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 // sorts and groups change events from LayoutObjectSet
 public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
 {
-    public record struct TileChangeArgs(uint Zone, int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects);
+    public record struct TileChangeArgs(uint Territory, int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects);
 
     private readonly SortedDictionary<ulong, InstanceWithMesh>[,] _tiles = new SortedDictionary<ulong, InstanceWithMesh>[16, 16];
 
@@ -751,7 +751,7 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
     public void Watch(LayoutObjectSet set)
     {
         _sceneSubscription = set.Subscribe(Apply);
-        set.ZoneChanged += Clear;
+        set.TerritoryChanged += Clear;
     }
 
     private const int TileUnits = 128;
@@ -815,9 +815,14 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
     {
         lock (_lock)
         {
-            Customization = NavmeshCustomizationRegistry.ForTerritory(cs.LastLoadedZone);
+            Customization = NavmeshCustomizationRegistry.ForTerritory(cs.LastLoadedTerritory);
             foreach (var t in _tiles)
                 t?.Clear();
         }
+    }
+
+    public void Reload(uint zone, int x, int z)
+    {
+        Notify(new(zone, x, z, _tiles[x, z]));
     }
 }

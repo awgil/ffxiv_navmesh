@@ -12,7 +12,7 @@ using System.Threading;
 
 namespace Navmesh;
 
-public readonly record struct Tile(int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects, NavmeshCustomization Customization, uint Zone)
+public readonly record struct Tile(int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects, NavmeshCustomization Customization, uint Territory)
 {
     public readonly IEnumerable<InstanceWithMesh> ObjectsByMesh(Func<SceneExtractor.Mesh, bool> func) => Objects.Values.Where(o => func(o.Mesh));
     public readonly IEnumerable<InstanceWithMesh> ObjectsByPath(string path) => ObjectsByMesh(m => m.Path == path);
@@ -143,7 +143,7 @@ public sealed class NavmeshBuilder
         var rasterizer = new NavmeshRasterizer(shf, _walkableNormalThreshold, _walkableClimbVoxels, _walkableHeightVoxels, Settings.Filtering.HasFlag(NavmeshSettings.Filter.Interiors), vox, Telemetry);
 
         rasterizer.RasterizeFlat(Tile.Objects.Values, SceneExtractor.MeshType.FileMesh | SceneExtractor.MeshType.CylinderMesh | SceneExtractor.MeshType.AnalyticShape, true, true, token);
-        rasterizer.RasterizeFlat(Tile.Objects.Values.Concat(SceneTool.Get().GetTerrain(Tile.Zone)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, token);
+        rasterizer.RasterizeFlat(Tile.Objects.Values.Concat(SceneTool.Get().GetTerrain(Tile.Territory)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, token);
         //rasterizer.RasterizeFlat(Tile.Objects.Values.Select(o => (o.Mesh, o.Instance)), SceneExtractor.MeshType.Terrain | SceneExtractor.MeshType.AnalyticPlane, false, true, token);
 
         // 2. perform a bunch of postprocessing on a heightfield

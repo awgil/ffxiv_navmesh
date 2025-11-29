@@ -4,6 +4,7 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using Navmesh.Render;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
@@ -19,14 +20,15 @@ public sealed unsafe class DebugTileManager : IDisposable
     private (int, int) _hovered;
     private (int, int) _selected = (-1, -1);
     private LayoutObjectSet Scene => _tiles.Scene;
+    private NavmeshDebug DebugStuff => _tiles.DebugData;
 
     private readonly EffectMesh.Data[,] _drawMeshes = new EffectMesh.Data[16, 16];
     private readonly DebugNavmeshCustom.PerTile?[,] _perTile = new DebugNavmeshCustom.PerTile?[16, 16];
 
     (int X, int Z) Focused => _hovered.Item1 >= 0 && _hovered.Item2 >= 0 ? (_hovered.Item1, _hovered.Item2) : _selected;
-    NavmeshManager.IntermediatesData? FocusedTile => Focused.X >= 0 && Focused.Z >= 0 ? _tiles.Intermediates[Focused.X, Focused.Z] : null;
+    NavmeshDebug.IntermediatesData? FocusedTile => Focused.X >= 0 && Focused.Z >= 0 ? DebugStuff.Intermediates[Focused.X, Focused.Z] : null;
 
-    public static readonly Vector2 TileSize = new(40, 40);
+    public static readonly Vector2 UITileSize = new(40, 40);
     public static readonly Vector3 BoundsMin = new(-1024);
 
     public DebugTileManager(NavmeshManager tiles, DebugDrawer drawer, DebugGameCollision coll)
@@ -58,11 +60,21 @@ public sealed unsafe class DebugTileManager : IDisposable
     {
         var pos2 = Service.ObjectTable.LocalPlayer?.Position ?? new();
 
-        ImGui.Checkbox("Track intermediates", ref _tiles.TrackIntermediates);
+        var playerPosAdj = pos2 - BoundsMin;
+        var playerX = (int)playerPosAdj.X / 128;
+        var playerZ = (int)playerPosAdj.Z / 128;
+
+        ImGui.Checkbox("Record debug data", ref _tiles.DebugData.Enabled);
         var timeSinceUpd = (DateTime.Now - Scene.LastUpdate).TotalSeconds;
-        ImGui.TextUnformatted($"Last update: {timeSinceUpd:f3}s ago");
         if (ImGui.Button("Restart tile watch"))
             _tiles.InitGrid();
+        ImGui.SameLine();
+        ImGui.TextUnformatted($"Last update: {timeSinceUpd:f3}s ago");
+        if (ImGui.Button($"Rebuild tile {playerX}x{playerZ}"))
+        {
+            _selected = (playerX, playerZ);
+            _tiles.RebuildTile(playerX, playerZ);
+        }
 
         _hovered = (-1, -1);
 
@@ -76,7 +88,7 @@ public sealed unsafe class DebugTileManager : IDisposable
                 {
                     for (var i = 0; i < len; i++)
                     {
-                        var task = _tiles.Intermediates[i, j] == null ? null : Task.FromResult(0);
+                        var task = DebugStuff.BuildTasks[i, j];
                         uint col = task == null ? 0 : _selected == (i, j) ? 0xffba7917 : (task.Status switch
                         {
                             TaskStatus.RanToCompletion => 0xff76db3a,
@@ -86,12 +98,12 @@ public sealed unsafe class DebugTileManager : IDisposable
                         });
 
                         var pos = ImGui.GetCursorScreenPos();
-                        ImGui.GetWindowDrawList().AddRectFilled(pos, pos + TileSize, col);
+                        ImGui.GetWindowDrawList().AddRectFilled(pos, pos + UITileSize, col);
                         var label = $"{i:X}{j:X}";
-                        ImGui.SetCursorScreenPos(pos + (TileSize - ImGui.CalcTextSize(label)) * 0.5f);
+                        ImGui.SetCursorScreenPos(pos + (UITileSize - ImGui.CalcTextSize(label)) * 0.5f);
                         ImGui.Text(label);
                         ImGui.SetCursorScreenPos(pos);
-                        ImGui.Dummy(TileSize);
+                        ImGui.Dummy(UITileSize);
 
                         if (task != null)
                         {
@@ -116,6 +128,8 @@ public sealed unsafe class DebugTileManager : IDisposable
             using var nt = _tree.Node($"Tile {tile.X}x{tile.Z}###focused");
             if (!nt.Opened)
                 return;
+
+            DrawInstances(tile);
 
             bool highlightAll = false;
 
@@ -146,18 +160,18 @@ public sealed unsafe class DebugTileManager : IDisposable
             if (highlightAll)
                 _dd.EffectMesh?.Draw(_dd.RenderContext, GetOrInitVisualizer(tile));
 
-            if (inter == null)
-                return;
-
-            var debug = _perTile[tile.X, tile.Z] ??= new();
-            debug.DrawSolidHeightfield ??= new(inter.GetSolidHeightfield(), _tree, _dd);
-            debug.DrawSolidHeightfield.Draw();
-            debug.DrawCompactHeightfield ??= new(inter.GetCompactHeightfield(), _tree, _dd);
-            debug.DrawCompactHeightfield.Draw();
-            debug.DrawContourSet ??= new(inter.GetContourSet(), _tree, _dd);
-            debug.DrawContourSet.Draw();
-            debug.DrawPolyMesh ??= new(inter.GetMesh(), _tree, _dd);
-            debug.DrawPolyMesh.Draw();
+            if (inter != null)
+            {
+                var debug = _perTile[tile.X, tile.Z] ??= new();
+                debug.DrawSolidHeightfield ??= new(inter.GetSolidHeightfield(), _tree, _dd);
+                debug.DrawSolidHeightfield.Draw();
+                debug.DrawCompactHeightfield ??= new(inter.GetCompactHeightfield(), _tree, _dd);
+                debug.DrawCompactHeightfield.Draw();
+                debug.DrawContourSet ??= new(inter.GetContourSet(), _tree, _dd);
+                debug.DrawContourSet.Draw();
+                debug.DrawPolyMesh ??= new(inter.GetMesh(), _tree, _dd);
+                debug.DrawPolyMesh.Draw();
+            }
         }
     }
 
@@ -218,5 +232,138 @@ public sealed unsafe class DebugTileManager : IDisposable
         var inst = insts != null ? LayoutUtils.FindPtr(ref *insts, key) : null;
         var coll = inst != null ? inst->GetCollider() : null;
         return coll;
+    }
+
+    private string _meshFilter = "o6b1_a5_stc02";
+
+    private void DrawInstances(Tile t)
+    {
+        using var ni = _tree.Node("Mesh instances");
+        if (!ni.Opened)
+            return;
+
+        ImGui.InputText("Filter", ref _meshFilter);
+
+        var meshIndex = 0;
+        foreach (var group in t.Objects.Values.GroupBy(o => o.Mesh.Path))
+        {
+            var name = group.Key;
+            var mesh = group.First().Mesh;
+            var instances = group.Select(g => g.Instance).ToList();
+
+            using var nm = _tree.Node($"{name}: flags={mesh.MeshType}");
+            if (nm.SelectedOrHovered)
+                VisualizeMeshInstances(t, meshIndex);
+
+            if (nm.Opened)
+            {
+                using (var np = _tree.Node($"Parts ({mesh.Parts.Count})###parts", mesh.Parts.Count == 0))
+                {
+                    if (np.Opened)
+                    {
+                        int partIndex = 0;
+                        foreach (var p in mesh.Parts)
+                        {
+                            using var npi = _tree.Node(partIndex.ToString());
+                            if (npi.SelectedOrHovered)
+                                VisualizeMeshPart(t, mesh, meshIndex, partIndex);
+
+                            if (npi.Opened)
+                            {
+                                using (var nv = _tree.Node($"Vertices ({p.Vertices.Count})###verts"))
+                                {
+                                    if (nv.Opened)
+                                    {
+                                        int j = 0;
+                                        foreach (var v in p.Vertices)
+                                            if (_tree.LeafNode($"{j++}: {v:f3}").SelectedOrHovered)
+                                                VisualizeVertex(instances, v);
+                                    }
+                                }
+
+                                using (var nt = _tree.Node($"Primitives ({p.Primitives.Count})###prims"))
+                                {
+                                    if (nt.Opened)
+                                    {
+                                        int j = 0;
+                                        foreach (var t2 in p.Primitives)
+                                        {
+                                            var v1 = p.Vertices[t2.V1];
+                                            var v2 = p.Vertices[t2.V2];
+                                            var v3 = p.Vertices[t2.V3];
+                                            if (_tree.LeafNode($"{j++}: {t2.V1}x{t2.V2}x{t2.V3} ({v1:f3} x {v2:f3} x {v3:f3}) ({t2.Flags})").SelectedOrHovered)
+                                                VisualizeTriangle(instances, v1, v2, v3);
+                                        }
+                                    }
+                                }
+                            }
+
+                            ++partIndex;
+                        }
+                    }
+                }
+
+                using (var ni2 = _tree.Node($"Instances ({group.Count()})###instances", !group.Any()))
+                {
+                    if (ni2.Opened)
+                    {
+                        int instIndex = 0;
+                        foreach (var i3 in group)
+                        {
+                            var i = i3.Instance;
+                            if (_tree.LeafNode($"{instIndex}: {i.WorldBounds.Min:f3}-{i.WorldBounds.Max:f3}, R0 = {i.WorldTransform.Row0:f3}, R1 = {i.WorldTransform.Row1:f3}, R2 = {i.WorldTransform.Row2:f3}, R3 = {i.WorldTransform.Row3:f3}, {i.WorldBounds.Min:f3} - {i.WorldBounds.Max:f3} (+: {i.ForceSetPrimFlags}, -: {i.ForceClearPrimFlags})").SelectedOrHovered)
+                                VisualizeMeshInstance(t, meshIndex, instIndex);
+                            ++instIndex;
+                        }
+                    }
+                }
+
+            }
+
+            meshIndex++;
+        }
+    }
+
+    private void VisualizeMeshInstances(Tile t, int meshIndex)
+    {
+        _dd.EffectMesh?.DrawSingle(_dd.RenderContext, GetOrInitVisualizer(t), meshIndex);
+    }
+
+    private void VisualizeMeshInstance(Tile t, int meshIndex, int instIndex)
+    {
+        if (_dd.EffectMesh == null)
+            return;
+        var visu = GetOrInitVisualizer(t);
+        var visuMesh = visu.Meshes[meshIndex];
+        visuMesh.FirstInstance += instIndex;
+        visuMesh.NumInstances = 1;
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
+        visu.Bind(_dd.RenderContext);
+        visu.DrawManual(_dd.RenderContext, visuMesh);
+    }
+
+    private void VisualizeMeshPart(Tile t, SceneExtractor.Mesh mesh, int meshIndex, int partIndex)
+    {
+        if (_dd.EffectMesh == null)
+            return;
+        var visu = GetOrInitVisualizer(t);
+        var visuMesh = visu.Meshes[meshIndex];
+        visuMesh.FirstPrimitive += mesh.Parts.Take(partIndex).Sum(part => part.Primitives.Count);
+        visuMesh.NumPrimitives = mesh.Parts[partIndex].Primitives.Count;
+        _dd.EffectMesh.Bind(_dd.RenderContext, false, false);
+        visu.Bind(_dd.RenderContext);
+        visu.DrawManual(_dd.RenderContext, visuMesh);
+    }
+
+    private void VisualizeVertex(List<SceneExtractor.MeshInstance> inst, Vector3 v)
+    {
+        foreach (var i in inst)
+            _dd.DrawWorldPoint(i.WorldTransform.TransformCoordinate(v), 5, 0xff0000ff);
+    }
+
+    private void VisualizeTriangle(List<SceneExtractor.MeshInstance> inst, Vector3 v1, Vector3 v2, Vector3 v3)
+    {
+        foreach (var i in inst)
+            _dd.DrawWorldTriangle(i.WorldTransform.TransformCoordinate(v1), i.WorldTransform.TransformCoordinate(v2), i.WorldTransform.TransformCoordinate(v3), 0xff0000ff);
     }
 }

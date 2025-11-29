@@ -57,9 +57,8 @@ class DebugNavmeshManager : IDisposable
                 _manager.Reload(false);
         }
         ImGui.SameLine();
-        ImGui.TextUnformatted($"z{_manager.Scene.LastLoadedZone}, {string.Join(".", _manager.ActiveFestivals.Select(f => f.ToString("X")))}");
+        ImGui.TextUnformatted($"z{_manager.Scene.LastLoadedTerritory}, {string.Join(".", _manager.GetActiveFestivals().Select(f => f.ToString("X")))}");
         ImGui.TextUnformatted($"Num pathfinding tasks: {(_manager.PathfindInProgress ? 1 : 0)} in progress, {_manager.NumQueuedPathfindRequests} queued");
-        ImGui.Checkbox("Pause terrain watcher", ref _manager.Paused);
 
         if (_manager.Navmesh == null || _manager.Query == null)
             return;

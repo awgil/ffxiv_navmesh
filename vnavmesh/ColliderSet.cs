@@ -147,6 +147,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
     private readonly ConcurrentDictionary<ulong, Transform> _transformOverride = [];
     private readonly ConcurrentDictionary<Pointer<ILayoutInstance>, MaybeEnabled> _dirtyObjects = [];
 
+    // TODO: replace vtables instead
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.CreatePrimary> _bgCreate;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetProperties> _bgProps;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.DestroyPrimary> _bgDestroy;
@@ -166,8 +167,6 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetColliderActive> _boxColl;
 
     private readonly HookAddress<SharedGroupLayoutInstance.Delegates.InitTimelines> _sgInit;
-
-    private bool _watchColliders;
 
     private static readonly TraceObjectKey TRACE_OBJECT = TraceObjectKey.NONE;
 

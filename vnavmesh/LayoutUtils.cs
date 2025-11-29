@@ -189,7 +189,7 @@ public unsafe static class LayoutUtils
         if (ptr == null)
             return;
         var vt = *(nint*)ptr;
-        var m = Process.GetCurrentProcess().MainModule.BaseAddress;
+        var m = Process.GetCurrentProcess().MainModule!.BaseAddress;
         Service.Log.Debug($"VT of {(nint)ptr:X}: +{vt - m:X}");
     }
 }

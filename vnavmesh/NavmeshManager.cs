@@ -128,6 +128,7 @@ public sealed partial class NavmeshManager : IDisposable
             maxPolys = 1 << DtNavMesh.DT_POLY_BITS
         }, 6);
         Volume = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
+        _loadTaskProgress = 0;
     }
 
     private void OnConfigModified()
@@ -258,11 +259,6 @@ public sealed partial class NavmeshManager : IDisposable
             }, default);
         }
     }
-
-    //private async Task BuildManyTiles(IList<TileSet.TileChangeArgs> changes)
-    //{
-
-    //}
 
     private async Task BuildTile(Tile data, bool allowCache, CancellationToken token)
     {
@@ -493,6 +489,23 @@ public sealed partial class NavmeshManager : IDisposable
         }
 
         Log($"pruned {pruneCount} unreachable polygons");
+    }
+
+    public void CancelAll()
+    {
+        if (_queryToken == null)
+            return;
+
+        var cts = _queryToken;
+        _queryToken = null;
+        cts.Cancel();
+        ExecuteWhenIdle(() =>
+        {
+            _numActivePathfinds = 0;
+            cts.Dispose();
+            OnNavmeshChanged?.Invoke(Navmesh, Query);
+            _queryToken = new();
+        }, default);
     }
 
     private void ClearState()

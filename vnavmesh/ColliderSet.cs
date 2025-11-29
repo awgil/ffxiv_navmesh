@@ -330,8 +330,6 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         _sgInit.Dispose();
     }
 
-    private bool _infinite = false;
-
     private unsafe void Tick(IFramework fwk)
     {
         if (_initTask != null)
@@ -354,13 +352,6 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
                 NotifyObject(obj.Instance, obj.Enabled && obj.ColliderEnabled);
         }
         _dirtyObjects.Clear();
-
-        if (_infinite)
-        {
-            var (_, o) = _objects.First();
-            if (o.Instance != null)
-                NotifyObject(o.Instance, o.Enabled);
-        }
     }
 
     public DateTime LastUpdate { get; private set; }
@@ -383,9 +374,11 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
     {
         LastLoadedZone = zoneId;
         Customization = NavmeshCustomizationRegistry.ForTerritory(zoneId);
-        RowLength = Customization.Settings.NumTiles[0];
+        // TODO: support different tile sizes, maybe?
+        RowLength = 16; //  Customization.Settings.NumTiles[0];
 
         _objects.Clear();
+        _dirtyObjects.Clear();
         _transformOverride.Clear();
     }
 
@@ -446,7 +439,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         }
     }
 
-    // note that all BgParts transform modifications update the entire matrix
+    // note that all BgParts transforms update the entire matrix
     // the methods other than SetTransformImpl still call SetTransform on the graphics object and collider, which can result in a SetTranslation call causing miniscule changes to the rotation quaternion, which can result in different world bounds (when truncated to int) on the same mesh
     private unsafe void BgTransFDetour(BgPartsLayoutInstance* thisPtr, Transform* t)
     {
@@ -505,7 +498,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
     }
 
     // some scheduler thing sets material flags on some BgParts directly, which sucks because i really don't feel like reversing more of the scheduler
-    // the same code incidentally calls GetCollider2 to try to update the collider flags (though in this case, there is no attached collider, so hooking Collider::SetMaterial would do nothing)
+    // this function incidentally calls GetCollider2 to try to update the collider flags (though in this case, there is no attached collider, so hooking Collider::SetMaterial would do nothing)
     // GetCollider2 seems to only be called during zone transition/setup, as opposed to GetCollider, which is called dozens of times per frame during player movement thanks to streaming manager
     private unsafe Collider* BgCollHackDetour(BgPartsLayoutInstance* thisPtr)
     {

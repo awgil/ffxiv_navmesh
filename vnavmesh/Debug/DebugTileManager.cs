@@ -56,7 +56,7 @@ public sealed unsafe class DebugTileManager : IDisposable
 
     public void Draw()
     {
-        var pos2 = Service.ClientState.LocalPlayer?.Position ?? new();
+        var pos2 = Service.ObjectTable.LocalPlayer?.Position ?? new();
 
         ImGui.Checkbox("Track intermediates", ref _tiles.TrackIntermediates);
         var timeSinceUpd = (DateTime.Now - Scene.LastUpdate).TotalSeconds;
@@ -136,7 +136,7 @@ public sealed unsafe class DebugTileManager : IDisposable
                                 _coll.VisualizeCollider(coll, default, default);
                                 Vector3 t;
                                 coll->GetTranslation(&t);
-                                _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, t, 0xFFFF00FF);
+                                _dd.DrawWorldLine(Service.ObjectTable.LocalPlayer?.Position ?? default, t, 0xFFFF00FF);
                             }
                         }
                     }

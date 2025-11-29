@@ -41,7 +41,7 @@ public class DebugVoxelMap : IDisposable
         if (!nr.Opened)
             return;
 
-        var playerVoxel = _vm.FindLeafVoxel(Service.ClientState.LocalPlayer?.Position ?? default);
+        var playerVoxel = _vm.FindLeafVoxel(Service.ObjectTable.LocalPlayer?.Position ?? default);
         _tree.LeafNode($"Player's voxel: {playerVoxel.voxel:X} (empty={playerVoxel.empty})");
 
         for (int level = 0; level < _vm.Levels.Length; ++level)
@@ -180,6 +180,6 @@ public class DebugVoxelMap : IDisposable
     private void VisualizeCell((Vector3 min, Vector3 max) bounds)
     {
         _dd.DrawWorldAABB((bounds.min + bounds.max) * 0.5f, (bounds.max - bounds.min) * 0.5f, 0xff0080ff, 1);
-        _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, (bounds.min + bounds.max) * 0.5f, 0xFF0080ff, 1);
+        _dd.DrawWorldLine(Service.ObjectTable.LocalPlayer?.Position ?? default, (bounds.min + bounds.max) * 0.5f, 0xFF0080ff, 1);
     }
 }

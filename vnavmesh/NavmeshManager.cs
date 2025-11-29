@@ -165,7 +165,7 @@ public sealed partial class NavmeshManager : IDisposable
         Grid.Watch(Scene);
 
         // trigger rebuilds when updates stop
-        _tileSubscription = Grid.Debounced(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(10))
+        _tileSubscription = Grid.Debounced(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(30))
             .SelectMany(changes => Observable.FromAsync(async () =>
             {
                 _numStarted += changes.Count;
@@ -232,7 +232,7 @@ public sealed partial class NavmeshManager : IDisposable
         if (_seeding)
             return;
 
-        var player = Service.ClientState.LocalPlayer;
+        var player = Service.ObjectTable.LocalPlayer;
         if (player == null)
             return;
 

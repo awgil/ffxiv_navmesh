@@ -65,6 +65,9 @@ public sealed unsafe class DebugTileManager : IDisposable
         var playerZ = (int)playerPosAdj.Z / 128;
 
         ImGui.Checkbox("Record debug data", ref _tiles.DebugData.Enabled);
+        var pa = Scene.PauseActions;
+        if (ImGui.Checkbox("Pause (some) animations", ref pa))
+            Scene.PauseActions = pa;
         var timeSinceUpd = (DateTime.Now - Scene.LastUpdate).TotalSeconds;
         if (ImGui.Button("Restart tile watch"))
             _tiles.InitGrid();

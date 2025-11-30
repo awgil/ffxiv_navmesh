@@ -9,7 +9,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -18,7 +17,7 @@ using System.Threading.Tasks;
 namespace Navmesh;
 
 // tracks "enabled" flag, material flags, and world transforms of all objects in the current zone that have an attached collider
-public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.InstanceChangeArgs>
+public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSet.InstanceChangeArgs>
 {
     unsafe record class MaybeEnabled
     {
@@ -76,6 +75,15 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
 
         // part of the Camp Dragonhead castle thing that is placed exactly at whole-number coordinates, but the imprecision incurred by recalculating the rotation quaternion during setup causes its world bounds to expand by 1 unit on the Z axis
         public static readonly TraceObjectKey DRAGONHEAD_WALL = new() { Full = 0x003F8983_0B000000 };
+
+        public static readonly TraceObjectKey POLE = new() { Full = 0x00A4DD65_01090100 };
+
+        // in solution 9
+        // - 0x00A1DECE_00000000: toplevel prefab with action controller in slot 1
+        //   - 0x00A1DECE_09000000: regular bgpart, no movement
+        //   - 0x00A1DECE_0B000000: nested prefab, no action controller; transform is controlled by parent
+        //     - 0x00A1DECE_0B040000: nested bgpart, transform is calculated relative to parent
+        public static readonly TraceObjectKey DECE = new() { Full = 0x00A1DECE_00000000 };
     }
 
     private readonly ConcurrentDictionary<Pointer<ILayoutInstance>, MaybeEnabled> _objects = [];
@@ -101,9 +109,15 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetScaleImpl> _boxScale;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetColliderActive> _boxColl;
 
-    private readonly HookAddress<SharedGroupLayoutInstance.Delegates.InitTimelines> _sgInit;
+    private readonly HookAddress<SGActionController.Delegates.SetTransform> _actTransF;
+    private readonly HookAddress<SGActionController.Delegates.SetTranslation> _actTrans;
+    private readonly HookAddress<SGActionController.Delegates.SetRotation> _actRot;
+    private readonly HookAddress<SGActionController.Delegates.SetScale> _actScale;
 
-    private static readonly TraceObjectKey TRACE_OBJECT = TraceObjectKey.NONE;
+    private delegate void SGLoadUnknown(SharedGroupLayoutInstance* thisPtr);
+    private readonly HookAddress<SGLoadUnknown> _sgLoad;
+
+    private static readonly TraceObjectKey TRACE_OBJECT = TraceObjectKey.DECE;
 
     public DateTime LastUpdate { get; private set; }
     public NavmeshCustomization Customization { get; private set; } = new();
@@ -115,6 +129,18 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
     public int TileUnits => 2048 / RowLength;
 
     public uint LastLoadedTerritory;
+
+    public bool PauseActions
+    {
+        get => _actTransF.Enabled;
+        set
+        {
+            _actTransF.Enabled = value;
+            _actTrans.Enabled = value;
+            _actRot.Enabled = value;
+            _actScale.Enabled = value;
+        }
+    }
 
     public readonly record struct InstanceChangeArgs(uint Zone, ulong Key, InstanceWithMesh? Instance);
 
@@ -143,7 +169,12 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         _boxScale = new((nint)boxVt->SetScaleImpl, BoxScaleDetour, false);
         _boxColl = new((nint)boxVt->SetColliderActive, BoxCollDetour, false);
 
-        _sgInit = new(SharedGroupLayoutInstance.Addresses.InitTimelines, SgInitDetour, false);
+        _actTransF = new(SGActionController.Addresses.SetTransform, ActTransFDetour, false);
+        _actTrans = new(SGActionController.Addresses.SetTranslation, ActTransDetour, false);
+        _actRot = new(SGActionController.Addresses.SetRotation, ActRotDetour, false);
+        _actScale = new(SGActionController.Addresses.SetScale, ActScaleDetour, false);
+
+        _sgLoad = new("40 55 57 41 55 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B F9", SgLoadDetour, false);
     }
 
     private CancellationTokenSource? _initTaskSrc;
@@ -192,7 +223,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         _boxScale.Enabled = false;
         _boxColl.Enabled = false;
 
-        _sgInit.Enabled = false;
+        _sgLoad.Enabled = false;
     }
 
     private unsafe void Initialize()
@@ -223,7 +254,7 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
             _boxScale.Enabled = true;
             _boxColl.Enabled = true;
 
-            _sgInit.Enabled = true;
+            _sgLoad.Enabled = true;
         });
 
         Time("ZoneChange", () =>
@@ -262,7 +293,12 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         _boxScale.Dispose();
         _boxColl.Dispose();
 
-        _sgInit.Dispose();
+        _actTransF.Dispose();
+        _actTrans.Dispose();
+        _actRot.Dispose();
+        _actScale.Dispose();
+
+        _sgLoad.Dispose();
     }
 
     private unsafe void Tick(IFramework fwk)
@@ -550,56 +586,88 @@ public sealed partial class LayoutObjectSet : Subscribable<LayoutObjectSet.Insta
         }
     }
 
-    private unsafe void SgInitDetour(SharedGroupLayoutInstance* thisPtr, void* data)
+    private unsafe void SgLoadDetour(SharedGroupLayoutInstance* thisPtr)
     {
-        _sgInit.Original(thisPtr, data);
-        if (thisPtr != null)
-            DetectAnimations(thisPtr);
+        _sgLoad.Original(thisPtr);
+        Service.Log.Verbose($"SgLoad({SceneTool.GetKey(&thisPtr->ILayoutInstance):X})");
+        DetectAnimations(thisPtr);
+    }
+
+    private unsafe void ActTransFDetour(SGActionController* thisPtr, ILayoutInstance* instance, Transform* t)
+    {
+        return;
+    }
+
+    private unsafe void ActTransDetour(SGActionController* thisPtr, ILayoutInstance* instance, Vector3* t)
+    {
+        return;
+    }
+
+    private unsafe void ActRotDetour(SGActionController* thisPtr, ILayoutInstance* instance, Quaternion* t)
+    {
+        return;
+    }
+
+    private unsafe void ActScaleDetour(SGActionController* thisPtr, ILayoutInstance* instance, Vector3* t)
+    {
+        return;
     }
 
     private unsafe void DetectAnimations(SharedGroupLayoutInstance* thisPtr)
     {
-        var thisGrp = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+        var key = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+        TraceObject(&thisPtr->ILayoutInstance, $"checking for animations: ac1={(nint)thisPtr->ActionController1:X}, ac2={(nint)thisPtr->ActionController2}");
 
+        // parent was initialized before child and has override, update children and skip rest
+        // i'm not sure if action controllers can be nested, but it doesn't matter in either case, we treat the children as frozen
+        if (_transformOverride.TryGetValue(key, out var existing))
+        {
+            OverrideTransform(&thisPtr->ILayoutInstance, ref existing);
+            return;
+        }
+
+        if (thisPtr->ActionController1 != null)
+        {
+            if (thisPtr->ActionController1->VirtualTable == SGTransformActionController.StaticVirtualTablePointer)
+            {
+                var parentTransform = thisPtr->GetTransformImpl();
+                var cont = (SGTransformActionController*)thisPtr->ActionController1;
+                foreach (var inst in cont->Objects[..cont->NumObjects])
+                {
+                    OverrideTransform(inst.Instance, ref *parentTransform);
+                }
+            }
+        }
+
+        /*
         string? animationSrc = thisPtr->ActionController1 != null ? "motion1"
-            : thisPtr->ActionController2 != null ? "motion2"
+            //: thisPtr->ActionController2 != null ? "motion2"
             : thisPtr->TimeLineContainer.Instances.Any(i => i.Value->DataPtr->Loop == 1) ? "loop"
             : null;
 
         if (animationSrc != null)
             MarkIgnored(thisPtr, *thisPtr->GetTransformImpl(), animationSrc);
+        */
     }
 
-    private unsafe void MarkIgnored(SharedGroupLayoutInstance* thisPtr, Transform t, string animType)
+    private unsafe void OverrideTransform(ILayoutInstance* thisPtr, ref readonly Transform t)
     {
-        var thisKey = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-        if (_transformOverride.ContainsKey(thisKey))
-        {
-            Service.Log.Verbose($"Group {thisKey:X} is already ignored, doing nothing");
-            return;
-        }
+        var k = SceneTool.GetKey(thisPtr);
+        Service.Log.Verbose($"overriding transform of {k:X16} to {t.Display()}");
+        _transformOverride[k] = t;
 
-        foreach (var inst in thisPtr->Instances.Instances)
+        if (thisPtr->Id.Type == InstanceType.SharedGroup)
         {
-            switch (inst.Value->Instance->Id.Type)
+            foreach (var inst in ((SharedGroupLayoutInstance*)thisPtr)->Instances.Instances)
             {
-                case InstanceType.BgPart:
-                case InstanceType.CollisionBox:
-                    var key = SceneTool.GetKey(inst.Value->Instance);
-                    Service.Log.Verbose($"[SgInit] ignoring {inst.Value->Instance->Id.Type} {key:X}, which has animation type={animType}");
-                    _transformOverride[key] = t;
-                    if (_objects.TryGetValue(inst.Value->Instance, out var m))
-                    {
-                        Service.Log.Verbose($"correcting transform of {key:X} to {t.Display()}");
-                        m.Recreate(inst.Value->Instance, t);
-                        _dirtyObjects[inst.Value->Instance] = m;
-                    }
-                    break;
-                case InstanceType.SharedGroup:
-                    MarkIgnored((SharedGroupLayoutInstance*)inst.Value->Instance, t, animType);
-                    var key2 = SceneTool.GetKey(inst.Value->Instance);
-                    _transformOverride[key2] = t;
-                    break;
+                var instTransform = inst.Value->Transform;
+                Transform transformAdj = new()
+                {
+                    Translation = t.Translation + instTransform.Translation,
+                    Rotation = t.Rotation * instTransform.Rotation,
+                    Scale = t.Scale * instTransform.Scale
+                };
+                OverrideTransform(inst.Value->Instance, ref transformAdj);
             }
         }
     }

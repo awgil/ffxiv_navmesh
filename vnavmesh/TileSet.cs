@@ -10,16 +10,30 @@ namespace Navmesh;
 // sorts and groups change events from LayoutObjectSet
 public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
 {
-    public record struct TileChangeArgs(uint Territory, int X, int Z, SortedDictionary<ulong, InstanceWithMesh> Objects);
+    public record struct TileChangeArgs(uint Territory, int X, int Z);
 
-    private readonly SortedDictionary<ulong, InstanceWithMesh>[,] _tiles = new SortedDictionary<ulong, InstanceWithMesh>[16, 16];
+    private readonly Dictionary<ulong, InstanceWithMesh>[,] _tiles = new Dictionary<ulong, InstanceWithMesh>[16, 16];
 
     private readonly Lock _lock = new();
 
-    public IObservable<IList<TileChangeArgs>> Debounced(TimeSpan delay, TimeSpan timeout) => this
-        .GroupByUntil(_ => 1, g => g.Throttle(delay).Timeout(timeout))
+    public IObservable<IList<Tile>> BatchedWithTimeout(TimeSpan delay, TimeSpan timeout) => this
+        .GroupByUntil(_ => new System.Reactive.Unit(), g => g.Throttle(delay).Timeout(timeout))
         .SelectMany(x => x.ToList())
-        .Select(result => result.DistinctBy(t => (t.X, t.Z)).ToList());
+        .Select(result =>
+        {
+            // pause grid modifications while building sorted collections, which takes a few ms; if any of the layout objects are modified in this window, it will trigger an InvalidOperationException
+            lock (_lock)
+            {
+                return result.DistinctBy(t => (t.X, t.Z)).Select(t =>
+                    new Tile(
+                        t.X,
+                        t.Z,
+                        new SortedDictionary<ulong, InstanceWithMesh>(_tiles[t.X, t.Z].ToDictionary(k => k.Key, k => k.Value with { Instance = k.Value.Instance.Clone() })),
+                        NavmeshCustomizationRegistry.ForTerritory(t.Territory),
+                        t.Territory
+                    )).ToList();
+            }
+        });
 
     private IDisposable? _sceneSubscription;
 
@@ -75,10 +89,10 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
                         modified.Add((i, j));
                     }
             }
-        }
 
-        foreach (var (x, z) in modified)
-            Notify(new(change.Zone, x, z, _tiles[x, z]));
+            foreach (var (x, z) in modified)
+                Notify(new(change.Zone, x, z));
+        }
     }
 
     private HashSet<(int, int)> Remove(ulong key)
@@ -103,6 +117,6 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
 
     public void Reload(uint zone, int x, int z)
     {
-        Notify(new(zone, x, z, _tiles[x, z]));
+        Notify(new(zone, x, z));
     }
 }

@@ -44,11 +44,11 @@ public unsafe class DebugLayout : IDisposable
     private DebugGameCollision _coll;
     private DebugDrawer _dd;
     private Dictionary<ulong, InstanceData> _insts = new();
-    private bool _groupByLayerGroup = true;
-    private bool _groupByLayer = true;
+    private bool _groupByLayerGroup = false;
+    private bool _groupByLayer = false;
     private bool _groupByInstanceType = true;
     private bool _groupByMaterial = false;
-    private string _filterById = "3BDC3D";
+    private string _filterById = "A1DECE";
 
     public DebugLayout(DebugDrawer dd, DebugGameCollision coll)
     {
@@ -206,8 +206,14 @@ public unsafe class DebugLayout : IDisposable
                 case InstanceType.SharedGroup:
                 case InstanceType.HelperObject:
                     var instPrefab = (SharedGroupLayoutInstance*)inst;
-                    tree.LeafNode($"Action controller (1): {(nint)instPrefab->ActionController1:X}");
-                    tree.LeafNode($"Action controller (2): {(nint)instPrefab->ActionController2:X}");
+                    if (ImGui.Button("Move sideways"))
+                    {
+                        var tp = *instPrefab->GetTransformImpl();
+                        tp.Translation.X -= 1;
+                        instPrefab->SetTransform(&tp);
+                    }
+                    DrawActionController(tree, "Action controller (1)", instPrefab->ActionController1, coll);
+                    DrawActionController(tree, "Action controller (2)", instPrefab->ActionController2, coll);
                     tree.LeafNode($"Resource: {(instPrefab->ResourceHandle != null ? instPrefab->ResourceHandle->FileName : "<null>")}");
                     tree.LeafNode($"Flags: {instPrefab->PrefabFlags1:X8} {instPrefab->PrefabFlags2:X8}");
                     tree.LeafNode($"Timeline object: {(nint)instPrefab->TimelineObject:X}");
@@ -953,6 +959,50 @@ public unsafe class DebugLayout : IDisposable
             //if (!HasAnyCollision(grp) || LayoutUtils.ReadField<nint>(grp, 0x40) == 0 || grp->MotionController1 != null)
             //continue;
             DrawInstance(_tree, $"{v.Value->Id.InstanceKey:X8}{v.Value->SubId:X8}", v.Value->Layout, v.Value, _coll);
+        }
+    }
+
+    enum ControllerType
+    {
+        Unknown,
+        Transform
+    }
+
+    private static unsafe void DrawActionController(UITree tree, string label, SGActionController* controller, DebugGameCollision coll)
+    {
+        using var nd = tree.Node($"{label}: {(nint)controller:X}", controller == null);
+        if (!nd.Opened)
+            return;
+
+        ControllerType ctype = controller->VirtualTable == SGTransformActionController.StaticVirtualTablePointer ? ControllerType.Transform : ControllerType.Unknown;
+
+        var parentTx = controller->Group->GetTransformImpl();
+
+        tree.LeafNode($"Type: {ctype}");
+        tree.LeafNode($"Animation type: {controller->AnimationType}");
+        switch (ctype)
+        {
+            case ControllerType.Transform:
+                {
+                    var controllerTrans = (SGTransformActionController*)controller;
+                    using var nc = tree.Node($"Children: {controllerTrans->NumObjects}", controllerTrans->NumObjects == 0);
+                    if (nc.Opened)
+                    {
+                        for (var i = 0; i < controllerTrans->NumObjects; i++)
+                        {
+                            var inst = controllerTrans->Objects[i];
+                            DrawInstance(tree, $"[{i}]", inst.Instance->Layout, inst.Instance, coll);
+                        }
+                    }
+                    var t1 = controllerTrans->TranslationTimer.Start;
+                    var t2 = controllerTrans->RotationTimer.Start;
+                    var t3 = controllerTrans->ScaleTimer.Start;
+                    tree.LeafNode($"Translation (base): {t1}");
+                    tree.LeafNode($"Rotation (base): {t2}");
+                    tree.LeafNode($"Scale (base): {t3}");
+                    tree.LeafNode($"Translation (composed): {parentTx->Translation + new System.Numerics.Vector3(t1.X, t1.Y, t1.Z)}");
+                }
+                break;
         }
     }
 

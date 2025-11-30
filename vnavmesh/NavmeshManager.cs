@@ -52,6 +52,7 @@ public sealed partial class NavmeshManager : IDisposable
     public DtNavMesh? Mesh;
     public VoxelMap? Volume;
 
+    [Obsolete("should be replaced with some kind of actual task counter")]
     private volatile float _loadTaskProgress = -1;
     public float LoadTaskProgress => _loadTaskProgress; // negative if load task is not running, otherwise in [0, 1] range
 
@@ -93,6 +94,7 @@ public sealed partial class NavmeshManager : IDisposable
         OnConfigModified();
 
         Scene.TerritoryChanged += OnTerritoryChanged;
+        //Scene.PauseActions = true;
 
         _lastLoadQueryTask = Service.Framework.Run(InitGrid);
     }
@@ -144,7 +146,6 @@ public sealed partial class NavmeshManager : IDisposable
             maxPolys = 1 << DtNavMesh.DT_POLY_BITS
         }, 6);
         Volume = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
-        _loadTaskProgress = 0;
     }
 
     private void OnConfigModified()
@@ -181,7 +182,7 @@ public sealed partial class NavmeshManager : IDisposable
         Grid.Watch(Scene);
 
         // trigger rebuilds when updates stop
-        _tileSubscription = Grid.Debounced(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(30))
+        _tileSubscription = Grid.BatchedWithTimeout(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(30))
             .SelectMany(changes => Observable.FromAsync(async () =>
             {
                 var fest = GetActiveFestivals();
@@ -190,9 +191,8 @@ public sealed partial class NavmeshManager : IDisposable
                 var terr = changes[0].Territory;
                 List<Task> tiles = [];
                 var enableCache = _enableCache;
-                foreach (var tile in changes)
+                foreach (var t in changes)
                 {
-                    var t = new Tile(tile.X, tile.Z, new SortedDictionary<ulong, InstanceWithMesh>(tile.Objects.ToDictionary(k => k.Key, k => k.Value with { Instance = k.Value.Instance.Clone() })), Customization, terr);
                     var spawned =
                         Task.Run(async () => await BuildTile(t, enableCache, _taskSrc.Token), _taskSrc.Token)
                             .ContinueWith(_ =>
@@ -200,7 +200,7 @@ public sealed partial class NavmeshManager : IDisposable
                                 Interlocked.Add(ref _numFinished, 1);
                                 _loadTaskProgress = (float)_numFinished / _numStarted;
                             });
-                    DebugData.BuildTasks[tile.X, tile.Z] = spawned;
+                    DebugData.BuildTasks[t.X, t.Z] = spawned;
                     tiles.Add(spawned);
                 }
 
@@ -232,7 +232,7 @@ public sealed partial class NavmeshManager : IDisposable
                 Log("tile batch completed");
             }, ex =>
             {
-                Log(ex, "tile batch failed");
+                Log(ex, $"tile batch failed; last change event was {Grid.LastEvent}");
             });
     }
 

@@ -273,7 +273,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             return;
         }
 
-        if (Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
+        if (Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51, ConditionFlag.OccupiedInCutSceneEvent, ConditionFlag.WatchingCutscene))
             return;
 
         foreach (var (ptr, obj) in _dirtyObjects)

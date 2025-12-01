@@ -35,6 +35,34 @@ public class NavmeshDebug
     }
 }
 
+struct BuildProgress
+{
+    private volatile int _numStarted;
+    private volatile int _numFinished;
+    public bool Pending { get; private set; }
+
+    public int Start(int count)
+    {
+        Pending = false;
+        return Interlocked.Add(ref _numStarted, count);
+    }
+
+    public int Finish(int count)
+    {
+        Pending = false;
+        return Interlocked.Add(ref _numFinished, count);
+    }
+
+    public void SetPending()
+    {
+        if (_numStarted == 0)
+            Pending = true;
+    }
+    public void Clear() { _numStarted = _numFinished = 0; Pending = false; }
+    public readonly bool IsFinished => _numFinished >= _numStarted;
+    public readonly float Progress => Pending ? 0 : _numStarted > 0 ? (float)_numFinished / _numStarted : -1;
+}
+
 // manager that loads navmesh matching current zone and performs async pathfinding queries
 public sealed partial class NavmeshManager : IDisposable
 {
@@ -52,9 +80,7 @@ public sealed partial class NavmeshManager : IDisposable
     public DtNavMesh? Mesh;
     public VoxelMap? Volume;
 
-    [Obsolete("should be replaced with some kind of actual task counter")]
-    private volatile float _loadTaskProgress = -1;
-    public float LoadTaskProgress => _loadTaskProgress; // negative if load task is not running, otherwise in [0, 1] range
+    public float LoadTaskProgress => _buildProgress[Service.ClientState.TerritoryType].Progress; // negative if load task is not running, otherwise in [0, 1] range
 
     private Task _lastLoadQueryTask; // we limit the concurrency to max 1 running task (otherwise we'd need multiple Query objects, which aren't lightweight); note that each task completes on main thread!
 
@@ -62,8 +88,7 @@ public sealed partial class NavmeshManager : IDisposable
     public bool PathfindInProgress => _numActivePathfinds > 0;
     public int NumQueuedPathfindRequests => _numActivePathfinds > 0 ? _numActivePathfinds - 1 : 0;
 
-    private volatile int _numStarted;
-    private volatile int _numFinished;
+    private readonly BuildProgress[] _buildProgress = new BuildProgress[2048];
 
     public DirectoryInfo CacheDir { get; private set; }
 
@@ -137,6 +162,7 @@ public sealed partial class NavmeshManager : IDisposable
         ClearState();
         Array.Fill<uint>(ActiveFestivals, 0);
         DebugData.Reset();
+        _buildProgress[scene.LastLoadedTerritory].SetPending();
         Mesh = new(new()
         {
             orig = BoundsMin.SystemToRecast(),
@@ -187,8 +213,9 @@ public sealed partial class NavmeshManager : IDisposable
             {
                 var fest = GetActiveFestivals();
 
-                _numStarted += changes.Count;
                 var terr = changes[0].Territory;
+                _buildProgress[terr].Start(changes.Count);
+
                 List<Task> tiles = [];
                 var enableCache = _enableCache;
                 foreach (var t in changes)
@@ -197,15 +224,14 @@ public sealed partial class NavmeshManager : IDisposable
                         Task.Run(async () => await BuildTile(t, enableCache, _taskSrc.Token), _taskSrc.Token)
                             .ContinueWith(_ =>
                             {
-                                Interlocked.Add(ref _numFinished, 1);
-                                _loadTaskProgress = (float)_numFinished / _numStarted;
+                                _buildProgress[terr].Finish(1);
                             });
                     DebugData.BuildTasks[t.X, t.Z] = spawned;
                     tiles.Add(spawned);
                 }
 
                 await Task.WhenAll(tiles);
-                if (_numFinished < _numStarted)
+                if (!_buildProgress[terr].IsFinished)
                     return;
 
                 if (Mesh != null && terr == Service.ClientState.TerritoryType)
@@ -223,8 +249,7 @@ public sealed partial class NavmeshManager : IDisposable
                     OnNavmeshChanged?.Invoke(Navmesh, Query);
                 }
 
-                _numFinished = _numStarted = 0;
-                _loadTaskProgress = -1;
+                _buildProgress[terr].Clear();
                 _enableCache = true;
             }))
             .Subscribe(_ =>
@@ -267,7 +292,7 @@ public sealed partial class NavmeshManager : IDisposable
         if (Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(Service.ClientState.TerritoryType)?.TerritoryIntendedUse.RowId != 1)
             return;
 
-        if (Navmesh == null || Query == null || _loadTaskProgress >= 0)
+        if (Navmesh == null || Query == null || LoadTaskProgress >= 0)
             return;
 
         var pos = player.Position;

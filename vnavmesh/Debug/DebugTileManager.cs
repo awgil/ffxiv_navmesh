@@ -65,18 +65,22 @@ public sealed unsafe class DebugTileManager : IDisposable
         var playerZ = (int)playerPosAdj.Z / 128;
 
         ImGui.Checkbox("Record debug data", ref _tiles.DebugData.Enabled);
-        var pa = Scene.PauseActions;
-        if (ImGui.Checkbox("Pause (some) animations", ref pa))
-            Scene.PauseActions = pa;
         var timeSinceUpd = (DateTime.Now - Scene.LastUpdate).TotalSeconds;
         if (ImGui.Button("Restart tile watch"))
             _tiles.InitGrid();
         ImGui.SameLine();
         ImGui.TextUnformatted($"Last update: {timeSinceUpd:f3}s ago");
-        if (ImGui.Button($"Rebuild tile {playerX}x{playerZ}"))
+        ImGui.TextWrapped($"Last event: {_tiles.Grid?.LastEvent}");
+        if (ImGui.Button($"Rebuild player tile {playerX}x{playerZ}"))
         {
             _selected = (playerX, playerZ);
             _tiles.RebuildTile(playerX, playerZ);
+        }
+        if (_selected.Item1 >= 0 && _selected.Item2 >= 0)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button($"Rebuild selected tile {_selected.Item1}x{_selected.Item2}"))
+                _tiles.RebuildTile(_selected.Item1, _selected.Item2);
         }
 
         _hovered = (-1, -1);

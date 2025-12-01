@@ -48,7 +48,7 @@ public unsafe class DebugLayout : IDisposable
     private bool _groupByLayer = false;
     private bool _groupByInstanceType = true;
     private bool _groupByMaterial = false;
-    private string _filterById = "A1DECE";
+    private string _filterById = "98C35E";
 
     public DebugLayout(DebugDrawer dd, DebugGameCollision coll)
     {
@@ -159,11 +159,13 @@ public unsafe class DebugLayout : IDisposable
     public static bool DrawInstance(UITree tree, string tag, LayoutManager* layout, ILayoutInstance* inst, DebugGameCollision coll)
     {
         using var ni = tree.Node($"{tag} {inst->Id.Type} L{inst->Id.LayerKey:X4} I{inst->Id.InstanceKey:X8}.{inst->SubId:X8} ({inst->Id.u0:X2}) = {(nint)inst:X}, flags1={(Flags1)inst->Flags1} flags2={(Flags2)inst->Flags2} flags3={(Flags3)inst->Flags3}, pool-idx={inst->IndexInPool}, prefab-index={inst->IndexInPrefab}, nesting={inst->NestingLevel}###{tag}");
+        var subShift = 8 * (4 - (((inst->Flags1 >> 4) & 7) + 1));
         var collider = inst->GetCollider();
         if (ni.Opened)
         {
             tree.LeafNode($"Primary: {inst->HavePrimary()} '{LayoutUtils.ReadString(inst->GetPrimaryPath())}'");
             tree.LeafNode($"Secondary: {inst->HaveSecondary()} '{LayoutUtils.ReadString(inst->GetSecondaryPath())}'");
+            tree.LeafNode($"Subshift: {subShift}");
             tree.LeafNode($"Translation: {*inst->GetTranslationImpl()}");
             tree.LeafNode($"Rotation: {*inst->GetRotationImpl()}");
             tree.LeafNode($"Scale: {*inst->GetScaleImpl()}");
@@ -206,12 +208,6 @@ public unsafe class DebugLayout : IDisposable
                 case InstanceType.SharedGroup:
                 case InstanceType.HelperObject:
                     var instPrefab = (SharedGroupLayoutInstance*)inst;
-                    if (ImGui.Button("Move sideways"))
-                    {
-                        var tp = *instPrefab->GetTransformImpl();
-                        tp.Translation.X -= 1;
-                        instPrefab->SetTransform(&tp);
-                    }
                     DrawActionController(tree, "Action controller (1)", instPrefab->ActionController1, coll);
                     DrawActionController(tree, "Action controller (2)", instPrefab->ActionController2, coll);
                     tree.LeafNode($"Resource: {(instPrefab->ResourceHandle != null ? instPrefab->ResourceHandle->FileName : "<null>")}");
@@ -974,15 +970,28 @@ public unsafe class DebugLayout : IDisposable
         if (!nd.Opened)
             return;
 
-        ControllerType ctype = controller->VirtualTable == SGTransformActionController.StaticVirtualTablePointer ? ControllerType.Transform : ControllerType.Unknown;
-
-        var parentTx = controller->Group->GetTransformImpl();
-
-        tree.LeafNode($"Type: {ctype}");
         tree.LeafNode($"Animation type: {controller->AnimationType}");
-        switch (ctype)
+        switch (controller->AnimationType)
         {
-            case ControllerType.Transform:
+            case 4:
+            case 5:
+                {
+                    var controllerRot = (SGRotationActionController*)controller;
+                    var childCount = (controllerRot->ChildGroup == null ? 0 : 1) + (controllerRot->HasChild1 ? 1 : 0) + (controllerRot->HasChild2 ? 1 : 0);
+                    using var nr = tree.Node($"Children: {childCount}", childCount == 0);
+                    if (nr.Opened)
+                    {
+                        if (controllerRot->ChildGroup != null)
+                            DrawInstance(tree, "[primary]", controllerRot->ChildGroup->Layout, &controllerRot->ChildGroup->ILayoutInstance, coll);
+                        if (controllerRot->Child1 != null)
+                            DrawInstance(tree, "[1]", controllerRot->Child1->Layout, controllerRot->Child1, coll);
+                        if (controllerRot->Child2 != null)
+                            DrawInstance(tree, "[2]", controllerRot->Child1->Layout, controllerRot->Child2, coll);
+                    }
+                }
+                break;
+            case 12:
+            case 13:
                 {
                     var controllerTrans = (SGTransformActionController*)controller;
                     using var nc = tree.Node($"Children: {controllerTrans->NumObjects}", controllerTrans->NumObjects == 0);
@@ -1000,7 +1009,6 @@ public unsafe class DebugLayout : IDisposable
                     tree.LeafNode($"Translation (base): {t1}");
                     tree.LeafNode($"Rotation (base): {t2}");
                     tree.LeafNode($"Scale (base): {t3}");
-                    tree.LeafNode($"Translation (composed): {parentTx->Translation + new System.Numerics.Vector3(t1.X, t1.Y, t1.Z)}");
                 }
                 break;
         }

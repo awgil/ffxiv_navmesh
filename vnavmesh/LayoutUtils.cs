@@ -80,6 +80,26 @@ struct ExdZoneSharedGroup
     };
 }
 
+public static class Utils
+{
+    public static void Time(string label, Action t)
+    {
+        var s = Stopwatch.StartNew();
+        t();
+        s.Stop();
+        Service.Log.Verbose($"[Timer] {label} took {s.ElapsedMilliseconds:f3}ms");
+    }
+
+    public static T Time<T>(string label, Func<T> t)
+    {
+        var s = Stopwatch.StartNew();
+        var res = t();
+        s.Stop();
+        Service.Log.Verbose($"[Timer] {label} took {s.ElapsedMilliseconds:f3}ms");
+        return res;
+    }
+}
+
 public unsafe static class LayoutUtils
 {
     private static delegate* unmanaged<ExdZoneSharedGroup*, uint> _getEnabledRequirementIndex;

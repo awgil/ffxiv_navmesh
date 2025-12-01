@@ -21,17 +21,25 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
         .SelectMany(x => x.ToList())
         .Select(result =>
         {
-            // pause grid modifications while building sorted collections, which takes a few ms; if any of the layout objects are modified in this window, it will trigger an InvalidOperationException
+            // pause grid modifications while building sorted collections, which takes a few ms; if any layout objects are modified in this window, we get InvalidOperationException during iteration
+            // (easy to trigger with zones that have undetected animations)
             lock (_lock)
             {
                 return result.DistinctBy(t => (t.X, t.Z)).Select(t =>
-                    new Tile(
+                {
+                    SortedDictionary<ulong, InstanceWithMesh> objs = [];
+                    foreach (var (k, v) in _tiles[t.X, t.Z])
+                        // territory customizations are expected to modify instances if needed
+                        objs[k] = v with { Instance = v.Instance.Clone() };
+
+                    return new Tile(
                         t.X,
                         t.Z,
-                        new SortedDictionary<ulong, InstanceWithMesh>(_tiles[t.X, t.Z].ToDictionary(k => k.Key, k => k.Value with { Instance = k.Value.Instance.Clone() })),
+                        objs,
                         NavmeshCustomizationRegistry.ForTerritory(t.Territory),
                         t.Territory
-                    )).ToList();
+                    );
+                }).ToList();
             }
         });
 
@@ -44,7 +52,7 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
 
     public void Watch(LayoutObjectSet set)
     {
-        _sceneSubscription = set.Subscribe(Apply);
+        _sceneSubscription = set.Subscribe(Apply, NotifyError);
         set.TerritoryChanged += Clear;
     }
 
@@ -75,6 +83,7 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
                 var jmax = (int)max.Z / TileUnits;
 
                 // TODO: objects that are entirely outside the accessible zone should probably be filtered earlier, we might be able to use BoundingSphereImpl or something
+                // even accounting for animations/collision, it's logical to assume these objects should not be treated as solid
                 if (imax < 0 || jmax < 0 || imin > 15 || jmin > 15)
                 {
                     //Service.Log.Warning($"object {change.Instance} is outside world bounds, which will break the cache");

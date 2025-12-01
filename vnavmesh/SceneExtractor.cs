@@ -328,8 +328,17 @@ public class SceneExtractor
         if (m.HasFlag(MaterialFlags.Water))
             res |= PrimitiveFlags.Transparent;
 
+        // all world-bounding planes have 0x2411
+        // ALMOST all world-bounding planes have 0x202411, but not the ones in garlemald for some reason!
+        var isBoundingPlane = m.HasFlag(MaterialFlags.Unk0) && m.HasFlag(MaterialFlags.Unk4) && m.HasFlag(MaterialFlags.Temporary) && m.HasFlag(MaterialFlags.Unk13);
+
+        if (isBoundingPlane)
+            res |= PrimitiveFlags.ForceUnwalkable;
+
+        var forceSolid = m.HasFlag(MaterialFlags.Swim) || m.HasFlag(MaterialFlags.DiveDown) || isBoundingPlane;
+
         // all conditional colliders have the Temporary bit set, but a few non-conditional ones do as well
-        if (m.HasFlag(MaterialFlags.Temporary) && !(m.HasFlag(MaterialFlags.Swim) || m.HasFlag(MaterialFlags.DiveDown)))
+        if (m.HasFlag(MaterialFlags.Temporary) && !forceSolid)
             res |= PrimitiveFlags.Transparent;
 
         // in addition to actual fly-through materials, divable water should be excluded from the volume

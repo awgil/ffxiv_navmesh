@@ -68,7 +68,7 @@ public sealed partial class NavmeshManager : IDisposable
     public DirectoryInfo CacheDir { get; private set; }
 
     public readonly LayoutObjectSet Scene = new();
-    private TileSet? Grid;
+    internal TileSet? Grid;
     private IDisposable? _tileSubscription;
 
     private readonly CancellationTokenSource _taskSrc = new();
@@ -212,7 +212,7 @@ public sealed partial class NavmeshManager : IDisposable
                 {
                     _queryToken?.Cancel();
                     _queryToken = new();
-                    Customization.CustomizeMesh(Mesh, fest);
+                    Customization.CustomizeMesh(Mesh, [.. fest]);
                     Navmesh = new(Customization.Version, Mesh, Volume);
                     Query = new(Navmesh);
 

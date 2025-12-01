@@ -8,7 +8,6 @@ using FFXIVClientStructs.Interop;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -109,11 +108,6 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetScaleImpl> _boxScale;
     private readonly HookAddress<TriggerBoxLayoutInstance.Delegates.SetColliderActive> _boxColl;
 
-    private readonly HookAddress<SGActionController.Delegates.SetTransform> _actTransF;
-    private readonly HookAddress<SGActionController.Delegates.SetTranslation> _actTrans;
-    private readonly HookAddress<SGActionController.Delegates.SetRotation> _actRot;
-    private readonly HookAddress<SGActionController.Delegates.SetScale> _actScale;
-
     private delegate void SGLoadUnknown(SharedGroupLayoutInstance* thisPtr);
     private readonly HookAddress<SGLoadUnknown> _sgLoad;
 
@@ -129,18 +123,6 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     public int TileUnits => 2048 / RowLength;
 
     public uint LastLoadedTerritory;
-
-    public bool PauseActions
-    {
-        get => _actTransF.Enabled;
-        set
-        {
-            _actTransF.Enabled = value;
-            _actTrans.Enabled = value;
-            _actRot.Enabled = value;
-            _actScale.Enabled = value;
-        }
-    }
 
     public readonly record struct InstanceChangeArgs(uint Zone, ulong Key, InstanceWithMesh? Instance);
 
@@ -168,11 +150,6 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _boxRot = new((nint)boxVt->SetRotationImpl, BoxRotDetour, false);
         _boxScale = new((nint)boxVt->SetScaleImpl, BoxScaleDetour, false);
         _boxColl = new((nint)boxVt->SetColliderActive, BoxCollDetour, false);
-
-        _actTransF = new(SGActionController.Addresses.SetTransform, ActTransFDetour, false);
-        _actTrans = new(SGActionController.Addresses.SetTranslation, ActTransDetour, false);
-        _actRot = new(SGActionController.Addresses.SetRotation, ActRotDetour, false);
-        _actScale = new(SGActionController.Addresses.SetScale, ActScaleDetour, false);
 
         _sgLoad = new("40 55 57 41 55 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B F9", SgLoadDetour, false);
     }
@@ -231,10 +208,10 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         InitTerritory(Service.ClientState.TerritoryType);
 
         var world = LayoutWorld.Instance();
-        Time("global", () => ActivateExistingLayout(world->GlobalLayout));
-        Time("active", () => ActivateExistingLayout(world->ActiveLayout));
+        Utils.Time("global", () => ActivateExistingLayout(world->GlobalLayout));
+        Utils.Time("active", () => ActivateExistingLayout(world->ActiveLayout));
 
-        Time("hooks", () =>
+        Utils.Time("hooks", () =>
         {
             _bgCreate.Enabled = true;
             _bgProps.Enabled = true;
@@ -257,18 +234,10 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             _sgLoad.Enabled = true;
         });
 
-        Time("ZoneChange", () =>
+        Utils.Time("ZoneChange", () =>
         {
             TerritoryChanged.Invoke(this);
         });
-    }
-
-    private static void Time(string label, Action t)
-    {
-        var s = Stopwatch.StartNew();
-        t();
-        s.Stop();
-        Service.Log.Debug($"[LayoutObjectSet] [init] {label} took {s.ElapsedMilliseconds:f3}ms");
     }
 
     public override void Dispose(bool disposing)
@@ -292,11 +261,6 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _boxRot.Dispose();
         _boxScale.Dispose();
         _boxColl.Dispose();
-
-        _actTransF.Dispose();
-        _actTrans.Dispose();
-        _actRot.Dispose();
-        _actScale.Dispose();
 
         _sgLoad.Dispose();
     }
@@ -589,28 +553,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private unsafe void SgLoadDetour(SharedGroupLayoutInstance* thisPtr)
     {
         _sgLoad.Original(thisPtr);
-        Service.Log.Verbose($"SgLoad({SceneTool.GetKey(&thisPtr->ILayoutInstance):X})");
         DetectAnimations(thisPtr);
-    }
-
-    private unsafe void ActTransFDetour(SGActionController* thisPtr, ILayoutInstance* instance, Transform* t)
-    {
-        return;
-    }
-
-    private unsafe void ActTransDetour(SGActionController* thisPtr, ILayoutInstance* instance, Vector3* t)
-    {
-        return;
-    }
-
-    private unsafe void ActRotDetour(SGActionController* thisPtr, ILayoutInstance* instance, Quaternion* t)
-    {
-        return;
-    }
-
-    private unsafe void ActScaleDetour(SGActionController* thisPtr, ILayoutInstance* instance, Vector3* t)
-    {
-        return;
     }
 
     private unsafe void DetectAnimations(SharedGroupLayoutInstance* thisPtr)
@@ -622,22 +565,15 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         // i'm not sure if action controllers can be nested, but it doesn't matter in either case, we treat the children as frozen
         if (_transformOverride.TryGetValue(key, out var existing))
         {
-            OverrideTransform(&thisPtr->ILayoutInstance, ref existing);
+            OverrideTransform(&thisPtr->ILayoutInstance, existing);
             return;
         }
 
-        if (thisPtr->ActionController1 != null)
-        {
-            if (thisPtr->ActionController1->VirtualTable == SGTransformActionController.StaticVirtualTablePointer)
-            {
-                var parentTransform = thisPtr->GetTransformImpl();
-                var cont = (SGTransformActionController*)thisPtr->ActionController1;
-                foreach (var inst in cont->Objects[..cont->NumObjects])
-                {
-                    OverrideTransform(inst.Instance, ref *parentTransform);
-                }
-            }
-        }
+        var parentTransform = *thisPtr->GetTransformImpl();
+
+        ProcessActionController(thisPtr->ActionController1, parentTransform);
+        ProcessActionController(thisPtr->ActionController2, parentTransform);
+        ProcessTimeline(thisPtr, parentTransform);
 
         /*
         string? animationSrc = thisPtr->ActionController1 != null ? "motion1"
@@ -650,25 +586,90 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         */
     }
 
-    private unsafe void OverrideTransform(ILayoutInstance* thisPtr, ref readonly Transform t)
+    private unsafe void ProcessActionController(SGActionController* controller, in Transform parentTransform)
+    {
+        if (controller == null)
+            return;
+
+        var actionType = controller->AnimationType;
+        switch (actionType)
+        {
+            case 4:
+            case 5:
+                var rot = (SGRotationActionController*)controller;
+                if (rot->ChildGroup != null) // TODO: ???
+                    OverrideTransform(&rot->ChildGroup->ILayoutInstance, parentTransform);
+                if (rot->Child1 != null)
+                    OverrideTransform(rot->Child1, parentTransform);
+                if (rot->Child2 != null)
+                    OverrideTransform(rot->Child2, parentTransform);
+                break;
+            case 12:
+            case 13:
+                var cont = (SGTransformActionController*)controller;
+                foreach (var inst in cont->Objects[..cont->NumObjects])
+                    OverrideTransform(inst.Instance, parentTransform);
+                break;
+            default:
+                TraceObject(&controller->Owner->ILayoutInstance, $"unknown animation type: {actionType}");
+                break;
+        }
+    }
+
+    private unsafe void ProcessTimeline(SharedGroupLayoutInstance* group, in Transform parentTransform)
+    {
+        var loop = false;
+        var subShift = 8 * (4 - (((group->Flags1 >> 4) & 7) + 1));
+        foreach (var inst in group->TimeLineContainer.Instances)
+        {
+            if (inst.Value->DataPtr->Loop == 1 && inst.Value->DataPtr->AutoPlay == 1)
+            {
+                if (loop)
+                {
+                    NotifyError(new InvalidOperationException($"Instance {SceneTool.GetKey(&group->ILayoutInstance):X} has multiple looping timelines, I don't know how to handle this"));
+                    return;
+                }
+                loop = true;
+
+                List<uint> affectedInstances = [];
+                foreach (var i in inst.Value->DataPtr->Instances)
+                    affectedInstances.Add((uint)i.SubId << subShift);
+
+                foreach (var child in group->Instances.Instances)
+                    if (affectedInstances.Contains(child.Value->Instance->SubId))
+                        OverrideTransform(child.Value->Instance, parentTransform);
+            }
+        }
+    }
+
+    private unsafe void OverrideTransform(ILayoutInstance* thisPtr, in Transform t)
     {
         var k = SceneTool.GetKey(thisPtr);
         Service.Log.Verbose($"overriding transform of {k:X16} to {t.Display()}");
         _transformOverride[k] = t;
 
-        if (thisPtr->Id.Type == InstanceType.SharedGroup)
+        switch (thisPtr->Id.Type)
         {
-            foreach (var inst in ((SharedGroupLayoutInstance*)thisPtr)->Instances.Instances)
-            {
-                var instTransform = inst.Value->Transform;
-                Transform transformAdj = new()
+            case InstanceType.SharedGroup:
+                foreach (var inst in ((SharedGroupLayoutInstance*)thisPtr)->Instances.Instances)
                 {
-                    Translation = t.Translation + instTransform.Translation,
-                    Rotation = t.Rotation * instTransform.Rotation,
-                    Scale = t.Scale * instTransform.Scale
-                };
-                OverrideTransform(inst.Value->Instance, ref transformAdj);
-            }
+                    var instTransform = inst.Value->Transform;
+                    Transform transformAdj = new()
+                    {
+                        Translation = t.Translation + instTransform.Translation,
+                        Rotation = t.Rotation * instTransform.Rotation,
+                        Scale = t.Scale * instTransform.Scale
+                    };
+                    OverrideTransform(inst.Value->Instance, transformAdj);
+                }
+                break;
+
+            case InstanceType.BgPart:
+                CreateObject((BgPartsLayoutInstance*)thisPtr, "recreate(transform)");
+                break;
+            case InstanceType.CollisionBox:
+                CreateObject((CollisionBoxLayoutInstance*)thisPtr, "recreate(transform)");
+                break;
         }
     }
 

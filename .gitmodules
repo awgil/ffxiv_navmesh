@@ -1,3 +1,6 @@
 [submodule "DotRecast"]
 	path = DotRecast
 	url = https://github.com/xanunderscore/DotRecast
+[submodule "cs"]
+	path = cs
+	url = https://github.com/xanunderscore/FFXIVClientStructs

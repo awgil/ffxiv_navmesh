@@ -39,8 +39,8 @@
 	</PropertyGroup>
 
 	<ItemGroup Condition="'$(LocalCS)' == 'true'">
-		<ProjectReference Include="..\..\cs\FFXIVClientStructs\FFXIVClientStructs.csproj" />
-		<ProjectReference Include="..\..\cs\InteropGenerator.Runtime\InteropGenerator.Runtime.csproj" />
+		<ProjectReference Include="..\cs\FFXIVClientStructs\FFXIVClientStructs.csproj" />
+		<ProjectReference Include="..\cs\InteropGenerator.Runtime\InteropGenerator.Runtime.csproj" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(LocalCS)' == 'false'">

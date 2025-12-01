@@ -38,15 +38,14 @@ public class FollowPath : IDisposable
         _dalamud = dalamud;
         _sharedPathIsRunning = _dalamud.GetOrCreateData<bool[]>(_sharedPathTag, () => [false]);
         _manager = manager;
-        _manager.OnNavmeshChanged += OnNavmeshChanged;
-        OnNavmeshChanged(_manager.Navmesh, _manager.Query);
+        _manager.TerritoryChanged += OnTerritoryChanged;
     }
 
     public void Dispose()
     {
         UpdateSharedState(false);
         _dalamud.RelinquishData(_sharedPathTag);
-        _manager.OnNavmeshChanged -= OnNavmeshChanged;
+        _manager.TerritoryChanged -= OnTerritoryChanged;
         _camera.Dispose();
         _movement.Dispose();
     }
@@ -190,7 +189,7 @@ public class FollowPath : IDisposable
         DestinationTolerance = destTolerance;
     }
 
-    private void OnNavmeshChanged(Navmesh? navmesh, NavmeshQuery? query)
+    private void OnTerritoryChanged(uint terr)
     {
         UpdateSharedState(false);
         Waypoints.Clear();

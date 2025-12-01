@@ -75,7 +75,8 @@ public sealed partial class NavmeshManager : IDisposable
 
     public Navmesh? Navmesh { get; private set; }
     public NavmeshQuery? Query { get; private set; }
-    public event Action<Navmesh?, NavmeshQuery?>? OnNavmeshChanged;
+    public event Action<Navmesh?, NavmeshQuery?> NavmeshChanged = delegate { };
+    public event Action<uint> TerritoryChanged = delegate { };
 
     public DtNavMesh? Mesh;
     public VoxelMap? Volume;
@@ -172,6 +173,7 @@ public sealed partial class NavmeshManager : IDisposable
             maxPolys = 1 << DtNavMesh.DT_POLY_BITS
         }, 6);
         Volume = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
+        TerritoryChanged.Invoke(scene.LastLoadedTerritory);
     }
 
     private void OnConfigModified()
@@ -246,7 +248,7 @@ public sealed partial class NavmeshManager : IDisposable
                     if (ff.Seeds.TryGetValue(terr, out var ss))
                         Prune(ss.Select(s => (Vector3)s));
 
-                    OnNavmeshChanged?.Invoke(Navmesh, Query);
+                    NavmeshChanged.Invoke(Navmesh, Query);
                 }
 
                 _buildProgress[terr].Clear();
@@ -553,7 +555,7 @@ public sealed partial class NavmeshManager : IDisposable
         {
             _numActivePathfinds = 0;
             cts.Dispose();
-            OnNavmeshChanged?.Invoke(Navmesh, Query);
+            TerritoryChanged.Invoke(Scene.LastLoadedTerritory);
             _queryToken = new();
         }, default);
     }
@@ -575,7 +577,7 @@ public sealed partial class NavmeshManager : IDisposable
             _numActivePathfinds = 0;
             _seeding = false;
             cts.Dispose();
-            OnNavmeshChanged?.Invoke(null, null);
+            NavmeshChanged.Invoke(null, null);
             Query = null;
             Navmesh = null;
         }, default);

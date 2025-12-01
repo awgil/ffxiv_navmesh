@@ -30,12 +30,12 @@ class DebugNavmeshManager : IDisposable
         _dtr = dtr;
         _dd = dd;
         _coll = coll;
-        _manager.OnNavmeshChanged += OnNavmeshChanged;
+        _manager.NavmeshChanged += OnNavmeshChanged;
     }
 
     public void Dispose()
     {
-        _manager.OnNavmeshChanged -= OnNavmeshChanged;
+        _manager.NavmeshChanged -= OnNavmeshChanged;
         _drawNavmesh?.Dispose();
         _debugVoxelMap?.Dispose();
     }

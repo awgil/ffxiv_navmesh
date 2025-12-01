@@ -111,7 +111,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private delegate void SGLoadUnknown(SharedGroupLayoutInstance* thisPtr);
     private readonly HookAddress<SGLoadUnknown> _sgLoad;
 
-    private static readonly TraceObjectKey TRACE_OBJECT = TraceObjectKey.DECE;
+    private static readonly TraceObjectKey TRACE_OBJECT = new() { Full = 0x58F9EC_00000000 };
 
     public DateTime LastUpdate { get; private set; }
     public NavmeshCustomization Customization { get; private set; } = new();
@@ -351,17 +351,20 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private unsafe void BgDestroyDetour(BgPartsLayoutInstance* thisPtr)
     {
         _bgDestroy.Original(thisPtr);
+        TraceObject(&thisPtr->ILayoutInstance, $"destroy");
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
         {
             var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
             Service.Log.Verbose($"DestroyPrimary(bgpart) called on {k:X}");
             obj.Destroyed = true;
+            _dirtyObjects[&thisPtr->ILayoutInstance] = obj;
         }
     }
 
     private unsafe void BgToggleDetour(BgPartsLayoutInstance* thisPtr, bool active)
     {
         _bgToggle.Original(thisPtr, active);
+        TraceObject(&thisPtr->ILayoutInstance, $"toggle({active})");
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
         {
             if (obj.Enabled != active)
@@ -463,6 +466,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         {
             Service.Log.Verbose($"DestroyPrimary(box) called on {obj.Instance?.Instance.Id ?? 0:X}");
             obj.Destroyed = true;
+            _dirtyObjects[&thisPtr->ILayoutInstance] = obj;
         }
     }
 

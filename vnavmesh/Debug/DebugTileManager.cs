@@ -147,7 +147,7 @@ public sealed unsafe class DebugTileManager : IDisposable
                     highlightAll = true;
                     foreach (var (key, obj) in tile.Objects)
                     {
-                        var node = _tree.LeafNode($"[{key:X16}] {obj.Type}; flags=+{obj.Instance.ForceSetPrimFlags} -{obj.Instance.ForceClearPrimFlags}");
+                        var node = _tree.LeafNode($"[{key:X16}] {obj.Type} @ {obj.Mesh.Path}; flags=+{obj.Instance.ForceSetPrimFlags} -{obj.Instance.ForceClearPrimFlags}");
                         if (node.SelectedOrHovered && obj.Type > 0)
                         {
                             highlightAll = false;

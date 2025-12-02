@@ -35,22 +35,44 @@ public class NavmeshDebug
     }
 }
 
-struct BuildProgress
+struct BuildProgress()
 {
-    private volatile int _numStarted;
-    private volatile int _numFinished;
+    private int _numStarted;
+    private int _numFinished;
     public bool Pending { get; private set; }
+    private DateTime[,] _mostRecentTaskStart = new DateTime[16, 16];
+    private readonly Lock _lock = new();
 
-    public int Start(int count)
+    public (int NumStarted, DateTime SpawnTime) Start(IList<Tile> tiles)
     {
-        Pending = false;
-        return Interlocked.Add(ref _numStarted, count);
+        lock (_lock)
+        {
+            var dt = DateTime.Now;
+            foreach (var t in tiles)
+                _mostRecentTaskStart[t.X, t.Z] = dt;
+
+            Pending = false;
+            _numStarted += tiles.Count;
+            return (_numStarted, dt);
+        }
     }
 
     public int Finish(int count)
     {
-        Pending = false;
-        return Interlocked.Add(ref _numFinished, count);
+        lock (_lock)
+        {
+            Pending = false;
+            _numFinished += count;
+            return _numFinished;
+        }
+    }
+
+    public readonly DateTime MostRecentTaskStart(int x, int z)
+    {
+        lock (_lock)
+        {
+            return _mostRecentTaskStart[x, z];
+        }
     }
 
     public void SetPending()
@@ -58,7 +80,7 @@ struct BuildProgress
         if (_numStarted == 0)
             Pending = true;
     }
-    public void Clear() { _numStarted = _numFinished = 0; Pending = false; }
+    public void Clear() { _numStarted = _numFinished = 0; Pending = false; _mostRecentTaskStart = new DateTime[16, 16]; }
     public readonly bool IsFinished => _numFinished >= _numStarted;
     public readonly float Progress => Pending ? 0 : _numStarted > 0 ? (float)_numFinished / _numStarted : -1;
 }
@@ -89,7 +111,7 @@ public sealed partial class NavmeshManager : IDisposable
     public bool PathfindInProgress => _numActivePathfinds > 0;
     public int NumQueuedPathfindRequests => _numActivePathfinds > 0 ? _numActivePathfinds - 1 : 0;
 
-    private readonly BuildProgress[] _buildProgress = new BuildProgress[2048];
+    private readonly BuildProgress[] _buildProgress;
 
     public DirectoryInfo CacheDir { get; private set; }
 
@@ -123,6 +145,8 @@ public sealed partial class NavmeshManager : IDisposable
         //Scene.PauseActions = true;
 
         _lastLoadQueryTask = Service.Framework.Run(InitGrid);
+        _buildProgress = new BuildProgress[2048];
+        Array.Fill(_buildProgress, new());
     }
 
     public void Dispose()
@@ -214,18 +238,23 @@ public sealed partial class NavmeshManager : IDisposable
             .SelectMany(changes => Observable.FromAsync(async () =>
             {
                 var fest = GetActiveFestivals();
-
                 var terr = changes[0].Territory;
-                _buildProgress[terr].Start(changes.Count);
+
+                // ensure that the most recently STARTED task is the one whose output is added to the mesh
+                // consider the case where a zone has already been built, and the player triggers a cutscene that loads the same zone with a lot of added or removed objects, then ends the cutscene quickly and returns to the normal zone; the normal zone tiles will be loaded from cache before the useless cutscene tiles are built from scratch
+                // we do try to pause the object watcher in cutscenes, but the condition flags are not always reliable
+                var (_, spawnTime) = _buildProgress[terr].Start(changes);
 
                 List<Task> tiles = [];
                 var enableCache = _enableCache;
                 foreach (var t in changes)
                 {
+                    Slog.LogGeneric("tile-start", (int)terr, t.X, t.Z, string.Join(" ", t.Objects.Keys.Select(k => k.ToString("X16"))));
                     var spawned =
-                        Task.Run(async () => await BuildTile(t, enableCache, _taskSrc.Token), _taskSrc.Token)
+                        Task.Run(async () => await BuildTile(t, enableCache, spawnTime, _taskSrc.Token), _taskSrc.Token)
                             .ContinueWith(_ =>
                             {
+                                Slog.LogGeneric("tile-end", (int)terr, t.X, t.Z);
                                 _buildProgress[terr].Finish(1);
                             });
                     DebugData.BuildTasks[t.X, t.Z] = spawned;
@@ -240,7 +269,7 @@ public sealed partial class NavmeshManager : IDisposable
                 {
                     _queryToken?.Cancel();
                     _queryToken = new();
-                    Customization.CustomizeMesh(Mesh, [.. fest]);
+                    Customization.CustomizeMesh(Mesh, fest);
                     Navmesh = new(Customization.Version, Mesh, Volume);
                     Query = new(Navmesh);
 
@@ -312,7 +341,7 @@ public sealed partial class NavmeshManager : IDisposable
         }
     }
 
-    private async Task BuildTile(Tile data, bool allowCache, CancellationToken token)
+    private async Task BuildTile(Tile data, bool allowCache, DateTime spawnTime, CancellationToken token)
     {
         var x = data.X;
         var z = data.Z;
@@ -322,16 +351,20 @@ public sealed partial class NavmeshManager : IDisposable
         {
             var (tile, vox) = LoadOrBuildTile(data, allowCache, token);
 
-            // if tile zone doesn't match current zone, the player changed areas while we were building, so we don't modify the loaded mesh (tile will still be saved to cache)
-            if (Mesh != null && data.Territory == Scene.LastLoadedTerritory)
+            // another task has been spawned, but it may have already finished, i.e. if it was entirely loaded from cache
+            if (_buildProgress[data.Territory].MostRecentTaskStart(data.X, data.Z) > spawnTime)
+                return;
+
+            // can't add tile to current mesh
+            if (Mesh == null || data.Territory != Scene.LastLoadedTerritory)
+                return;
+
+            lock (meshLock)
             {
-                lock (meshLock)
-                {
-                    if (tile != null)
-                        Mesh.UpdateTile(tile, 0);
-                    if (vox != null && Volume != null)
-                        MergeTile(Volume, x, z, vox);
-                }
+                if (tile != null)
+                    Mesh.UpdateTile(tile, 0);
+                if (vox != null && Volume != null)
+                    MergeTile(Volume, x, z, vox);
             }
         }
         catch (Exception ex)

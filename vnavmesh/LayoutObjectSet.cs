@@ -111,7 +111,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private delegate void SGLoadUnknown(SharedGroupLayoutInstance* thisPtr);
     private readonly HookAddress<SGLoadUnknown> _sgLoad;
 
-    private static readonly TraceObjectKey TRACE_OBJECT = new() { Full = 0x58F9EC_00000000 };
+    private static readonly TraceObjectKey TRACE_OBJECT = new() { Full = 0x5626E2_00000000 };
 
     public DateTime LastUpdate { get; private set; }
     public NavmeshCustomization Customization { get; private set; } = new();
@@ -129,6 +129,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     public unsafe LayoutObjectSet()
     {
         Service.ClientState.TerritoryChanged += OnTerritoryChanged;
+        Service.Condition.ConditionChange += Condition_ConditionChange;
 
         var bgVt = (BgPartsLayoutInstance.BgPartsLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 90 48 89 50 F8 ");
         var boxVt = (CollisionBoxLayoutInstance.CollisionBoxLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 85 FF 74 20 48 8B CF E8 ?? ?? ?? ?? 4C 8B F0 48 8D 55 C7 45 33 C0 49 8B CE 48 8B 00 FF 50 08 E9 ?? ?? ?? ?? 66 44 39 73 ?? 75 45 44 38 73 1F 74 0A 48 8B 43 08 83 78 1C 06 75 35 48 8B 4B 08 4C 39 B1 ?? ?? ?? ?? 74 28 85 F6 75 24 45 84 FF 74 1F B2 3A ", 0x17);
@@ -152,6 +153,11 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _boxColl = new((nint)boxVt->SetColliderActive, BoxCollDetour, false);
 
         _sgLoad = new("40 55 57 41 55 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B F9", SgLoadDetour, false);
+    }
+
+    private void Condition_ConditionChange(ConditionFlag flag, bool value)
+    {
+        Slog.LogGeneric("condition", (int)flag, value ? 1 : 0, extra: flag.ToString());
     }
 
     private CancellationTokenSource? _initTaskSrc;
@@ -273,18 +279,22 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             return;
         }
 
-        if (Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51, ConditionFlag.OccupiedInCutSceneEvent, ConditionFlag.WatchingCutscene))
+        if (Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
             return;
 
         foreach (var (ptr, obj) in _dirtyObjects)
         {
             if (obj.Destroyed)
             {
+                Slog.TraceDelete(ptr, LastLoadedTerritory, "is-destroyed");
                 if (_objects.Remove(ptr, out var destroyed) && destroyed.Instance is { } destroyedObject)
                     NotifyObject(destroyedObject, false);
             }
             else if (obj.Instance != null)
+            {
+                Trace(ptr, "notify", obj.Enabled && obj.ColliderEnabled ? "enabled" : "disabled");
                 NotifyObject(obj.Instance, obj.Enabled && obj.ColliderEnabled);
+            }
         }
         _dirtyObjects.Clear();
     }
@@ -299,18 +309,24 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private unsafe void OnTerritoryChanged(ushort terr)
     {
+        Slog.LogGeneric("territory-change", (int)LastLoadedTerritory, terr);
         InitTerritory(terr);
         TerritoryChanged.Invoke(this);
     }
 
     private unsafe void InitTerritory(ushort terr)
     {
+        var prevTerr = LastLoadedTerritory;
         LastLoadedTerritory = terr;
         Customization = NavmeshCustomizationRegistry.ForTerritory(terr);
         // TODO: support different tile sizes
         RowLength = 16; //  Customization.Settings.NumTiles[0];
 
+        foreach (var obj in _objects)
+            Slog.TraceDelete(obj.Key, prevTerr, "gc");
         _objects.Clear();
+        foreach (var obj in _dirtyObjects)
+            Slog.TraceDelete(obj.Key, prevTerr, "gc-dirty");
         _dirtyObjects.Clear();
         _transformOverride.Clear();
     }
@@ -351,11 +367,9 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private unsafe void BgDestroyDetour(BgPartsLayoutInstance* thisPtr)
     {
         _bgDestroy.Original(thisPtr);
-        TraceObject(&thisPtr->ILayoutInstance, $"destroy");
+        Trace(thisPtr, "destroy");
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
         {
-            var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-            Service.Log.Verbose($"DestroyPrimary(bgpart) called on {k:X}");
             obj.Destroyed = true;
             _dirtyObjects[&thisPtr->ILayoutInstance] = obj;
         }
@@ -364,14 +378,17 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private unsafe void BgToggleDetour(BgPartsLayoutInstance* thisPtr, bool active)
     {
         _bgToggle.Original(thisPtr, active);
-        TraceObject(&thisPtr->ILayoutInstance, $"toggle({active})");
+        Trace(thisPtr, $"toggle({active})");
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
         {
             if (obj.Enabled != active)
             {
+                Trace(thisPtr, $"toggle-set({active})");
                 obj.Enabled = active;
                 _dirtyObjects[&thisPtr->ILayoutInstance] = obj;
             }
+            else
+                Trace(thisPtr, "toggle-noop");
         }
     }
 
@@ -419,6 +436,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private unsafe void UpdateBgTransform(BgPartsLayoutInstance* thisPtr)
     {
+        Trace(thisPtr, "pre-update-transform");
         var tx = thisPtr->GetTransformImpl();
 
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
@@ -427,7 +445,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             {
                 inst.Recreate(&thisPtr->ILayoutInstance, *tx);
                 if (inst.Instance != null)
-                    TraceObject(&thisPtr->ILayoutInstance, $"transform(bg): {inst.Instance.Instance.WorldBounds.Display()}, stored={inst.Transform.Display()}");
+                    Trace(thisPtr, "update-transform", $"{inst.Instance.Instance.WorldBounds.Display()}, stored={inst.Transform.Display()}");
                 _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
         }
@@ -438,13 +456,14 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     // GetCollider2 seems to only be called during zone transition/setup, as opposed to GetCollider, which is called dozens of times per frame during player movement thanks to streaming manager
     private unsafe Collider* BgCollHackDetour(BgPartsLayoutInstance* thisPtr)
     {
+        Trace(thisPtr, "pre-collider");
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst) && inst.Instance != null)
         {
             var oldFlags = inst.Instance.Instance.ForceSetPrimFlags;
             var newFlags = SceneExtractor.ExtractMaterialFlags(thisPtr->CollisionMaterialIdHigh << 32 | thisPtr->CollisionMaterialIdLow);
             if (oldFlags != newFlags)
             {
-                TraceObject(&thisPtr->ILayoutInstance, "coll2(material)");
+                Trace(thisPtr, "set-material", $"{oldFlags} => {newFlags}");
                 inst.Instance.Instance.ForceSetPrimFlags = newFlags;
                 _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
@@ -494,8 +513,9 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         {
             if (*value != inst.Transform.Translation)
             {
-                TraceObject(&thisPtr->ILayoutInstance, "translation(box)");
+                var prev = inst.Transform.Translation;
                 var tnew = inst.Transform with { Translation = *value };
+                Trace(thisPtr, "translation(box)", $"{prev} => {inst.Transform.Translation}");
                 inst.Recreate(&thisPtr->ILayoutInstance, tnew);
                 _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
@@ -513,8 +533,9 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         {
             if (*value != inst.Transform.Rotation)
             {
-                TraceObject(&thisPtr->ILayoutInstance, "rotation(box)");
+                var prev = inst.Transform.Rotation;
                 var tnew = inst.Transform with { Rotation = *value };
+                Trace(thisPtr, "rotation(box)", $"{prev} => {inst.Transform.Rotation}");
                 inst.Recreate(&thisPtr->ILayoutInstance, tnew);
                 _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
@@ -532,8 +553,9 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         {
             if (*value != inst.Transform.Scale)
             {
-                TraceObject(&thisPtr->ILayoutInstance, "scale(box)");
+                var prev = inst.Transform.Scale;
                 var tnew = inst.Transform with { Scale = *value };
+                Trace(thisPtr, "rotation(scale)", $"{prev} => {inst.Transform.Scale}");
                 inst.Recreate(&thisPtr->ILayoutInstance, tnew);
                 _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
@@ -548,6 +570,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         {
             if (inst.ColliderEnabled != active)
             {
+                Trace(thisPtr, $"collider({active})");
                 inst.ColliderEnabled = active;
                 _dirtyObjects[&thisPtr->ILayoutInstance] = inst;
             }
@@ -563,12 +586,13 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private unsafe void DetectAnimations(SharedGroupLayoutInstance* thisPtr)
     {
         var key = SceneTool.GetKey(&thisPtr->ILayoutInstance);
-        TraceObject(&thisPtr->ILayoutInstance, $"checking for animations: ac1={(nint)thisPtr->ActionController1:X}, ac2={(nint)thisPtr->ActionController2}");
+        Trace(thisPtr, "detect-animations");
 
         // parent was initialized before child and has override, update children and skip rest
         // i'm not sure if action controllers can be nested, but it doesn't matter in either case, we treat the children as frozen
         if (_transformOverride.TryGetValue(key, out var existing))
         {
+            Trace(thisPtr, "set-transform-group", existing.Display());
             OverrideTransform(&thisPtr->ILayoutInstance, existing);
             return;
         }
@@ -615,7 +639,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
                     OverrideTransform(inst.Instance, parentTransform);
                 break;
             default:
-                TraceObject(&controller->Owner->ILayoutInstance, $"unknown animation type: {actionType}");
+                Trace(controller->Owner, "unknown-animation", actionType.ToString());
                 break;
         }
     }
@@ -649,7 +673,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private unsafe void OverrideTransform(ILayoutInstance* thisPtr, in Transform t)
     {
         var k = SceneTool.GetKey(thisPtr);
-        Service.Log.Verbose($"overriding transform of {k:X16} to {t.Display()}");
+        Trace(thisPtr, "set-transform", t.Display());
         _transformOverride[k] = t;
 
         switch (thisPtr->Id.Type)
@@ -679,20 +703,25 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private unsafe void CreateObject(BgPartsLayoutInstance* thisPtr, string source)
     {
-        var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+        Trace(thisPtr, $"pre-create({source})");
+
         if (!thisPtr->HasCollision())
         {
-            //Service.Log.Verbose($"create(bgpart): skip (no collision): {k:X16}");
+            Trace(thisPtr, "skip (no collision)");
             return;
         }
 
+        var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+
         if (!Customization.FilterObject(k, &thisPtr->ILayoutInstance))
+        {
+            Trace(thisPtr, "skip (filtered)");
             return;
+        }
 
         if (!_transformOverride.TryGetValue(k, out var trans))
             trans = *thisPtr->GetTransformImpl();
 
-        //Service.Log.Verbose($"create(bgpart): source={source}: {k:X16}; enabled={thisPtr->HasEnabledFlag()}, mat={(ulong)thisPtr->CollisionMaterialIdHigh << 32 | thisPtr->CollisionMaterialIdLow:X}");
         var obj = new MaybeEnabled()
         {
             Instance = SceneTool.Get().CreateInstance(thisPtr, trans),
@@ -700,17 +729,21 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             IsBgPart = true,
             Transform = trans,
         };
-        TraceObject(&thisPtr->ILayoutInstance, $"create({source}): {obj.Instance!.Instance.WorldBounds.Display()}, stored={obj.Transform.Display()}");
+        Trace(thisPtr, $"create({source})", $"{obj.Instance!.Instance.WorldBounds.Display()}, stored={obj.Transform.Display()}");
         _dirtyObjects[&thisPtr->ILayoutInstance] = _objects[&thisPtr->ILayoutInstance] = obj;
     }
 
     private unsafe void CreateObject(CollisionBoxLayoutInstance* thisPtr, string source)
     {
+        Trace(thisPtr, $"pre-create({source})");
+
         var k = SceneTool.GetKey(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance);
 
-        //Service.Log.Verbose($"create(box): source={source}: {k:X16}; enabled={thisPtr->HasEnabledFlag()}");
         if (!Customization.FilterObject(k, &thisPtr->TriggerBoxLayoutInstance.ILayoutInstance))
+        {
+            Trace(thisPtr, "skip (filtered)");
             return;
+        }
 
         if (!_transformOverride.TryGetValue(k, out var trans))
             trans = thisPtr->Transform;
@@ -723,16 +756,19 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             Transform = trans,
             ColliderEnabled = thisPtr->IsColliderActive(),
         };
+        Trace(thisPtr, $"create({source})", $"{obj.Instance!.Instance.WorldBounds.Display()}, stored={obj.Transform.Display()}");
         _dirtyObjects[&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance]
             = _objects[&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance]
             = obj;
     }
 
-    private unsafe void TraceObject(ILayoutInstance* inst, string label)
+    private void Trace(ILayoutInstance* thisPtr, string eventName, string extra = "")
     {
-        if (TRACE_OBJECT.IsAll || inst->Id.InstanceKey == TRACE_OBJECT.InstanceKey && inst->SubId == TRACE_OBJECT.SubId)
-        {
-            Service.Log.Verbose($"traced object modification: {inst->Id.InstanceKey:X8}.{inst->SubId:X8} {label}");
-        }
+        Slog.Trace(thisPtr, LastLoadedTerritory, eventName, extra);
     }
+
+    private void Trace(BgPartsLayoutInstance* thisPtr, string eventName, string extra = "") => Trace(&thisPtr->ILayoutInstance, eventName, extra);
+    private void Trace(SharedGroupLayoutInstance* thisPtr, string eventName, string extra = "") => Trace(&thisPtr->ILayoutInstance, eventName, extra);
+    private void Trace(TriggerBoxLayoutInstance* thisPtr, string eventName, string extra = "") => Trace(&thisPtr->ILayoutInstance, eventName, extra);
+    private void Trace(CollisionBoxLayoutInstance* thisPtr, string eventName, string extra = "") => Trace(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance, eventName, extra);
 }

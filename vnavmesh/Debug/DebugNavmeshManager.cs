@@ -60,6 +60,9 @@ class DebugNavmeshManager : IDisposable
         ImGui.TextUnformatted($"z{_manager.Scene.LastLoadedTerritory}, {string.Join(".", _manager.GetActiveFestivals().Select(f => f.ToString("X")))}");
         ImGui.TextUnformatted($"Num pathfinding tasks: {(_manager.PathfindInProgress ? 1 : 0)} in progress, {_manager.NumQueuedPathfindRequests} queued");
 
+        var s = Slog.Instance();
+        ImGui.Checkbox($"Enable trace logging", ref s.Enabled);
+
         if (_manager.Navmesh == null || _manager.Query == null)
             return;
 
@@ -108,9 +111,10 @@ class DebugNavmeshManager : IDisposable
         DrawPosition("Target", _target);
         DrawPosition("Flag", MapUtils.FlagToPoint(_manager.Query) ?? default);
         DrawPosition("Floor", _manager.Query.FindPointOnFloor(playerPos) ?? default);
+        _manager.Navmesh!.Mesh.CalcTileLoc(playerPos.SystemToRecast(), out var playerTileX, out var playerTileZ);
 
         _drawNavmesh ??= new(_manager.Navmesh.Mesh, _manager.Query.MeshQuery, _manager.Query.LastPath, _tree, _dd);
-        _drawNavmesh.Draw();
+        _drawNavmesh.Draw(playerTileX, playerTileZ);
         if (_manager.Navmesh.Volume != null)
         {
             _debugVoxelMap ??= new(_manager.Navmesh.Volume, _manager.Query.VolumeQuery, _tree, _dd);

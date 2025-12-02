@@ -47,13 +47,13 @@ public class DebugDetourNavmesh : DebugRecast
         }
     }
 
-    public void Draw()
+    public void Draw(int playerTileX, int playerTileZ)
     {
-        DrawMesh();
+        DrawMesh(playerTileX, playerTileZ);
         DrawQuery();
     }
 
-    private void DrawMesh()
+    private void DrawMesh(int playerX, int playerZ)
     {
         using var nr = _tree.Node("Detour navmesh");
         if (!nr.Opened)
@@ -73,7 +73,7 @@ public class DebugDetourNavmesh : DebugRecast
                 var tile = _navmesh.GetTile(i);
                 if (tile.data == null)
                     continue;
-                using var ntile = _tree.Node($"Tile {i} at {tile.data.header.x}x{tile.data.header.y}x{tile.data.header.layer}: flags={tile.flags:X}, salt={tile.salt}, base poly ref={_navmesh.GetPolyRefBase(tile):X}###{i}");
+                using var ntile = _tree.Node($"Tile {i} at {tile.data.header.x}x{tile.data.header.y}x{tile.data.header.layer}: flags={tile.flags:X}, salt={tile.salt}, base poly ref={_navmesh.GetPolyRefBase(tile):X}###{i}", defaultOpen: (tile.data.header.x, tile.data.header.y) == (playerX, playerZ));
                 if (!ntile.Opened)
                     continue;
 

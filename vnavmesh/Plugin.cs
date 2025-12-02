@@ -103,6 +103,8 @@ public sealed class Plugin : IDalamudPlugin
         Service.PluginInterface.UiBuilder.Draw -= Draw;
         WindowSystem.RemoveAllWindows();
 
+        Slog.Instance().Dispose();
+
         _ipcProvider.Dispose();
         _wndMain.Dispose();
         _dtrProvider.Dispose();

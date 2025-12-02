@@ -602,16 +602,6 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         ProcessActionController(thisPtr->ActionController1, parentTransform);
         ProcessActionController(thisPtr->ActionController2, parentTransform);
         ProcessTimeline(thisPtr, parentTransform);
-
-        /*
-        string? animationSrc = thisPtr->ActionController1 != null ? "motion1"
-            //: thisPtr->ActionController2 != null ? "motion2"
-            : thisPtr->TimeLineContainer.Instances.Any(i => i.Value->DataPtr->Loop == 1) ? "loop"
-            : null;
-
-        if (animationSrc != null)
-            MarkIgnored(thisPtr, *thisPtr->GetTransformImpl(), animationSrc);
-        */
     }
 
     private unsafe void ProcessActionController(SGActionController* controller, in Transform parentTransform)
@@ -631,6 +621,16 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
                     OverrideTransform(rot->Child1, parentTransform);
                 if (rot->Child2 != null)
                     OverrideTransform(rot->Child2, parentTransform);
+                break;
+            case 8:
+            case 9:
+                var path = (SGMovePathActionController*)controller;
+                if (path->Owner != null)
+                {
+                    var @base = path->TransformBase;
+                    // this controller is responsible for moving the entire owning prefab along the path
+                    OverrideTransform(&path->Owner->ILayoutInstance, @base);
+                }
                 break;
             case 12:
             case 13:

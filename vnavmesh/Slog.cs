@@ -149,7 +149,7 @@ public sealed class Slog : IDisposable
         {
             _writerTask.Wait();
         }
-        catch (Exception ex)
+        catch (AggregateException ex)
         {
             Service.Log.Warning(ex, "Logger task failed");
         }

@@ -261,6 +261,8 @@ public sealed partial class NavmeshManager : IDisposable
                     tiles.Add(spawned);
                 }
 
+                _enableCache = true;
+
                 await Task.WhenAll(tiles);
                 if (!_buildProgress[terr].IsFinished)
                     return;
@@ -281,7 +283,6 @@ public sealed partial class NavmeshManager : IDisposable
                 }
 
                 _buildProgress[terr].Clear();
-                _enableCache = true;
             }))
             .Subscribe(_ =>
             {
@@ -392,9 +393,11 @@ public sealed partial class NavmeshManager : IDisposable
 
         var cacheKey = data.GetCacheKey();
 
+        var bgStr = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(data.Territory)?.Bg.ToString().Replace('/', '_') ?? "__none__";
+
         var x = data.X;
         var z = data.Z;
-        var dir = new DirectoryInfo($"{CacheDir}/z{data.Territory}");
+        var dir = new DirectoryInfo($"{CacheDir}/{bgStr}");
         var cacheFile = new FileInfo(dir.FullName + $"/{x:d2}-{z:d2}-{cacheKey}.tile");
 
         if (allowCache)

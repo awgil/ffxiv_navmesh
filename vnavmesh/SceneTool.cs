@@ -2,8 +2,6 @@
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
-using FFXIVClientStructs.STD;
-using FFXIVClientStructs.STD.Helper;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -304,90 +302,18 @@ public class SceneTool
 
     private unsafe bool TryGetAnalyticShapeData(uint crc, LayoutManager* layout, out AnalyticShape shape)
     {
-        shape = default;
-
-        if (AnalyticShapes.TryGetValue(crc, out var sh))
-        {
-            if (sh != null)
-            {
-                shape = sh.Value;
-                return true;
-            }
-            return false;
-        }
-
-        if (TryGetValuePointer(layout->CrcToAnalyticShapeData, crc, out var data))
+        var k = new LayoutManager.AnalyticShapeDataKey() { Key = crc };
+        if (layout->CrcToAnalyticShapeData.TryGetValuePointer(k, out var data))
         {
             shape = new AnalyticShape(data->Transform, data->BoundsMin, data->BoundsMax);
-            AnalyticShapes[crc] = shape;
             return true;
         }
-        else
-        {
-            Service.Log.Warning($"analytic shape {crc:X} is missing from layout shape data and won't be loaded - this is a bug!");
-            AnalyticShapes[crc] = null;
-            return false;
-        }
+
+        shape = default;
+        return false;
     }
 
-    private unsafe bool TryGetValuePointer(StdMap<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData> map, uint key, out AnalyticShapeData* value)
-    {
-        var fr = FindLowerBound(map.WithOps.Tree, key);
-        var flag = fr.Bound->_Myval.Item1.Key == key;
-        if (flag)
-        {
-            value = &fr.Bound->_Myval.Item2;
-        }
-        else
-        {
-            value = null;
-        }
-        return flag;
-    }
-
-    // sure would be nice if AnalyticShapeDataKey was IComparable
-    private unsafe RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>>.FindResult FindLowerBound(RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>> map, uint key)
-    {
-        if (map.Head == null)
-            return default;
-
-        RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>>.FindResult findResult = default;
-        findResult.Location = new()
-        {
-            Parent = map.Head->_Parent,
-            Child = RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>>.TreeChild.Right
-        };
-        findResult.Bound = map.Head;
-        var result = findResult;
-        var ptr = result.Location.Parent;
-        while (!ptr->_Isnil)
-        {
-            result.Location.Parent = ptr;
-            if (CompareKey(key, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>.ExtractKey(in ptr->_Myval)) <= 0)
-            {
-                result.Location.Child = RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>>.TreeChild.Left;
-                result.Bound = ptr;
-                ptr = ptr->_Left;
-            }
-            else
-            {
-                result.Location.Child = RedBlackTree<StdPair<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>, LayoutManager.AnalyticShapeDataKey, PairKeyExtractor<LayoutManager.AnalyticShapeDataKey, AnalyticShapeData>>.TreeChild.Right;
-                ptr = ptr->_Right;
-            }
-        }
-
-        return result;
-    }
-
-    private static int CompareKey(uint key, LayoutManager.AnalyticShapeDataKey key2) => key.CompareTo(key2.Key);
-
-    private unsafe string GetCollisionMeshPathByCrc(uint crc, LayoutManager* layout)
-    {
-        if (MeshPaths.TryGetValue(crc, out var path))
-            return path;
-
-        return MeshPaths[crc] = LayoutUtils.ReadString(layout->CrcToPath.FindPtr(crc));
-    }
+    private unsafe string GetCollisionMeshPathByCrc(uint crc, LayoutManager* layout) => LayoutUtils.ReadString(layout->CrcToPath.FindPtr(crc));
 
     private unsafe Mesh GetMeshByPath(string path, MeshType meshType)
     {

@@ -1,4 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Components;
 using Navmesh.Movement;
 using Navmesh.NavVolume;
 using System;
@@ -62,6 +63,7 @@ class DebugNavmeshManager : IDisposable
 
         var s = Slog.Instance();
         ImGui.Checkbox($"Enable trace logging", ref s.Enabled);
+        ImGuiComponents.HelpMarker("Trace logging produces A LOT of data. Only enable this if someone has specifically asked for it (or if you're really interested in the internals of vnav).");
 
         if (_manager.Navmesh == null || _manager.Query == null)
             return;

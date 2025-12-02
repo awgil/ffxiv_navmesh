@@ -90,7 +90,7 @@ public sealed partial class NavmeshManager : IDisposable
 {
     public bool UseRaycasts = true;
     public bool UseStringPulling = true;
-    public bool SeedMode = Service.PluginInterface.IsDev;
+    public bool SeedMode = false;
 
     public static readonly Vector3 BoundsMin = new(-1024);
     public static readonly Vector3 BoundsMax = new(1024);
@@ -667,18 +667,25 @@ public sealed partial class NavmeshManager : IDisposable
 
     private static void SerializeTile(FileInfo cacheFile, DtMeshData? tile, VoxelMap? map, int version, Tile data)
     {
-        using (var wstream = cacheFile.Open(FileMode.Create, FileAccess.Write, FileShare.None))
+        try
         {
-            using var writer = new BinaryWriter(wstream);
-            Navmesh.SerializeSingleTile(writer, tile, map, version);
-        }
+            using (var wstream = cacheFile.Open(FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                using var writer = new BinaryWriter(wstream);
+                Navmesh.SerializeSingleTile(writer, tile, map, version);
+            }
 
-        var objfile = new FileInfo(Path.ChangeExtension(cacheFile.FullName, ".txt"));
-        using (var wstream = objfile.Open(FileMode.Create, FileAccess.Write, FileShare.None))
+            var objfile = new FileInfo(Path.ChangeExtension(cacheFile.FullName, ".txt"));
+            using (var wstream = objfile.Open(FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                using var writer = new StreamWriter(wstream);
+                foreach (var (key, tileobj) in data.Objects)
+                    writer.WriteLine($"{key:X16} {tileobj.Mesh.Path} {(int)tileobj.Instance.WorldBounds.Min.X} {(int)tileobj.Instance.WorldBounds.Min.Y} {(int)tileobj.Instance.WorldBounds.Min.Z} {(int)tileobj.Instance.WorldBounds.Max.X} {(int)tileobj.Instance.WorldBounds.Max.Y} {(int)tileobj.Instance.WorldBounds.Max.Z}");
+            }
+        }
+        catch (IOException ex)
         {
-            using var writer = new StreamWriter(wstream);
-            foreach (var (key, tileobj) in data.Objects)
-                writer.WriteLine($"{key:X16} {tileobj.Mesh.Path} {(int)tileobj.Instance.WorldBounds.Min.X} {(int)tileobj.Instance.WorldBounds.Min.Y} {(int)tileobj.Instance.WorldBounds.Min.Z} {(int)tileobj.Instance.WorldBounds.Max.X} {(int)tileobj.Instance.WorldBounds.Max.Y} {(int)tileobj.Instance.WorldBounds.Max.Z}");
+            Log(ex, "Unable to save cache");
         }
     }
 

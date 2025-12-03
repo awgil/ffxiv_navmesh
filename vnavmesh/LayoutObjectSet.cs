@@ -9,7 +9,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -30,7 +29,6 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             set;
         }
         public bool Destroyed { get; set; }
-        //public bool Dirty { get; set; }
 
         public void Recreate(ILayoutInstance* ptr, Transform transform)
         {
@@ -46,44 +44,29 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         }
     }
 
-    [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public struct TraceObjectKey
-    {
-        [FieldOffset(0)] public uint SubId;
-        [FieldOffset(4)] public uint InstanceKey;
+    // random boat in Western Thanalan with oscillating movement; member of SharedGroup that has a timeline with autoplay and loop enabled
+    private const ulong BOAT = 0x003BDC3D_03000000;
 
-        [FieldOffset(0)] public ulong Full;
+    // floating aetheryte-like crystals in Bestways Burrow which have collision; movement is controlled by SGActionController
+    private const ulong RABBIT_AETHERYTE = 0x00885333_0401000;
 
-        public readonly bool IsSet => Full > 0;
-        public readonly bool IsAll => Full == ulong.MaxValue;
+    // example of a SharedGroup that has multiple animation timelines attached to it (easily visible and has a long duration, so helps with debugging)
+    private const ulong ARF_ELEVATOR = 0x0058BE03_3A250000;
 
-        public static readonly TraceObjectKey ALL = new() { Full = ulong.MaxValue };
-        public static readonly TraceObjectKey NONE = new() { Full = 0 };
+    // out of bounds background object in Coerthas Central Highlands near the Xelphatol entrance; has collision but some timeline thing adds the 0x400 flag to it shortly after it's created (example of SetProperties/CreatePrimary not being a reliable source of truth)
+    private const ulong IXAL_BLIMP = 0x0031D5D9_0B000000;
 
-        // random boat in Western Thanalan with oscillating movement; member of SharedGroup that has a timeline with autoplay and loop enabled
-        public static readonly TraceObjectKey BOAT = new() { Full = 0x003BDC3D_03000000 };
+    // part of the Camp Dragonhead castle thing that is placed exactly at whole-number coordinates, but the imprecision incurred by recalculating the rotation quaternion during setup causes its world bounds to expand by 1 unit on the Z axis
+    private const ulong DRAGONHEAD_WALL = 0x003F8983_0B000000;
 
-        // floating aetheryte-like crystals in Bestways Burrow which have collision; movement is controlled by SGActionController
-        public static readonly TraceObjectKey RABBIT_AETHERYTE = new() { Full = 0x00885333_0401000 };
+    private const ulong HERITAGE_POLE = 0x00A4DD65_01090100;
 
-        // example of a SharedGroup that has multiple animation timelines attached to it (easily visible and has a long duration, so helps with debugging)
-        public static readonly TraceObjectKey ARF_ELEVATOR = new() { Full = 0x0058BE03_3A250000 };
-
-        // out of bounds background object in Coerthas Central Highlands near the Xelphatol entrance; has collision but some timeline thing adds the 0x400 flag to it shortly after it's created (example of SetProperties/CreatePrimary not being a reliable source of truth)
-        public static readonly TraceObjectKey IXAL_BLIMP = new() { Full = 0x0031D5D9_0B000000 };
-
-        // part of the Camp Dragonhead castle thing that is placed exactly at whole-number coordinates, but the imprecision incurred by recalculating the rotation quaternion during setup causes its world bounds to expand by 1 unit on the Z axis
-        public static readonly TraceObjectKey DRAGONHEAD_WALL = new() { Full = 0x003F8983_0B000000 };
-
-        public static readonly TraceObjectKey POLE = new() { Full = 0x00A4DD65_01090100 };
-
-        // in solution 9
-        // - 0x00A1DECE_00000000: toplevel prefab with action controller in slot 1
-        //   - 0x00A1DECE_09000000: regular bgpart, no movement
-        //   - 0x00A1DECE_0B000000: nested prefab, no action controller; transform is controlled by parent
-        //     - 0x00A1DECE_0B040000: nested bgpart, transform is calculated relative to parent
-        public static readonly TraceObjectKey DECE = new() { Full = 0x00A1DECE_00000000 };
-    }
+    // in solution 9
+    // - 0x00A1DECE_00000000: toplevel prefab with action controller in slot 1
+    //   - 0x00A1DECE_09000000: regular bgpart, no movement
+    //   - 0x00A1DECE_0B000000: nested prefab, no action controller; transform is controlled by parent
+    //     - 0x00A1DECE_0B040000: nested bgpart, transform is calculated relative to parent
+    private const ulong S9_CAFE = 0x00A1DECE_00000000;
 
     private readonly ConcurrentDictionary<Pointer<ILayoutInstance>, MaybeEnabled> _objects = [];
     private readonly ConcurrentDictionary<ulong, Transform> _transformOverride = [];
@@ -111,8 +94,6 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private delegate void SGLoadUnknown(SharedGroupLayoutInstance* thisPtr);
     private readonly HookAddress<SGLoadUnknown> _sgLoad;
-
-    private static readonly TraceObjectKey TRACE_OBJECT = new() { Full = 0x5626E2_00000000 };
 
     public DateTime LastUpdate { get; private set; }
     public NavmeshCustomization Customization { get; private set; } = new();
@@ -486,7 +467,6 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _boxDestroy.Original(thisPtr);
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
         {
-            Service.Log.Verbose($"DestroyPrimary(box) called on {obj.Instance?.Instance.Id ?? 0:X}");
             obj.Destroyed = true;
             _dirtyObjects[&thisPtr->ILayoutInstance] = obj;
         }

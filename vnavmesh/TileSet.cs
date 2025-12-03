@@ -100,10 +100,10 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
                         modified.Add((i, j));
                     }
             }
-
-            foreach (var (x, z) in modified)
-                Notify(new(change.Zone, x, z));
         }
+
+        foreach (var (x, z) in modified)
+            Notify(new(change.Zone, x, z));
     }
 
     private HashSet<(int, int)> Remove(ulong key)

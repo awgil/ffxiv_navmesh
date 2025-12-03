@@ -354,7 +354,12 @@ public class SceneExtractor
         //    res |= PrimitiveFlags.Transparent;
 
         // in addition to actual fly-through materials, divable water should be excluded from the volume
-        if (m.HasFlag(MaterialFlags.FlyThrough) || m.HasFlag(MaterialFlags.DiveDown) || m.HasFlag(MaterialFlags.DiveUp))
+        if (m.HasFlag(MaterialFlags.FlyThrough)
+            || m.HasFlag(MaterialFlags.DiveDown)
+            || m.HasFlag(MaterialFlags.DiveUp)
+            // special case for the one-sided plane placed beneath water surfaces - i think this is for camera collision (so player can't look at themselves from underwater)
+            // note that this is an equality test instead of a contains test, the assumption is that this is the only usecase for this specific material
+            || m == (MaterialFlags.Temporary | MaterialFlags.Unk12))
             res |= PrimitiveFlags.FlyThrough;
 
         // only object i've seen with this flag set was the yuweyawata hole

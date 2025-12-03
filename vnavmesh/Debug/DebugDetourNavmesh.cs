@@ -64,8 +64,9 @@ public class DebugDetourNavmesh : DebugRecast
         _tree.LeafNode($"Tile size: {param.tileWidth:f3}x{param.tileHeight:f3} (max {param.maxPolys} polys per tile)");
 
         using var nt = _tree.Node($"Tiles (max {param.maxTiles})###tiles");
-        if (nt.SelectedOrHovered)
-            VisualizeWithClosedList();
+        // this causes pretty terrible lag, maybe we should expose an option for it
+        //if (nt.SelectedOrHovered)
+        //    VisualizeWithClosedList();
         if (nt.Opened)
         {
             for (int i = 0; i < param.maxTiles; ++i)

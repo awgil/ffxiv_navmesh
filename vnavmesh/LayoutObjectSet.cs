@@ -660,19 +660,11 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private unsafe void ProcessTimeline(SharedGroupLayoutInstance* group, in Transform parentTransform)
     {
-        var loop = false;
         var subShift = 8 * (4 - (((group->Flags1 >> 4) & 7) + 1));
         foreach (var inst in group->TimeLineContainer.Instances)
         {
             if (inst.Value->DataPtr->Loop == 1 && inst.Value->DataPtr->AutoPlay == 1)
             {
-                if (loop)
-                {
-                    NotifyError(new InvalidOperationException($"Instance {SceneTool.GetKey(&group->ILayoutInstance):X} has multiple looping timelines, I don't know how to handle this"));
-                    return;
-                }
-                loop = true;
-
                 List<uint> affectedInstances = [];
                 foreach (var i in inst.Value->DataPtr->Instances)
                     affectedInstances.Add((uint)i.SubId << subShift);

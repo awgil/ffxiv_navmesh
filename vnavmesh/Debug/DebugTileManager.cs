@@ -70,7 +70,25 @@ public sealed unsafe class DebugTileManager : IDisposable
             _tiles.InitGrid();
         ImGui.SameLine();
         ImGui.TextUnformatted($"Last update: {timeSinceUpd:f3}s ago");
-        ImGui.TextWrapped($"Last event: {_tiles.Grid?.LastEvent}");
+        var lastEv = _tiles.Grid?.LastEvent;
+        using (var ne = _tree.Node($"Last event", lastEv == null))
+        {
+            if (ne.Opened)
+            {
+                var ev = lastEv!.Value;
+                _tree.LeafNode($"Key: {ev.Key:X}");
+                if (ev.Instance == null)
+                    _tree.LeafNode($"Mesh: null (deleted)");
+                else
+                {
+                    _tree.LeafNode($"Mesh: {ev.Instance.Mesh.Path}");
+                    _tree.LeafNode($"Bounds: {ev.Instance.Instance.WorldBounds.Display()}");
+                    _tree.LeafNode($"Transform: {ev.Instance.Instance.WorldTransform.Display()}");
+                    _tree.LeafNode($"Flags: {ev.Instance.Instance.ForceSetPrimFlags} / ~{ev.Instance.Instance.ForceClearPrimFlags}");
+                    _tree.LeafNode($"Type: {ev.Instance.Type}");
+                }
+            }
+        }
         if (ImGui.Button($"Rebuild player tile {playerX}x{playerZ}"))
         {
             _selected = (playerX, playerZ);

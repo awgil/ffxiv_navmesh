@@ -29,6 +29,7 @@ public class SceneExtractor
         None = 0,
         ForceUnwalkable = 1 << 0, // this primitive can't be walked on, even if normal is fine
         FlyThrough = 1 << 1, // this primitive should not be present in voxel map
+        HasTemporaryFlag = 1 << 2, // not used by framework, useful for debugging
         // obsoleted by FloodFill. certain parts of terrain that the player is intended to walk on are incidentally marked as unlandable; see the entrance to the turtle village in Ruby Sea for an example
         // Unlandable = 1 << 2, // this primitive can't be landed on (fly->walk transition)
         //ForceWalkable = 1 << 3, // this primitive can be walked on, even though it isn't landable
@@ -328,30 +329,8 @@ public class SceneExtractor
         if (m.HasFlag(MaterialFlags.Water))
             res |= PrimitiveFlags.Transparent;
 
-        // bounding plane materials:
-        //   202411 - heritage found - 0, 4, temp, 13, noland - this is by far the most common, all(?) ARR zones use this
-        //   202291 - urqopacha - 0, 4, 7, 9, 13, noland
-        //     2011 - kozama'uka - 0, 4, 13
-        //     2411 - garlemald - 0, 4, temp, 13
-        //var isBoundingPlane = m.HasFlag(MaterialFlags.Unk0) && m.HasFlag(MaterialFlags.Unk4) && m.HasFlag(MaterialFlags.Temporary) && m.HasFlag(MaterialFlags.Unk13);
-
-        //   2404 = phaenna rock plants   - SOLID
-        // 207400 = worlar mountain       - SOLID
-        // 207407 &
-        // 207409 = ruby sea floor        - SOLID
-        //   2411 = garlemald invis walls - SOLID
-        // 203400 = fate 159 gates        - EITHER IS FINE
-
-        // 207400 = natalan doors         - NOT SOLID
-        // 206406 = zaharak doors         - NOT SOLID (DoorRange)
-        //   6400 = dungeon spawn ring    - NOT SOLID (despawns)
-        //var forceSolid = m.HasFlag(MaterialFlags.Swim)
-        //    || m.HasFlag(MaterialFlags.DiveDown)
-        //    || m.HasFlag(MaterialFlags.Unk13) && (!m.HasFlag(MaterialFlags.Unk14) || m.HasFlag(MaterialFlags.Unk12))
-        //    || isBoundingPlane;
-
-        //if (m.HasFlag(MaterialFlags.Temporary) && !forceSolid)
-        //    res |= PrimitiveFlags.Transparent;
+        if (m.HasFlag(MaterialFlags.Temporary))
+            res |= PrimitiveFlags.HasTemporaryFlag;
 
         // in addition to actual fly-through materials, divable water should be excluded from the volume
         if (m.HasFlag(MaterialFlags.FlyThrough)

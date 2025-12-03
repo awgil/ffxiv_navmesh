@@ -28,6 +28,8 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
                 return result.DistinctBy(t => (t.X, t.Z)).Select(t =>
                 {
                     SortedDictionary<ulong, InstanceWithMesh> objs = [];
+                    // tile might be null if it doesn't have any solid non-terrain objects lol
+                    _tiles[t.X, t.Z] ??= [];
                     foreach (var (k, v) in _tiles[t.X, t.Z])
                         // territory customizations are expected to modify instances if needed
                         objs[k] = v with { Instance = v.Instance.Clone() };

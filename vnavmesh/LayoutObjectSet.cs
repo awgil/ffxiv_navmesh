@@ -382,7 +382,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     {
         _bgTransF.Original(thisPtr, t);
 
-        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        if (_transformOverride.ContainsKey(thisPtr->IdFull()))
             return;
 
         UpdateBgTransform(thisPtr);
@@ -392,7 +392,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     {
         _bgTrans.Original(thisPtr, value);
 
-        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        if (_transformOverride.ContainsKey(thisPtr->IdFull()))
             return;
 
         UpdateBgTransform(thisPtr);
@@ -402,7 +402,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     {
         _bgRot.Original(thisPtr, value);
 
-        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        if (_transformOverride.ContainsKey(thisPtr->IdFull()))
             return;
 
         UpdateBgTransform(thisPtr);
@@ -412,7 +412,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     {
         _bgScale.Original(thisPtr, value);
 
-        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        if (_transformOverride.ContainsKey(thisPtr->IdFull()))
             return;
 
         UpdateBgTransform(thisPtr);
@@ -489,7 +489,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     {
         _boxTrans.Original(thisPtr, value);
 
-        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        if (_transformOverride.ContainsKey(thisPtr->IdFull()))
             return;
 
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
@@ -509,7 +509,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     {
         _boxRot.Original(thisPtr, value);
 
-        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        if (_transformOverride.ContainsKey(thisPtr->IdFull()))
             return;
 
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
@@ -529,7 +529,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     {
         _boxScale.Original(thisPtr, value);
 
-        if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        if (_transformOverride.ContainsKey(thisPtr->IdFull()))
             return;
 
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))
@@ -568,7 +568,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private unsafe void DetectAnimations(SharedGroupLayoutInstance* thisPtr)
     {
-        var key = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+        var key = thisPtr->IdFull();
         Trace(thisPtr, "detect-animations");
 
         // parent was initialized before child and has override, update children and skip rest
@@ -600,11 +600,11 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             case 3:
                 var door = (SGDoorActionController*)controller;
                 if (door->Door1 != null)
-                    _hiddenObjects[SceneTool.GetKey(&door->Door1->ILayoutInstance)] = true;
+                    _hiddenObjects[door->Door1->IdFull()] = true;
                 if (door->Door2 != null)
-                    _hiddenObjects[SceneTool.GetKey(&door->Door2->ILayoutInstance)] = true;
+                    _hiddenObjects[door->Door2->IdFull()] = true;
                 if (door->Collision != null)
-                    _hiddenObjects[SceneTool.GetKey(&door->Collision->TriggerBoxLayoutInstance.ILayoutInstance)] = true;
+                    _hiddenObjects[door->Collision->IdFull()] = true;
                 break;
             case 4:
             case 5:
@@ -640,7 +640,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private unsafe void ProcessTimeline(SharedGroupLayoutInstance* group, in Transform parentTransform)
     {
-        var subShift = 8 * (4 - (((group->Flags1 >> 4) & 7) + 1));
+        var subShift = group->Subshift();
         foreach (var inst in group->TimeLineContainer.Instances)
         {
             if (inst.Value->DataPtr->Loop == 1)
@@ -658,7 +658,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private unsafe void OverrideTransform(ILayoutInstance* thisPtr, in Transform t)
     {
-        var k = SceneTool.GetKey(thisPtr);
+        var k = thisPtr->IdFull();
         Trace(thisPtr, "set-transform", t.Display());
         _transformOverride[k] = t;
 
@@ -697,7 +697,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             return;
         }
 
-        var k = SceneTool.GetKey(&thisPtr->ILayoutInstance);
+        var k = thisPtr->IdFull();
 
         if (!Customization.FilterObject(k, &thisPtr->ILayoutInstance))
         {
@@ -723,7 +723,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     {
         Trace(thisPtr, $"pre-create({source})");
 
-        var k = SceneTool.GetKey(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance);
+        var k = thisPtr->IdFull();
 
         if (!Customization.FilterObject(k, &thisPtr->TriggerBoxLayoutInstance.ILayoutInstance))
         {

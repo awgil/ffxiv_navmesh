@@ -335,7 +335,7 @@ public class SceneExtractor
         if (isBoundingPlane)
             res |= PrimitiveFlags.ForceUnwalkable;
 
-        var forceSolid = m.HasFlag(MaterialFlags.Swim) || m.HasFlag(MaterialFlags.DiveDown) || m.HasFlag(MaterialFlags.NoLand) && m.HasFlag(MaterialFlags.Unk14) || isBoundingPlane;
+        var forceSolid = m.HasFlag(MaterialFlags.Swim) || m.HasFlag(MaterialFlags.DiveDown) || m.HasFlag(MaterialFlags.NoLand) || isBoundingPlane;
 
         if (m.HasFlag(MaterialFlags.Temporary) && !forceSolid)
             res |= PrimitiveFlags.Transparent;

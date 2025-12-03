@@ -335,8 +335,7 @@ public class SceneExtractor
         if (isBoundingPlane)
             res |= PrimitiveFlags.ForceUnwalkable;
 
-        // all conditional colliders have the Temporary bit set, but lots of non-conditional ones have it too for some reason, god help me
-        var forceSolid = m.HasFlag(MaterialFlags.Swim) || m.HasFlag(MaterialFlags.DiveDown) || m.HasFlag(MaterialFlags.NoLand) || isBoundingPlane;
+        var forceSolid = m.HasFlag(MaterialFlags.Swim) || m.HasFlag(MaterialFlags.DiveDown) || m.HasFlag(MaterialFlags.NoLand) && m.HasFlag(MaterialFlags.Unk14) || isBoundingPlane;
 
         if (m.HasFlag(MaterialFlags.Temporary) && !forceSolid)
             res |= PrimitiveFlags.Transparent;

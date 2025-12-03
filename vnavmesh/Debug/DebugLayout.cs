@@ -5,7 +5,6 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using FFXIVClientStructs.FFXIV.Client.System.Scheduler;
-using FFXIVClientStructs.FFXIV.Client.System.Scheduler.Instance;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.Interop;
 using System;
@@ -71,7 +70,6 @@ public unsafe class DebugLayout : IDisposable
         if (terr != null)
             DrawFile($"Territory {Service.ClientState.TerritoryType}", $"bg/{terr.Value.Bg}.lvb");
         DrawComparison(LayoutWorld.Instance()->ActiveLayout);
-        DrawOther(LayoutWorld.Instance()->ActiveLayout);
         _insts.Clear();
     }
 
@@ -260,17 +258,15 @@ public unsafe class DebugLayout : IDisposable
                 case InstanceType.Timeline:
                     var instTime = (TimeLineLayoutInstance*)inst;
                     tree.LeafNode($"Parent: {SceneTool.GetKey(&instTime->Parent->ILayoutInstance):X}");
+                    var parentShift = 8 * (4 - (((instTime->Parent->Flags1 >> 4) & 7) + 1));
+                    var parentId = (ulong)instTime->Parent->Id.InstanceKey << 32 | instTime->Parent->SubId;
                     var ptr = instTime->DataPtr;
-                    tree.LeafNode($"Timeline data: autoplay={ptr->AutoPlay == 1}, loop={ptr->Loop == 1}");
-                    var tobj = (LayoutObjectGroup*)instTime->TimelineObject;
-                    using (var nt = tree.Node($"Timeline object: {(nint)tobj:X}"))
+                    using (var nt0 = tree.Node($"Timeline data: autoplay={ptr->AutoPlay == 1}, loop={ptr->Loop == 1}", ptr->Instances.Length == 0))
                     {
-                        if (nt.Opened)
+                        if (nt0.Opened)
                         {
-                            foreach (var (k, v) in tobj->SubIdToInstance)
-                            {
-                                tree.LeafNode($"{k:X} = {(nint)v.Value:X}");
-                            }
+                            foreach (var inst2 in ptr->Instances)
+                                tree.LeafNode($"{parentId | ((ulong)inst2.SubId << parentShift):X}");
                         }
                     }
                     break;
@@ -937,31 +933,6 @@ public unsafe class DebugLayout : IDisposable
                 }
             }
         }
-    }
-
-    private unsafe void DrawOther(LayoutManager* layout)
-    {
-        var sg = layout->InstancesByType.FindPtr(InstanceType.Timeline);
-        if (sg == null)
-            return;
-
-        using var nc = _tree.Node("Timeline nodes");
-        if (!nc.Opened)
-            return;
-
-        foreach (var (_, v) in *sg)
-        {
-            var grp = (TimeLineLayoutInstance*)v.Value;
-            //if (!HasAnyCollision(grp) || LayoutUtils.ReadField<nint>(grp, 0x40) == 0 || grp->MotionController1 != null)
-            //continue;
-            DrawInstance(_tree, $"{v.Value->Id.InstanceKey:X8}{v.Value->SubId:X8}", v.Value->Layout, v.Value, _coll);
-        }
-    }
-
-    enum ControllerType
-    {
-        Unknown,
-        Transform
     }
 
     private static unsafe void DrawActionController(UITree tree, string label, SGActionController* controller, DebugGameCollision coll)

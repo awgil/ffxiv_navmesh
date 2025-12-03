@@ -973,6 +973,24 @@ public unsafe class DebugLayout : IDisposable
         tree.LeafNode($"Animation type: {controller->AnimationType}");
         switch (controller->AnimationType)
         {
+            case 1:
+            case 2:
+            case 3:
+                {
+                    var controllerDoor = (SGDoorActionController*)controller;
+                    var childCount = (controllerDoor->Door1 == null ? 0 : 1) + (controllerDoor->Door2 == null ? 0 : 1) + (controllerDoor->Collision == null ? 0 : 1);
+                    using var nd0 = tree.Node($"Children: {childCount}", childCount == 0);
+                    if (nd0.Opened)
+                    {
+                        if (controllerDoor->Collision != null)
+                            DrawInstance(tree, "[collision]", controllerDoor->Collision->Layout, &controllerDoor->Collision->TriggerBoxLayoutInstance.ILayoutInstance, coll);
+                        if (controllerDoor->Door1 != null)
+                            DrawInstance(tree, "[door1]", controllerDoor->Door1->Layout, &controllerDoor->Door1->ILayoutInstance, coll);
+                        if (controllerDoor->Door2 != null)
+                            DrawInstance(tree, "[door2]", controllerDoor->Door2->Layout, &controllerDoor->Door2->ILayoutInstance, coll);
+                    }
+                }
+                break;
             case 4:
             case 5:
                 {

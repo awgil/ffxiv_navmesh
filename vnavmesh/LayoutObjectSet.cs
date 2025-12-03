@@ -87,6 +87,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private readonly ConcurrentDictionary<Pointer<ILayoutInstance>, MaybeEnabled> _objects = [];
     private readonly ConcurrentDictionary<ulong, Transform> _transformOverride = [];
+    private readonly ConcurrentDictionary<ulong, bool> _hiddenObjects = [];
     private readonly ConcurrentDictionary<Pointer<ILayoutInstance>, MaybeEnabled> _dirtyObjects = [];
 
     // TODO: replace vtables instead
@@ -302,6 +303,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private void NotifyObject(InstanceWithMesh inst, bool enabled)
     {
         enabled &= !inst.Instance.ForceSetPrimFlags.HasFlag(SceneExtractor.PrimitiveFlags.Transparent);
+        enabled &= !_hiddenObjects.ContainsKey(inst.Instance.Id);
 
         LastUpdate = DateTime.Now;
         Notify(new(LastLoadedTerritory, inst.Instance.Id, enabled ? inst : null));
@@ -329,6 +331,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             Slog.TraceDelete(obj.Key, prevTerr, "gc-dirty");
         _dirtyObjects.Clear();
         _transformOverride.Clear();
+        _hiddenObjects.Clear();
     }
 
     private unsafe void ActivateExistingLayout(LayoutManager* layout)
@@ -612,6 +615,17 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         var actionType = controller->AnimationType;
         switch (actionType)
         {
+            case 1:
+            case 2:
+            case 3:
+                var door = (SGDoorActionController*)controller;
+                if (door->Door1 != null)
+                    _hiddenObjects[SceneTool.GetKey(&door->Door1->ILayoutInstance)] = true;
+                if (door->Door2 != null)
+                    _hiddenObjects[SceneTool.GetKey(&door->Door2->ILayoutInstance)] = true;
+                if (door->Collision != null)
+                    _hiddenObjects[SceneTool.GetKey(&door->Collision->TriggerBoxLayoutInstance.ILayoutInstance)] = true;
+                break;
             case 4:
             case 5:
                 var rot = (SGRotationActionController*)controller;

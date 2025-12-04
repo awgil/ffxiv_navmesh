@@ -184,9 +184,11 @@ public class SceneTool
 
     public static SceneTool Get() => _instance ??= new();
 
+    public static unsafe ulong GetKey(ILayoutInstance* obj) => (ulong)obj->Id.InstanceKey << 32 | obj->SubId;
+
     public unsafe InstanceWithMesh? CreateInstance(BgPartsLayoutInstance* bgPart, Transform transform)
     {
-        var key = bgPart->ILayoutInstance.IdFull();
+        var key = GetKey(&bgPart->ILayoutInstance);
 
         ulong mat = (ulong)bgPart->CollisionMaterialIdHigh << 32 | bgPart->CollisionMaterialIdLow;
         var matFlags = ExtractMaterialFlags(mat);

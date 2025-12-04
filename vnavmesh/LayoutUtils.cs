@@ -1,7 +1,6 @@
 ﻿using Dalamud.Memory;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
-using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using FFXIVClientStructs.Interop;
@@ -9,7 +8,6 @@ using FFXIVClientStructs.STD;
 using System;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -218,32 +216,12 @@ public unsafe static class LayoutUtils
 
 static class LayoutExtensions
 {
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool HasCollision(ref readonly this BgPartsLayoutInstance p) => p.AnalyticShapeDataCrc > 0 || p.CollisionMeshPathCrc > 0;
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool HasEnabledFlag(ref readonly this BgPartsLayoutInstance p) => p.ILayoutInstance.HasEnabledFlag();
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool HasEnabledFlag(ref readonly this CollisionBoxLayoutInstance p) => p.TriggerBoxLayoutInstance.ILayoutInstance.HasEnabledFlag();
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool HasEnabledFlag(ref readonly this ILayoutInstance p) => (p.Flags3 & 0x10) != 0;
 
     public static string Display(this AABB b) => $"AABB {{ Min = {b.Min}, Max = {b.Max} }}";
     public static string Display(this Transform t) => $"Transform {{ Translation = {t.Translation}, Type = {t.Type}, Rotation = {t.Rotation}, Scale = {t.Scale} }}";
     public static string Display(this Matrix4x3 m) => $"Matrix {{ {m.M11}, {m.M12}, {m.M13}; {m.M21}, {m.M22}, {m.M23}; {m.M31}, {m.M32}, {m.M33}; {m.M41}, {m.M42}, {m.M43} }}";
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int Subshift(ref readonly this SharedGroupLayoutInstance g) => g.ILayoutInstance.Subshift();
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int Subshift(ref readonly this ILayoutInstance p) => 8 * (4 - (((p.Flags1 >> 4) & 7) + 1));
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ulong IdFull(ref readonly this ILayoutInstance p) => p.Id.InstanceKey << 32 | p.SubId;
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ulong IdFull(ref readonly this SharedGroupLayoutInstance g) => g.ILayoutInstance.IdFull();
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ulong IdFull(ref readonly this BgPartsLayoutInstance b) => b.ILayoutInstance.IdFull();
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ulong IdFull(ref readonly this TriggerBoxLayoutInstance b) => b.ILayoutInstance.IdFull();
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ulong IdFull(ref readonly this CollisionBoxLayoutInstance b) => b.TriggerBoxLayoutInstance.IdFull();
 }

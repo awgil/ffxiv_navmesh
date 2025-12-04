@@ -157,7 +157,7 @@ public unsafe class DebugLayout : IDisposable
     public static bool DrawInstance(UITree tree, string tag, LayoutManager* layout, ILayoutInstance* inst, DebugGameCollision coll)
     {
         using var ni = tree.Node($"{tag} {inst->Id.Type} L{inst->Id.LayerKey:X4} I{inst->Id.InstanceKey:X8}.{inst->SubId:X8} ({inst->Id.u0:X2}) = {(nint)inst:X}, flags1={(Flags1)inst->Flags1} flags2={(Flags2)inst->Flags2} flags3={(Flags3)inst->Flags3}, pool-idx={inst->IndexInPool}, prefab-index={inst->IndexInPrefab}, nesting={inst->NestingLevel}###{tag}");
-        var subShift = inst->Subshift();
+        var subShift = 8 * (4 - (((inst->Flags1 >> 4) & 7) + 1));
         var collider = inst->GetCollider();
         if (ni.Opened)
         {
@@ -258,8 +258,8 @@ public unsafe class DebugLayout : IDisposable
                 case InstanceType.Timeline:
                     var instTime = (TimeLineLayoutInstance*)inst;
                     tree.LeafNode($"Parent: {SceneTool.GetKey(&instTime->Parent->ILayoutInstance):X}");
-                    var parentShift = instTime->Parent->Subshift();
-                    var parentId = instTime->Parent->IdFull();
+                    var parentShift = 8 * (4 - (((instTime->Parent->Flags1 >> 4) & 7) + 1));
+                    var parentId = (ulong)instTime->Parent->Id.InstanceKey << 32 | instTime->Parent->SubId;
                     var ptr = instTime->DataPtr;
                     using (var nt0 = tree.Node($"Timeline data: autoplay={ptr->AutoPlay == 1}, loop={ptr->Loop == 1}", ptr->Instances.Length == 0))
                     {

@@ -3,7 +3,6 @@ using FFXIVClientStructs.Interop;
 using SQLite;
 using System;
 using System.IO;
-using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 
@@ -43,10 +42,20 @@ public sealed class Slog : IDisposable
 
     private readonly SQLiteConnection _conn;
     private readonly Channel<object> _channel;
-    private readonly CancellationTokenSource _cts = new();
     private readonly Task _writerTask;
 
-    public bool Enabled;
+    public bool Enabled
+    {
+        get => field;
+        set
+        {
+            field = value;
+            if (!value)
+            {
+                _channel.Writer.TryWrite(new System.Reactive.Unit());
+            }
+        }
+    }
 
     public static Slog Instance()
     {
@@ -70,9 +79,10 @@ public sealed class Slog : IDisposable
         {
             try
             {
+                _conn.BeginTransaction();
                 while (true)
                 {
-                    var next = await _channel.Reader.ReadAsync(_cts.Token);
+                    var next = await _channel.Reader.ReadAsync();
                     switch (next)
                     {
                         case LayoutEvent l:
@@ -81,14 +91,19 @@ public sealed class Slog : IDisposable
                         case GenericEvent g:
                             _conn.Execute(@"INSERT INTO GenericEvent (EventName, Field1, Field2, Field3, Extra) VALUES (?, ?, ?, ?, ?)", g.EventName, g.Field1, g.Field2, g.Field3, g.Extra);
                             break;
+                        case System.Reactive.Unit:
+                            _conn.Commit();
+                            _conn.BeginTransaction();
+                            break;
                     }
                 }
             }
-            catch (TaskCanceledException)
+            catch (ChannelClosedException ex)
             {
-                Service.Log.Verbose("connection is disposed");
+                Service.Log.Debug(ex, $"writer side closed, no more rows");
+                _conn.Commit();
             }
-        }, _cts.Token);
+        });
     }
 
     public static void Trace(Pointer<ILayoutInstance> inst, uint zone, string eventName, string extra = "") => Instance().TraceImpl(inst, zone, eventName, extra);
@@ -144,7 +159,7 @@ public sealed class Slog : IDisposable
 
     public void Dispose()
     {
-        _cts.Cancel();
+        _channel.Writer.Complete();
         try
         {
             _writerTask.Wait();
@@ -153,7 +168,6 @@ public sealed class Slog : IDisposable
         {
             Service.Log.Warning(ex, "Logger task failed");
         }
-        _cts.Dispose();
         _writerTask.Dispose();
         _conn.Dispose();
         _disposed = true;

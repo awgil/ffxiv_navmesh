@@ -58,11 +58,15 @@ class DebugNavmeshManager : IDisposable
                 _manager.Reload(false);
         }
         ImGui.SameLine();
-        ImGui.TextUnformatted($"z{_manager.Scene.LastLoadedTerritory}, {string.Join(".", _manager.GetActiveFestivals().Select(f => f.ToString("X")))}");
+        ImGui.TextUnformatted($"z{_manager.Scene.LastLoadedZone}, {string.Join(".", _manager.GetActiveFestivals().Select(f => f.ToString("X")))}");
         ImGui.TextUnformatted($"Num pathfinding tasks: {(_manager.PathfindInProgress ? 1 : 0)} in progress, {_manager.NumQueuedPathfindRequests} queued");
 
         var s = Slog.Instance();
-        ImGui.Checkbox($"Enable trace logging", ref s.Enabled);
+        var en = s.Enabled;
+        if (ImGui.Checkbox($"Enable trace logging", ref en))
+        {
+            s.Enabled = en;
+        }
         ImGuiComponents.HelpMarker("Trace logging produces A LOT of data. Only enable this if someone has specifically asked for it (or if you're really interested in the internals of vnav).");
 
         if (_manager.Navmesh == null || _manager.Query == null)

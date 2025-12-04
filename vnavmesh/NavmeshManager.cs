@@ -141,7 +141,7 @@ public sealed partial class NavmeshManager : IDisposable
         Service.Config.Modified += OnConfigModified;
         OnConfigModified();
 
-        Scene.TerritoryChanged += OnTerritoryChanged;
+        Scene.ZoneChanged += OnZoneChanged;
         //Scene.PauseActions = true;
 
         _lastLoadQueryTask = Service.Framework.Run(InitGrid);
@@ -182,12 +182,12 @@ public sealed partial class NavmeshManager : IDisposable
         }
     }
 
-    public void OnTerritoryChanged(LayoutObjectSet scene)
+    public void OnZoneChanged(LayoutObjectSet scene)
     {
         ClearState();
         Array.Fill<uint>(ActiveFestivals, 0);
         DebugData.Reset();
-        _buildProgress[scene.LastLoadedTerritory].SetPending();
+        _buildProgress[scene.LastLoadedZone].SetPending();
         Mesh = new(new()
         {
             orig = BoundsMin.SystemToRecast(),
@@ -197,7 +197,7 @@ public sealed partial class NavmeshManager : IDisposable
             maxPolys = 1 << DtNavMesh.DT_POLY_BITS
         }, 6);
         Volume = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
-        TerritoryChanged.Invoke(scene.LastLoadedTerritory);
+        TerritoryChanged.Invoke(scene.LastLoadedZone);
     }
 
     private void OnConfigModified()
@@ -304,7 +304,7 @@ public sealed partial class NavmeshManager : IDisposable
     internal void RebuildTile(int x, int z)
     {
         _enableCache = false;
-        Grid?.Reload(Scene.LastLoadedTerritory, x, z);
+        Grid?.Reload(Scene.LastLoadedZone, x, z);
     }
 
     private bool _seeding;
@@ -357,7 +357,7 @@ public sealed partial class NavmeshManager : IDisposable
                 return;
 
             // can't add tile to current mesh
-            if (Mesh == null || data.Territory != Scene.LastLoadedTerritory)
+            if (Mesh == null || data.Territory != Scene.LastLoadedZone)
                 return;
 
             lock (meshLock)
@@ -591,7 +591,7 @@ public sealed partial class NavmeshManager : IDisposable
         {
             _numActivePathfinds = 0;
             cts.Dispose();
-            TerritoryChanged.Invoke(Scene.LastLoadedTerritory);
+            TerritoryChanged.Invoke(Scene.LastLoadedZone);
             _queryToken = new();
         }, default);
     }

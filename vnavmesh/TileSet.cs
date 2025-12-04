@@ -55,7 +55,7 @@ public sealed class TileSet : Subscribable<TileSet.TileChangeArgs>
     public void Watch(LayoutObjectSet set)
     {
         _sceneSubscription = set.Subscribe(Apply, NotifyError);
-        set.TerritoryChanged += Clear;
+        set.ZoneChanged += Clear;
     }
 
     private const int TileUnits = 128;

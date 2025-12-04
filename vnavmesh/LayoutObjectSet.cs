@@ -99,20 +99,23 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     public DateTime LastUpdate { get; private set; }
     public NavmeshCustomization Customization { get; private set; } = new();
 
-    public Action<LayoutObjectSet> TerritoryChanged = delegate { };
+    public Action<LayoutObjectSet> ZoneChanged = delegate { };
 
     public int RowLength { get; private set; } = 0;
     public int NumTiles => RowLength * RowLength;
     public int TileUnits => 2048 / RowLength;
 
-    public uint LastLoadedTerritory;
+    public uint LastLoadedZone;
     public uint LastCFC;
 
     public readonly record struct InstanceChangeArgs(uint Zone, ulong Key, InstanceWithMesh? Instance);
 
     public unsafe LayoutObjectSet()
     {
-        Service.ClientState.TerritoryChanged += OnTerritoryChanged;
+        // TODO: we have to use ZoneInit instead of TerritoryChanged because switching instances doesn't trigger the latter (for obvious reasons)
+        // but Hyperborea doesn't trigger ZoneInit, so we need another way
+        Service.ClientState.ZoneInit += OnZoneInit;
+
         Service.Condition.ConditionChange += OnConditionChange;
 
         var bgVt = (BgPartsLayoutInstance.BgPartsLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 90 48 89 50 F8 ");
@@ -137,11 +140,6 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _boxColl = new((nint)boxVt->SetColliderActive, BoxCollDetour, false);
 
         _sgLoad = new("40 55 57 41 55 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B F9", SgLoadDetour, false);
-    }
-
-    private void OnConditionChange(ConditionFlag flag, bool value)
-    {
-        Slog.LogGeneric("condition", (int)flag, value ? 1 : 0, extra: flag.ToString());
     }
 
     private CancellationTokenSource? _initTaskSrc;
@@ -195,7 +193,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private unsafe void Initialize()
     {
-        InitTerritory(Service.ClientState.TerritoryType, GameMain.Instance()->CurrentContentFinderConditionId);
+        InitZone(Service.ClientState.TerritoryType, GameMain.Instance()->CurrentContentFinderConditionId);
 
         var world = LayoutWorld.Instance();
         Utils.Time("global", () => ActivateExistingLayout(world->GlobalLayout));
@@ -226,13 +224,13 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
         Utils.Time("ZoneChange", () =>
         {
-            TerritoryChanged.Invoke(this);
+            ZoneChanged.Invoke(this);
         });
     }
 
     public override void Dispose(bool disposing)
     {
-        Service.ClientState.TerritoryChanged -= OnTerritoryChanged;
+        Service.ClientState.ZoneInit -= OnZoneInit;
 
         _bgCreate.Dispose();
         _bgProps.Dispose();
@@ -255,6 +253,19 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _sgLoad.Dispose();
     }
 
+    private void OnZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
+    {
+        var terr = (ushort)obj.TerritoryType.RowId;
+        Slog.LogGeneric("territory-change", (int)LastLoadedZone, terr);
+        InitZone(terr, GameMain.Instance()->CurrentContentFinderConditionId);
+        ZoneChanged.Invoke(this);
+    }
+
+    private void OnConditionChange(ConditionFlag flag, bool value)
+    {
+        Slog.LogGeneric("condition", (int)flag, value ? 1 : 0, extra: flag.ToString());
+    }
+
     private unsafe void Tick(IFramework fwk)
     {
         if (_initTask != null)
@@ -270,9 +281,15 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         {
             if (obj.Destroyed)
             {
-                Slog.TraceDelete(ptr, LastLoadedTerritory, "is-destroyed");
+                Slog.TraceDelete(ptr, LastLoadedZone, "is-destroyed");
                 if (_objects.Remove(ptr, out var destroyed) && destroyed.Instance is { } destroyedObject)
+                {
                     NotifyObject(destroyedObject, false);
+                }
+                else
+                {
+                    Slog.TraceDelete(ptr, LastLoadedZone, "destroyed-not-found");
+                }
             }
             else if (obj.Instance != null)
             {
@@ -293,30 +310,23 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             enabled &= !inst.Instance.ForceSetPrimFlags.HasFlag(SceneExtractor.PrimitiveFlags.HasTemporaryFlag);
 
         LastUpdate = DateTime.Now;
-        Notify(new(LastLoadedTerritory, inst.Instance.Id, enabled ? inst : null));
+        Notify(new(LastLoadedZone, inst.Instance.Id, enabled ? inst : null));
     }
 
-    private unsafe void OnTerritoryChanged(ushort terr)
+    private unsafe void InitZone(ushort zone, ushort cfcid)
     {
-        Slog.LogGeneric("territory-change", (int)LastLoadedTerritory, terr);
-        InitTerritory(terr, GameMain.Instance()->CurrentContentFinderConditionId);
-        TerritoryChanged.Invoke(this);
-    }
-
-    private unsafe void InitTerritory(ushort terr, ushort cfcid)
-    {
-        var prevTerr = LastLoadedTerritory;
-        LastLoadedTerritory = terr;
+        var prevZone = LastLoadedZone;
+        LastLoadedZone = zone;
         LastCFC = cfcid;
-        Customization = NavmeshCustomizationRegistry.ForTerritory(terr);
+        Customization = NavmeshCustomizationRegistry.ForTerritory(zone);
         // TODO: support different tile sizes
         RowLength = 16; //  Customization.Settings.NumTiles[0];
 
         foreach (var obj in _objects)
-            Slog.TraceDelete(obj.Key, prevTerr, "gc");
+            Slog.TraceDelete(obj.Key, prevZone, "gc");
         _objects.Clear();
         foreach (var obj in _dirtyObjects)
-            Slog.TraceDelete(obj.Key, prevTerr, "gc-dirty");
+            Slog.TraceDelete(obj.Key, prevZone, "gc-dirty");
         _dirtyObjects.Clear();
         _transformOverride.Clear();
         _hiddenObjects.Clear();
@@ -361,8 +371,13 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         Trace(thisPtr, "destroy");
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
         {
+            Trace(thisPtr, "destroy-hit");
             obj.Destroyed = true;
             _dirtyObjects[&thisPtr->ILayoutInstance] = obj;
+        }
+        else
+        {
+            Trace(thisPtr, "destroy-miss");
         }
     }
 
@@ -381,6 +396,10 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             else
                 Trace(thisPtr, "toggle-noop");
         }
+        else
+        {
+            Trace(thisPtr, "toggle-miss");
+        }
     }
 
     // note that all BgParts transforms update the entire matrix
@@ -390,7 +409,10 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _bgTransF.Original(thisPtr, t);
 
         if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        {
+            Trace(thisPtr, "transform-frozen");
             return;
+        }
 
         UpdateBgTransform(thisPtr);
     }
@@ -400,7 +422,10 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _bgTrans.Original(thisPtr, value);
 
         if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        {
+            Trace(thisPtr, "transform-frozen");
             return;
+        }
 
         UpdateBgTransform(thisPtr);
     }
@@ -410,7 +435,10 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _bgRot.Original(thisPtr, value);
 
         if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        {
+            Trace(thisPtr, "transform-frozen");
             return;
+        }
 
         UpdateBgTransform(thisPtr);
     }
@@ -420,7 +448,10 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _bgScale.Original(thisPtr, value);
 
         if (_transformOverride.ContainsKey(SceneTool.GetKey(&thisPtr->ILayoutInstance)))
+        {
+            Trace(thisPtr, "transform-frozen");
             return;
+        }
 
         UpdateBgTransform(thisPtr);
     }
@@ -472,10 +503,16 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private unsafe void BoxDestroyDetour(TriggerBoxLayoutInstance* thisPtr)
     {
         _boxDestroy.Original(thisPtr);
+        Trace(thisPtr, "destroy");
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var obj))
         {
+            Trace(thisPtr, "destroy-hit");
             obj.Destroyed = true;
             _dirtyObjects[&thisPtr->ILayoutInstance] = obj;
+        }
+        else
+        {
+            Trace(thisPtr, "destroy-miss");
         }
     }
 
@@ -757,7 +794,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private void Trace(ILayoutInstance* thisPtr, string eventName, string extra = "")
     {
-        Slog.Trace(thisPtr, LastLoadedTerritory, eventName, extra);
+        Slog.Trace(thisPtr, LastLoadedZone, eventName, extra);
     }
 
     private void Trace(BgPartsLayoutInstance* thisPtr, string eventName, string extra = "") => Trace(&thisPtr->ILayoutInstance, eventName, extra);

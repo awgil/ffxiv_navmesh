@@ -1,5 +1,6 @@
 ﻿using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
@@ -105,13 +106,14 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     public int TileUnits => 2048 / RowLength;
 
     public uint LastLoadedTerritory;
+    public uint LastCFC;
 
     public readonly record struct InstanceChangeArgs(uint Zone, ulong Key, InstanceWithMesh? Instance);
 
     public unsafe LayoutObjectSet()
     {
         Service.ClientState.TerritoryChanged += OnTerritoryChanged;
-        Service.Condition.ConditionChange += Condition_ConditionChange;
+        Service.Condition.ConditionChange += OnConditionChange;
 
         var bgVt = (BgPartsLayoutInstance.BgPartsLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("48 8D 0D ?? ?? ?? ?? 90 48 89 50 F8 ");
         var boxVt = (CollisionBoxLayoutInstance.CollisionBoxLayoutInstanceVirtualTable*)Service.SigScanner.GetStaticAddressFromSig("E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 85 FF 74 20 48 8B CF E8 ?? ?? ?? ?? 4C 8B F0 48 8D 55 C7 45 33 C0 49 8B CE 48 8B 00 FF 50 08 E9 ?? ?? ?? ?? 66 44 39 73 ?? 75 45 44 38 73 1F 74 0A 48 8B 43 08 83 78 1C 06 75 35 48 8B 4B 08 4C 39 B1 ?? ?? ?? ?? 74 28 85 F6 75 24 45 84 FF 74 1F B2 3A ", 0x17);
@@ -137,7 +139,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _sgLoad = new("40 55 57 41 55 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B F9", SgLoadDetour, false);
     }
 
-    private void Condition_ConditionChange(ConditionFlag flag, bool value)
+    private void OnConditionChange(ConditionFlag flag, bool value)
     {
         Slog.LogGeneric("condition", (int)flag, value ? 1 : 0, extra: flag.ToString());
     }
@@ -193,7 +195,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
 
     private unsafe void Initialize()
     {
-        InitTerritory(Service.ClientState.TerritoryType);
+        InitTerritory(Service.ClientState.TerritoryType, GameMain.Instance()->CurrentContentFinderConditionId);
 
         var world = LayoutWorld.Instance();
         Utils.Time("global", () => ActivateExistingLayout(world->GlobalLayout));
@@ -274,8 +276,9 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             }
             else if (obj.Instance != null)
             {
-                Trace(ptr, "notify", obj.Enabled && obj.ColliderEnabled ? "enabled" : "disabled");
-                NotifyObject(obj.Instance, obj.Enabled && obj.ColliderEnabled);
+                var enabled = obj.Enabled && obj.ColliderEnabled;
+                Trace(ptr, "notify", enabled ? "enabled" : "disabled");
+                NotifyObject(obj.Instance, enabled);
             }
         }
         _dirtyObjects.Clear();
@@ -286,6 +289,9 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         enabled &= !inst.Instance.ForceSetPrimFlags.HasFlag(SceneExtractor.PrimitiveFlags.Transparent);
         enabled &= !_hiddenObjects.ContainsKey(inst.Instance.Id);
 
+        if (LastCFC > 0)
+            enabled &= !inst.Instance.ForceSetPrimFlags.HasFlag(SceneExtractor.PrimitiveFlags.HasTemporaryFlag);
+
         LastUpdate = DateTime.Now;
         Notify(new(LastLoadedTerritory, inst.Instance.Id, enabled ? inst : null));
     }
@@ -293,14 +299,15 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private unsafe void OnTerritoryChanged(ushort terr)
     {
         Slog.LogGeneric("territory-change", (int)LastLoadedTerritory, terr);
-        InitTerritory(terr);
+        InitTerritory(terr, GameMain.Instance()->CurrentContentFinderConditionId);
         TerritoryChanged.Invoke(this);
     }
 
-    private unsafe void InitTerritory(ushort terr)
+    private unsafe void InitTerritory(ushort terr, ushort cfcid)
     {
         var prevTerr = LastLoadedTerritory;
         LastLoadedTerritory = terr;
+        LastCFC = cfcid;
         Customization = NavmeshCustomizationRegistry.ForTerritory(terr);
         // TODO: support different tile sizes
         RowLength = 16; //  Customization.Settings.NumTiles[0];

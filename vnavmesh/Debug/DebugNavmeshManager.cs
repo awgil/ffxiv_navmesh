@@ -1,8 +1,11 @@
 ﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Components;
 using Navmesh.Movement;
 using Navmesh.NavVolume;
 using System;
+using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 
 namespace Navmesh.Debug;
 
@@ -28,12 +31,12 @@ class DebugNavmeshManager : IDisposable
         _dtr = dtr;
         _dd = dd;
         _coll = coll;
-        _manager.OnNavmeshChanged += OnNavmeshChanged;
+        _manager.NavmeshChanged += OnNavmeshChanged;
     }
 
     public void Dispose()
     {
-        _manager.OnNavmeshChanged -= OnNavmeshChanged;
+        _manager.NavmeshChanged -= OnNavmeshChanged;
         _drawNavmesh?.Dispose();
         _debugVoxelMap?.Dispose();
     }
@@ -55,13 +58,21 @@ class DebugNavmeshManager : IDisposable
                 _manager.Reload(false);
         }
         ImGui.SameLine();
-        ImGui.TextUnformatted(_manager.CurrentKey);
+        ImGui.TextUnformatted($"z{_manager.Scene.LastLoadedZone}, {string.Join(".", _manager.GetActiveFestivals().Select(f => f.ToString("X")))}");
         ImGui.TextUnformatted($"Num pathfinding tasks: {(_manager.PathfindInProgress ? 1 : 0)} in progress, {_manager.NumQueuedPathfindRequests} queued");
+
+        var s = Slog.Instance();
+        var en = s.Enabled;
+        if (ImGui.Checkbox($"Enable trace logging", ref en))
+        {
+            s.Enabled = en;
+        }
+        ImGuiComponents.HelpMarker("Trace logging produces A LOT of data. Only enable this if someone has specifically asked for it (or if you're really interested in the internals of vnav).");
 
         if (_manager.Navmesh == null || _manager.Query == null)
             return;
 
-        var player = Service.ClientState.LocalPlayer;
+        var player = Service.ObjectTable.LocalPlayer;
         var playerPos = player?.Position ?? default;
         ImGui.TextUnformatted($"Player pos: {playerPos}");
         if (ImGui.Button("Set target to current pos"))
@@ -76,24 +87,40 @@ class DebugNavmeshManager : IDisposable
         ImGui.TextUnformatted($"Current target: {_target}");
 
         if (ImGui.Button("Export bitmap"))
-            ExportBitmap(_manager.Navmesh, _manager.Query, playerPos);
+            ExportBitmap(playerPos);
 
         ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
         ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
         ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);
+        if (Service.PluginInterface.IsDev)
+            ImGui.Checkbox("Seed mode", ref _manager.SeedMode);
         if (ImGui.Button("Pathfind to target using navmesh"))
             _asyncMove.MoveTo(_target, false);
         ImGui.SameLine();
         if (ImGui.Button("Pathfind to target using volume"))
             _asyncMove.MoveTo(_target, true);
 
+        if (ImGui.Button("Record seed point"))
+        {
+            Task.Run(async () =>
+            {
+                var ff = await FloodFill.GetAsync();
+                ff.AddPoint(Service.ClientState.TerritoryType, playerPos);
+                await ff.Serialize();
+            });
+        }
+        ImGui.SameLine();
+        var pts = FloodFill.Get()?.Seeds.TryGetValue(Service.ClientState.TerritoryType, out var vs) == true ? vs : [];
+        ImGui.TextUnformatted($"Num points for current zone: {pts.Count}");
+
         DrawPosition("Player", playerPos);
         DrawPosition("Target", _target);
         DrawPosition("Flag", MapUtils.FlagToPoint(_manager.Query) ?? default);
         DrawPosition("Floor", _manager.Query.FindPointOnFloor(playerPos) ?? default);
+        _manager.Navmesh!.Mesh.CalcTileLoc(playerPos.SystemToRecast(), out var playerTileX, out var playerTileZ);
 
         _drawNavmesh ??= new(_manager.Navmesh.Mesh, _manager.Query.MeshQuery, _manager.Query.LastPath, _tree, _dd);
-        _drawNavmesh.Draw();
+        _drawNavmesh.Draw(playerTileX, playerTileZ);
         if (_manager.Navmesh.Volume != null)
         {
             _debugVoxelMap ??= new(_manager.Navmesh.Volume, _manager.Query.VolumeQuery, _tree, _dd);
@@ -103,6 +130,12 @@ class DebugNavmeshManager : IDisposable
 
     private void DrawPosition(string tag, Vector3 position)
     {
+        if (position == default)
+        {
+            _tree.LeafNode($"{tag} position: <none>");
+            return;
+        }
+
         _manager.Navmesh!.Mesh.CalcTileLoc(position.SystemToRecast(), out var tileX, out var tileZ);
         _tree.LeafNode($"{tag} position: {position:f3}, tile: {tileX}x{tileZ}, poly: {_manager.Query!.FindNearestMeshPoly(position):X}");
         var voxel = _manager.Query.FindNearestVolumeVoxel(position);
@@ -110,7 +143,7 @@ class DebugNavmeshManager : IDisposable
             _debugVoxelMap?.VisualizeVoxel(voxel);
     }
 
-    private void ExportBitmap(Navmesh navmesh, NavmeshQuery query, Vector3 startingPos)
+    private void ExportBitmap(Vector3 startingPos)
     {
         _manager.BuildBitmap(startingPos, "D:\\navmesh.bmp", 0.5f);
     }

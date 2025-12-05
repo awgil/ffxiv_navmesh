@@ -29,12 +29,45 @@ public class SceneExtractor
         None = 0,
         ForceUnwalkable = 1 << 0, // this primitive can't be walked on, even if normal is fine
         FlyThrough = 1 << 1, // this primitive should not be present in voxel map
-        Unlandable = 1 << 2, // this primitive can't be landed on (fly->walk transition)
-        ForceWalkable = 1 << 3, // this primitive can be walked on, even though it isn't landable
-        Fishable = 1 << 4, // player can fish if they have line of sight on this primitive
+        HasTemporaryFlag = 1 << 2, // not used by framework, useful for debugging
+        // obsoleted by FloodFill. certain parts of terrain that the player is intended to walk on are incidentally marked as unlandable; see the entrance to the turtle village in Ruby Sea for an example
+        // Unlandable = 1 << 2, // this primitive can't be landed on (fly->walk transition)
+        //ForceWalkable = 1 << 3, // this primitive can be walked on, even though it isn't landable
+        Transparent = 1 << 4, // no collision at all, skipped by rasterizer
     }
 
-    public record struct Primitive(int V1, int V2, int V3, PrimitiveFlags Flags, ulong Material = 0);
+    [Flags]
+    public enum MaterialFlags : ulong
+    {
+        Unk0 = 1,
+        Unk1 = 2,
+        Unk2 = 4,
+        Unk3 = 8,
+        Unk4 = 0x10,
+        Unk5 = 0x20,
+        Unk6 = 0x40,
+        Unk7 = 0x80,
+        Unk8 = 0x100,
+        Unk9 = 0x200,
+        Temporary = 0x400,
+        Water = 0x800,
+        Unk12 = 0x1000,
+        Unk13 = 0x2000,
+        Unk14 = 0x4000,
+        Fishable = 0x8000,
+        Unk16 = 0x10000,
+        Unk17 = 0x20000,
+        Unk18 = 0x40000,
+        Unk19 = 0x80000,
+        FlyThrough = 0x100000,
+        NoLand = 0x200000,
+        Swim = 0x400000,
+        DiveDown = 0x800000,
+        DiveUp = 0x1000000,
+        Unk25 = 0x2000000
+    }
+
+    public record struct Primitive(int V1, int V2, int V3, PrimitiveFlags Flags);
 
     public class MeshPart
     {
@@ -44,15 +77,22 @@ public class SceneExtractor
 
     public class MeshInstance(ulong id, Matrix4x3 worldTransform, AABB worldBounds, PrimitiveFlags forceSetPrimFlags, PrimitiveFlags forceClearPrimFlags)
     {
+        public MeshInstance(ulong id, Matrix4x3 transform, AABB bounds, ulong matId, ulong matMask) : this(id, transform, bounds, ExtractMaterialFlags(matId & matMask), PrimitiveFlags.None) { }
+
         public ulong Id = id;
         public Matrix4x3 WorldTransform = worldTransform;
         public AABB WorldBounds = worldBounds;
         public PrimitiveFlags ForceSetPrimFlags = forceSetPrimFlags;
         public PrimitiveFlags ForceClearPrimFlags = forceClearPrimFlags;
+
+        public MeshInstance Clone() => new(Id, WorldTransform, WorldBounds, ForceSetPrimFlags, ForceClearPrimFlags);
+
+        public override string ToString() => $"MeshInstance {{ Id = {Id:X16}, WorldTransform = {WorldTransform.Display()}, Bounds = {WorldBounds.Min} - {WorldBounds.Max}, Flags = {ForceSetPrimFlags}, ~Flags = {ForceClearPrimFlags} }}";
     }
 
     public class Mesh
     {
+        public required string Path;
         public List<MeshPart> Parts = [];
         public List<MeshInstance> Instances = [];
         public MeshType MeshType;
@@ -67,27 +107,27 @@ public class SceneExtractor
     private const string _keyAnalyticPlaneDouble = "<plane two-sided>";
     private const string _keyMeshCylinder = "<mesh cylinder>";
 
-    private static List<MeshPart> _meshBox;
-    private static List<MeshPart> _meshSphere;
-    private static List<MeshPart> _meshCylinder;
-    private static List<MeshPart> _meshPlane;
+    public static readonly List<MeshPart> MeshBox;
+    public static readonly List<MeshPart> MeshSphere;
+    public static readonly List<MeshPart> MeshCylinder;
+    public static readonly List<MeshPart> MeshPlane;
 
     static SceneExtractor()
     {
-        _meshBox = BuildBoxMesh();
-        _meshSphere = BuildSphereMesh(16);
-        _meshCylinder = BuildCylinderMesh(16);
-        _meshPlane = BuildPlaneMesh();
+        MeshBox = BuildBoxMesh();
+        MeshSphere = BuildSphereMesh(16);
+        MeshCylinder = BuildCylinderMesh(16);
+        MeshPlane = BuildPlaneMesh();
     }
 
     public unsafe SceneExtractor(SceneDefinition scene)
     {
-        Meshes[_keyAnalyticBox] = new() { Parts = _meshBox, MeshType = MeshType.AnalyticShape };
-        Meshes[_keyAnalyticSphere] = new() { Parts = _meshSphere, MeshType = MeshType.AnalyticShape };
-        Meshes[_keyAnalyticCylinder] = new() { Parts = _meshCylinder, MeshType = MeshType.AnalyticShape };
-        Meshes[_keyAnalyticPlaneSingle] = new() { Parts = _meshPlane, MeshType = MeshType.AnalyticPlane };
-        Meshes[_keyAnalyticPlaneDouble] = new() { Parts = _meshPlane, MeshType = MeshType.AnalyticPlane };
-        Meshes[_keyMeshCylinder] = new() { Parts = _meshCylinder, MeshType = MeshType.CylinderMesh };
+        Meshes[_keyAnalyticBox] = new() { Path = _keyAnalyticBox, Parts = MeshBox, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticSphere] = new() { Path = _keyAnalyticSphere, Parts = MeshSphere, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticCylinder] = new() { Path = _keyAnalyticCylinder, Parts = MeshCylinder, MeshType = MeshType.AnalyticShape };
+        Meshes[_keyAnalyticPlaneSingle] = new() { Path = _keyAnalyticPlaneSingle, Parts = MeshPlane, MeshType = MeshType.AnalyticPlane };
+        Meshes[_keyAnalyticPlaneDouble] = new() { Path = _keyAnalyticPlaneDouble, Parts = MeshPlane, MeshType = MeshType.AnalyticPlane };
+        Meshes[_keyMeshCylinder] = new() { Path = _keyMeshCylinder, Parts = MeshCylinder, MeshType = MeshType.CylinderMesh };
         foreach (var path in scene.MeshPaths.Values)
             AddMesh(path, MeshType.FileMesh);
 
@@ -188,7 +228,7 @@ public class SceneExtractor
 
     private unsafe Mesh AddMesh(string path, MeshType type)
     {
-        var mesh = new Mesh();
+        var mesh = new Mesh() { Path = path };
         var f = Service.DataManager.GetFile(path);
         if (f != null)
         {
@@ -206,13 +246,14 @@ public class SceneExtractor
         return mesh;
     }
 
-    private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId, ulong matMask)
+    public static MeshInstance AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId, ulong matMask)
     {
         var instance = new MeshInstance(id, worldTransform, worldBounds, ExtractMaterialFlags(matMask & matId), ExtractMaterialFlags(matMask & ~matId));
         mesh.Instances.Add(instance);
+        return instance;
     }
 
-    private static AABB CalculateBoxBounds(ref Matrix4x3 world)
+    public static AABB CalculateBoxBounds(ref readonly Matrix4x3 world)
     {
         var res = new AABB() { Min = new(float.MaxValue), Max = new(float.MinValue) };
         for (int i = 0; i < 8; ++i)
@@ -224,7 +265,7 @@ public class SceneExtractor
         return res;
     }
 
-    private static AABB CalculateSphereBounds(ulong id, ref Matrix4x3 world)
+    public static AABB CalculateSphereBounds(ulong id, ref readonly Matrix4x3 world)
     {
         var scale = world.Row0.Length(); // note: a lot of code assumes it's uniform...
         if (Math.Abs(scale - world.Row1.Length()) > 0.1 || Math.Abs(scale - world.Row2.Length()) > 0.1)
@@ -233,7 +274,7 @@ public class SceneExtractor
         return new AABB() { Min = world.Row3 - vscale, Max = world.Row3 + vscale };
     }
 
-    private static AABB CalculateMeshBounds(Mesh mesh, ref Matrix4x3 world)
+    public static AABB CalculateMeshBounds(Mesh mesh, ref readonly Matrix4x3 world)
     {
         var res = new AABB() { Min = new(float.MaxValue), Max = new(float.MinValue) };
         foreach (var part in mesh.Parts)
@@ -248,7 +289,7 @@ public class SceneExtractor
         return res;
     }
 
-    private static AABB CalculatePlaneBounds(ref Matrix4x3 world)
+    public static AABB CalculatePlaneBounds(ref readonly Matrix4x3 world)
     {
         var res = new AABB() { Min = new(float.MaxValue), Max = new(float.MinValue) };
         for (int i = 0; i < 4; ++i)
@@ -260,7 +301,7 @@ public class SceneExtractor
         return res;
     }
 
-    private unsafe void FillFromFileNode(List<MeshPart> parts, MeshPCB.FileNode* node)
+    public static unsafe void FillFromFileNode(List<MeshPart> parts, MeshPCB.FileNode* node)
     {
         if (node == null)
             return;
@@ -269,43 +310,40 @@ public class SceneExtractor
         FillFromFileNode(parts, node->Child2);
     }
 
-    private unsafe MeshPart BuildMeshFromNode(MeshPCB.FileNode* node)
+    public static unsafe MeshPart BuildMeshFromNode(MeshPCB.FileNode* node)
     {
         var part = new MeshPart();
         for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
             part.Vertices.Add(node->Vertex(i));
         foreach (ref var p in node->Primitives)
-            part.Primitives.Add(new(p.V1, p.V2, p.V3, ExtractMaterialFlags(p.Material), p.Material));
+            part.Primitives.Add(new(p.V1, p.V2, p.V3, ExtractMaterialFlags(p.Material)));
         return part;
     }
 
-    private static ulong[] _materialsFlyThrough = [
-        0x100000, // generally set on the invisible walls surrounding walkable areas that can be flown from
-        0x1000000, // if this bit is set, flying upwards into the surface will trigger dive -> fly (or swim) transition
-        0x800000, // not really sure what this is, appears on invisible roof of divable zones
-
-        // 0xBC00 can be dived into, but 0xB800 cannot. both allow fishing
-        // 0x400 is some kind of generic "this collider is conditionally active" flag, but it's set on zone walls, so we can't skip it
-        0xB400,
-    ];
-
-    private PrimitiveFlags ExtractMaterialFlags(ulong mat)
+    public static PrimitiveFlags ExtractMaterialFlags(ulong mat)
     {
+        var m = (MaterialFlags)mat;
         var res = PrimitiveFlags.None;
-        foreach (var fly in _materialsFlyThrough)
-            if ((mat & fly) == fly)
-                res |= PrimitiveFlags.FlyThrough;
 
-        if ((mat & 0x200000) != 0)
-            res |= PrimitiveFlags.Unlandable;
+        // water is only useful for fishing
+        if (m.HasFlag(MaterialFlags.Water))
+            res |= PrimitiveFlags.Transparent;
 
-        // 0x11 is set on all the invisible walls surrounding every zone; some are not marked as unlandable so we can't just use that
-        // some regular terrain materials have 0x10 set as well (see flowers in il mheg) which is why we check for both bits here
-        if ((mat & 0x1F) == 0x11)
-            res |= PrimitiveFlags.Unlandable | PrimitiveFlags.ForceUnwalkable;
+        if (m.HasFlag(MaterialFlags.Temporary))
+            res |= PrimitiveFlags.HasTemporaryFlag;
 
-        if ((mat & 0x8000) != 0)
-            res |= PrimitiveFlags.Fishable;
+        // in addition to actual fly-through materials, divable water should be excluded from the volume
+        if (m.HasFlag(MaterialFlags.FlyThrough)
+            || m.HasFlag(MaterialFlags.DiveDown)
+            || m.HasFlag(MaterialFlags.DiveUp)
+            // special case for the one-sided plane placed beneath water surfaces - i think this is for camera collision (so player can't look at themselves from underwater)
+            // note that this is an equality test instead of a contains test, the assumption is that this is the only usecase for this specific material
+            || m == (MaterialFlags.Temporary | MaterialFlags.Unk12))
+            res |= PrimitiveFlags.FlyThrough;
+
+        // only object i've seen with this flag set was the yuweyawata hole
+        if (m.HasFlag(MaterialFlags.Unk25))
+            res |= PrimitiveFlags.ForceUnwalkable;
 
         return res;
     }
@@ -342,7 +380,7 @@ public class SceneExtractor
         return [mesh];
     }
 
-    private static List<MeshPart> BuildSphereMesh(int numSegments)
+    public static List<MeshPart> BuildSphereMesh(int numSegments)
     {
         var mesh = new MeshPart();
         var angle = 360.Degrees() / numSegments;
@@ -384,7 +422,7 @@ public class SceneExtractor
         return [mesh];
     }
 
-    private static List<MeshPart> BuildCylinderMesh(int numSegments)
+    public static List<MeshPart> BuildCylinderMesh(int numSegments)
     {
         var mesh = new MeshPart();
         var angle = 360.Degrees() / numSegments;
@@ -426,7 +464,7 @@ public class SceneExtractor
         return [mesh];
     }
 
-    private static List<MeshPart> BuildPlaneMesh()
+    public static List<MeshPart> BuildPlaneMesh()
     {
         var mesh = new MeshPart();
         mesh.Vertices.Add(new(-1, +1, 0));

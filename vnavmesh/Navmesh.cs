@@ -1,18 +1,25 @@
 ﻿using DotRecast.Detour;
 using Navmesh.NavVolume;
 using System;
+using System.Collections;
 using System.IO;
 using System.IO.Compression;
 using System.Numerics;
 
 namespace Navmesh;
 
+public class CustomizationVersionMismatch(int expected, int actual) : InvalidOperationException
+{
+    public override string Message => $"Expected customization version {expected}, actual {actual}";
+}
+
 // full set of data needed for navigation in the zone
 public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
     public static readonly uint Version = 22;
-    public const int OffMeshEndpoint = 5;
+    public const int AREA_ID_WARP = 5;
+    public const int FLAGS_DISABLED = 0x10;
 
     // throws an exception on failure
     public static Navmesh Deserialize(BinaryReader reader, int expectedCustomizationVersion)
@@ -23,7 +30,7 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
             throw new Exception("Incorrect header");
         var customizationVersion = reader.ReadInt32();
         if (customizationVersion != expectedCustomizationVersion)
-            throw new Exception("Outdated customization version");
+            throw new CustomizationVersionMismatch(expectedCustomizationVersion, customizationVersion);
 
         using var compressedReader = new BinaryReader(new BrotliStream(reader.BaseStream, CompressionMode.Decompress, true));
         var mesh = DeserializeMesh(compressedReader);
@@ -90,7 +97,42 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         writer.Write(opt.maxPolys);
     }
 
-    private static DtMeshData DeserializeMeshTile(BinaryReader reader)
+    public static (DtMeshData?, VoxelMap?) DeserializeSingleTile(BinaryReader reader, int expectedCustomizationVersion)
+    {
+        var magic = reader.ReadUInt32();
+        var version = reader.ReadUInt32();
+        if (magic != Magic || version != Version)
+            throw new Exception("Incorrect header");
+        var customizationVersion = reader.ReadInt32();
+        if (customizationVersion != expectedCustomizationVersion)
+            throw new CustomizationVersionMismatch(expectedCustomizationVersion, customizationVersion);
+
+        using var compressedReader = new BinaryReader(new BrotliStream(reader.BaseStream, CompressionMode.Decompress));
+
+        DtMeshData? tile = null;
+
+        if (compressedReader.ReadBoolean())
+            tile = DeserializeMeshTile(compressedReader);
+
+        return (tile, DeserializeVolume(compressedReader));
+    }
+
+    public static void SerializeSingleTile(BinaryWriter writer, DtMeshData? tile, VoxelMap? vox, int customizationVersion)
+    {
+        writer.Write(Magic);
+        writer.Write(Version);
+        writer.Write(customizationVersion);
+
+        using var compressedWriter = new BinaryWriter(new BrotliStream(writer.BaseStream, CompressionLevel.Optimal));
+
+        compressedWriter.Write(tile != null);
+        if (tile != null)
+            SerializeMeshTile(compressedWriter, tile);
+
+        SerializeVolume(compressedWriter, vox);
+    }
+
+    public static DtMeshData DeserializeMeshTile(BinaryReader reader)
     {
         var tile = new DtMeshData();
         tile.header = new();
@@ -176,7 +218,7 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
         return tile;
     }
 
-    private static void SerializeMeshTile(BinaryWriter writer, DtMeshData tile)
+    public static void SerializeMeshTile(BinaryWriter writer, DtMeshData tile)
     {
         writer.Write(tile.header.x);
         writer.Write(tile.header.y);
@@ -250,6 +292,34 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
             writer.Write((byte)conn.side);
             writer.Write(conn.userId);
         }
+    }
+
+    public static Voxelizer? DeserializeVoxelizer(BinaryReader reader)
+    {
+        var nx = reader.ReadInt32();
+        var ny = reader.ReadInt32();
+        var nz = reader.ReadInt32();
+        var partial = reader.ReadBoolean();
+        var nw = partial ? 2 : 1;
+
+        var bytes = reader.ReadBytes(nx * ny * nz * nw);
+
+        return new Voxelizer(nx, ny, nz, partial)
+        {
+            Contents = new BitArray(bytes)
+        };
+    }
+
+    public static void SerializeVoxelizer(BinaryWriter writer, Voxelizer v)
+    {
+        writer.Write(v.NumX);
+        writer.Write(v.NumY);
+        writer.Write(v.NumZ);
+        writer.Write(v.NumW == 2);
+
+        var bytes = new byte[v.Contents.Length / 8];
+        v.Contents.CopyTo(bytes, 0);
+        writer.Write(bytes);
     }
 
     private static VoxelMap? DeserializeVolume(BinaryReader reader)

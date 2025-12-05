@@ -41,7 +41,7 @@ public class DebugVoxelMap : IDisposable
         if (!nr.Opened)
             return;
 
-        var playerVoxel = _vm.FindLeafVoxel(Service.ClientState.LocalPlayer?.Position ?? default);
+        var playerVoxel = _vm.FindLeafVoxel(Service.ObjectTable.LocalPlayer?.Position ?? default);
         _tree.LeafNode($"Player's voxel: {playerVoxel.voxel:X} (empty={playerVoxel.empty})");
 
         for (int level = 0; level < _vm.Levels.Length; ++level)
@@ -50,7 +50,7 @@ public class DebugVoxelMap : IDisposable
             _tree.LeafNode($"Level {level}: {_numSubdivPerLevel[level]} subdivided, {_numLeavesPerLevel[level]} leaves, size={l.CellSize:f3}, nc={l.NumCellsX}x{l.NumCellsY}x{l.NumCellsZ}");
         }
 
-        DrawTile(_vm.RootTile, "Root tile");
+        DrawTile(_vm.RootTile, "Root tile", false);
 
         using (var nv = _tree.Node($"Query nodes ({_query?.NodeSpan.Length})###query", _query == null || _query.NodeSpan.Length == 0))
         {
@@ -88,10 +88,10 @@ public class DebugVoxelMap : IDisposable
             InitTile(sub);
     }
 
-    private void DrawTile(VoxelMap.Tile tile, string name)
+    private void DrawTile(VoxelMap.Tile tile, string name, bool visualize = true)
     {
         using var nr = _tree.Node($"{name}: {tile.BoundsMin:f3} - {tile.BoundsMax:f3} ({tile.Subdivision.Count} subtiles)");
-        if (nr.SelectedOrHovered)
+        if (visualize && nr.SelectedOrHovered)
             VisualizeTile(tile);
         if (!nr.Opened)
             return;
@@ -177,5 +177,9 @@ public class DebugVoxelMap : IDisposable
         }
     }
 
-    private void VisualizeCell((Vector3 min, Vector3 max) bounds) => _dd.DrawWorldAABB((bounds.min + bounds.max) * 0.5f, (bounds.max - bounds.min) * 0.5f, 0xff0080ff, 1);
+    private void VisualizeCell((Vector3 min, Vector3 max) bounds)
+    {
+        _dd.DrawWorldAABB((bounds.min + bounds.max) * 0.5f, (bounds.max - bounds.min) * 0.5f, 0xff0080ff, 1);
+        _dd.DrawWorldLine(Service.ObjectTable.LocalPlayer?.Position ?? default, (bounds.min + bounds.max) * 0.5f, 0xFF0080ff, 1);
+    }
 }

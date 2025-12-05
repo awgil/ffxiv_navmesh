@@ -14,6 +14,8 @@ public class MainWindow : Window, IDisposable
     private DebugNavmeshManager _debugNavmeshManager;
     private DebugNavmeshCustom _debugNavmeshCustom;
     private DebugLayout _debugLayout;
+    private DebugTileManager _debugTiles;
+    //private DebugFloodFill _debugFF;
     private string _configDirectory;
 
     public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, string configDir) : base("Navmesh")
@@ -24,15 +26,22 @@ public class MainWindow : Window, IDisposable
         _debugNavmeshManager = new(_dd, _debugGameColl, manager, path, move, dtr);
         _debugNavmeshCustom = new(_dd, _debugGameColl, manager, _configDirectory);
         _debugLayout = new(_dd, _debugGameColl);
+        _debugTiles = new(manager, _dd, _debugGameColl);
     }
 
     public void Dispose()
     {
+        _debugTiles.Dispose();
         _debugLayout.Dispose();
         _debugNavmeshCustom.Dispose();
         _debugNavmeshManager.Dispose();
         _debugGameColl.Dispose();
         _dd.Dispose();
+    }
+
+    public void OnZoneChange()
+    {
+        _debugGameColl.Saved = null;
     }
 
     public void StartFrame()
@@ -45,7 +54,7 @@ public class MainWindow : Window, IDisposable
         _debugGameColl.DrawVisualizers();
         if (Service.Config.ShowWaypoints)
         {
-            var player = Service.ClientState.LocalPlayer;
+            var player = Service.ObjectTable.LocalPlayer;
             if (player != null)
             {
                 var from = player.Position;
@@ -83,6 +92,9 @@ public class MainWindow : Window, IDisposable
                 using (var tab = ImRaii.TabItem("Navmesh custom"))
                     if (tab)
                         _debugNavmeshCustom.Draw();
+                using (var tab = ImRaii.TabItem("Tiles"))
+                    if (tab)
+                        _debugTiles.Draw();
             }
         }
     }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading;
 
 namespace Navmesh.NavVolume;
 
@@ -140,7 +141,7 @@ public class VoxelMap
                         data &= VoxelIdMask;
                         if (data == VoxelIdMask)
                         {
-                            yield return(EncodeIndex(idx), false); // occupied leaf
+                            yield return (EncodeIndex(idx), false); // occupied leaf
                         }
                         else
                         {
@@ -238,7 +239,7 @@ public class VoxelMap
         }
     }
 
-    public void Build(Voxelizer vox, int tx, int tz)
+    public void Build(Voxelizer vox, int tx, int tz, CancellationToken? token = null)
     {
         // downsample
         var voxelizers = new Voxelizer[Levels.Length];
@@ -255,6 +256,7 @@ public class VoxelMap
         for (int ty = 0; ty < ny; ++ty, ++idx)
         {
             BuildTile(RootTile, idx, 0, ty, 0, voxelizers);
+            token?.ThrowIfCancellationRequested();
         }
     }
 
@@ -264,33 +266,34 @@ public class VoxelMap
         if (!solid)
         {
             // fully empty => nothing to do
+            return;
         }
-        else if (!empty)
+
+        if (!empty)
         {
             // fully solid
             parent.Contents[index] = VoxelOccupiedBit | VoxelIdMask;
+            return;
         }
-        else
-        {
-            parent.Contents[index] = (ushort)(VoxelOccupiedBit | parent.Subdivision.Count);
-            var (min, max) = parent.CalculateSubdivisionBounds(parent.LevelDesc.IndexToVoxel(index));
-            var tile = new Tile(this, min, max, parent.Level + 1);
-            parent.Subdivision.Add(tile);
 
-            // subdivide
-            ref var l = ref Levels[tile.Level];
-            int xOff = x0 * l.NumCellsX;
-            int yOff = y0 * l.NumCellsY;
-            int zOff = z0 * l.NumCellsZ;
-            ushort i = 0;
-            for (int z = 0; z < l.NumCellsZ; ++z)
+        parent.Contents[index] = (ushort)(VoxelOccupiedBit | parent.Subdivision.Count);
+        var (min, max) = parent.CalculateSubdivisionBounds(parent.LevelDesc.IndexToVoxel(index));
+        var tile = new Tile(this, min, max, parent.Level + 1);
+        parent.Subdivision.Add(tile);
+
+        // subdivide
+        ref var l = ref Levels[tile.Level];
+        int xOff = x0 * l.NumCellsX;
+        int yOff = y0 * l.NumCellsY;
+        int zOff = z0 * l.NumCellsZ;
+        ushort i = 0;
+        for (int z = 0; z < l.NumCellsZ; ++z)
+        {
+            for (int x = 0; x < l.NumCellsX; ++x)
             {
-                for (int x = 0; x < l.NumCellsX; ++x)
+                for (int y = 0; y < l.NumCellsY; ++y, ++i)
                 {
-                    for (int y = 0; y < l.NumCellsY; ++y, ++i)
-                    {
-                        BuildTile(tile, i, xOff + x, yOff + y, zOff + z, source.Slice(1));
-                    }
+                    BuildTile(tile, i, xOff + x, yOff + y, zOff + z, source.Slice(1));
                 }
             }
         }

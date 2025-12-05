@@ -1,4 +1,5 @@
-﻿using Navmesh.Movement;
+﻿
+using Navmesh.Movement;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -70,7 +71,7 @@ public class AsyncMoveRequest : IDisposable
         var toleranceStr = range > 0 ? $" within {range}y" : "";
 
         Service.Log.Info($"Queueing {(fly ? "fly" : "move")}-to {dest:f3}{toleranceStr}");
-        _pendingTask = _manager.QueryPath(Service.ClientState.LocalPlayer?.Position ?? default, dest, fly, range: range);
+        _pendingTask = _manager.QueryPath(Service.ObjectTable.LocalPlayer?.Position ?? default, dest, fly, range: range);
         _pendingFly = fly;
         _pendingDestRange = range;
         return true;

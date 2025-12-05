@@ -4,13 +4,25 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
+using FFXIVClientStructs.FFXIV.Client.System.Scheduler;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.Interop;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Navmesh.Debug;
+
+[StructLayout(LayoutKind.Explicit, Size = 0x10)]
+unsafe struct TmlbFile
+{
+    [FieldOffset(4)] public int TotalSize;
+    [FieldOffset(8)] public int NumElements;
+    [FieldOffset(0xC)] public byte DataOffset;
+}
 
 public unsafe class DebugLayout : IDisposable
 {
@@ -31,11 +43,11 @@ public unsafe class DebugLayout : IDisposable
     private DebugGameCollision _coll;
     private DebugDrawer _dd;
     private Dictionary<ulong, InstanceData> _insts = new();
-    private bool _groupByLayerGroup = true;
-    private bool _groupByLayer = true;
+    private bool _groupByLayerGroup = false;
+    private bool _groupByLayer = false;
     private bool _groupByInstanceType = true;
     private bool _groupByMaterial = false;
-    private string _filterById = "";
+    private string _filterById = "98C35E";
 
     public DebugLayout(DebugDrawer dd, DebugGameCollision coll)
     {
@@ -49,6 +61,10 @@ public unsafe class DebugLayout : IDisposable
 
     public void Draw()
     {
+        var g = ActionTimelineManager.Instance();
+        ImGui.TextUnformatted($"ActionTimelineManager address: {(nint)ActionTimelineManager.Instance():X}");
+        //var b = Process.GetCurrentProcess().MainModule.BaseAddress + 0x296A750;
+        //ImGui.TextUnformatted($"ObjectManager address: {b:X}");
         DrawWorld(LayoutWorld.Instance());
         var terr = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(Service.ClientState.TerritoryType);
         if (terr != null)
@@ -65,6 +81,45 @@ public unsafe class DebugLayout : IDisposable
         InGame = 1 << 1,
         InGameMismatch = 1 << 2,
         HasCollider = 1 << 3
+    }
+
+    [Flags]
+    enum Flags1 : byte
+    {
+        Unk0 = 0x01,
+        Unk1 = 0x02,
+        Unk2 = 0x04,
+        Unk3 = 0x08,
+        Unk4 = 0x10,
+        Unk5 = 0x20,
+        Unk6 = 0x40,
+        Unk7 = 0x80
+    }
+
+    [Flags]
+    enum Flags2 : byte
+    {
+        Unk0 = 0x01,
+        Unk1 = 0x02,
+        Unk2 = 0x04,
+        Unk3 = 0x08,
+        Unk4 = 0x10,
+        Unk5 = 0x20,
+        Unk6 = 0x40,
+        Unk7 = 0x80
+    }
+
+    [Flags]
+    enum Flags3 : byte
+    {
+        Unk0 = 0x01,
+        Unk1 = 0x02,
+        Unk2 = 0x04,
+        Unk3 = 0x08,
+        Active = 0x10,
+        Unk5 = 0x20,
+        Unk6 = 0x40,
+        Unk7 = 0x80
     }
 
     private static InstanceFlags GetFlags(InstanceData inst)
@@ -94,19 +149,21 @@ public unsafe class DebugLayout : IDisposable
             return 0xFF00FFFF;
 
         if (!flags.HasFlag(InstanceFlags.HasCollider))
-            return 0xFF00FF00;
+            return 0xFFFFFF00;
 
         return 0xFFFFFFFF;
     }
 
     public static bool DrawInstance(UITree tree, string tag, LayoutManager* layout, ILayoutInstance* inst, DebugGameCollision coll)
     {
-        using var ni = tree.Node($"{tag} {inst->Id.Type} L{inst->Id.LayerKey:X4} I{inst->Id.InstanceKey:X8}.{inst->SubId:X8} ({inst->Id.u0:X2}) = {(nint)inst:X}, pool-idx={inst->IndexInPool}, prefab-index={inst->IndexInPrefab}, nesting={inst->NestingLevel}, u29low={inst->Flags1 & 0xF}, u29hi={(inst->Flags1 >> 7) != 0}, flags={inst->Flags2:X2} {inst->Flags3:X2}###{tag}");
+        using var ni = tree.Node($"{tag} {inst->Id.Type} L{inst->Id.LayerKey:X4} I{inst->Id.InstanceKey:X8}.{inst->SubId:X8} ({inst->Id.u0:X2}) = {(nint)inst:X}, flags1={(Flags1)inst->Flags1} flags2={(Flags2)inst->Flags2} flags3={(Flags3)inst->Flags3}, pool-idx={inst->IndexInPool}, prefab-index={inst->IndexInPrefab}, nesting={inst->NestingLevel}###{tag}");
+        var subShift = 8 * (4 - (((inst->Flags1 >> 4) & 7) + 1));
         var collider = inst->GetCollider();
         if (ni.Opened)
         {
             tree.LeafNode($"Primary: {inst->HavePrimary()} '{LayoutUtils.ReadString(inst->GetPrimaryPath())}'");
             tree.LeafNode($"Secondary: {inst->HaveSecondary()} '{LayoutUtils.ReadString(inst->GetSecondaryPath())}'");
+            tree.LeafNode($"Subshift: {subShift}");
             tree.LeafNode($"Translation: {*inst->GetTranslationImpl()}");
             tree.LeafNode($"Rotation: {*inst->GetRotationImpl()}");
             tree.LeafNode($"Scale: {*inst->GetScaleImpl()}");
@@ -117,7 +174,9 @@ public unsafe class DebugLayout : IDisposable
             {
                 case InstanceType.BgPart:
                     var instBgPart = (BgPartsLayoutInstance*)inst;
+                    var cType = instBgPart->CollisionMeshPathCrc > 0 ? "Mesh" : instBgPart->AnalyticShapeDataCrc > 0 ? "Shape" : "None";
                     tree.LeafNode($"Gfx obj: {(nint)instBgPart->GraphicsObject:X}");
+                    tree.LeafNode($"Collision type: {cType}");
                     tree.LeafNode($"Collider: {(nint)instBgPart->Collider:X} ({instBgPart->CollisionMeshPathCrc:X8} / {instBgPart->AnalyticShapeDataCrc:X8})");
                     if (instBgPart->CollisionMeshPathCrc != 0)
                     {
@@ -147,8 +206,22 @@ public unsafe class DebugLayout : IDisposable
                 case InstanceType.SharedGroup:
                 case InstanceType.HelperObject:
                     var instPrefab = (SharedGroupLayoutInstance*)inst;
+                    DrawActionController(tree, "Action controller (1)", instPrefab->ActionController1, coll);
+                    DrawActionController(tree, "Action controller (2)", instPrefab->ActionController2, coll);
                     tree.LeafNode($"Resource: {(instPrefab->ResourceHandle != null ? instPrefab->ResourceHandle->FileName : "<null>")}");
                     tree.LeafNode($"Flags: {instPrefab->PrefabFlags1:X8} {instPrefab->PrefabFlags2:X8}");
+                    tree.LeafNode($"Timeline object: {(nint)instPrefab->TimelineObject:X}");
+                    using (var nt = tree.Node($"Timeline: {instPrefab->TimeLineContainer.Instances.Count} nodes###tinstances", instPrefab->TimeLineContainer.Instances.Count == 0))
+                    {
+                        if (nt.Opened)
+                        {
+                            int ti = 0;
+                            foreach (var node in instPrefab->TimeLineContainer.Instances)
+                            {
+                                DrawInstance(tree, $"[{ti++}]", layout, &node.Value->ILayoutInstance, coll);
+                            }
+                        }
+                    }
                     using (var nc = tree.Node($"Instances ({instPrefab->Instances.Instances.Count})###instances", instPrefab->Instances.Instances.Count == 0))
                     {
                         if (nc.Opened)
@@ -181,6 +254,21 @@ public unsafe class DebugLayout : IDisposable
                     tree.LeafNode($"Material: {instCollGeneric->MaterialIdHigh:X8}{instCollGeneric->MaterialIdLow:X8}/{instCollGeneric->MaterialMaskHigh:X8}{instCollGeneric->MaterialMaskLow:X8}");
                     tree.LeafNode($"Misc: active-by-default={instCollGeneric->TriggerBoxLayoutInstance.ActiveByDefault}");
                     //tree.LeafNode($"Unk: {instCollGeneric->ColliderLayoutInstance.u70}");
+                    break;
+                case InstanceType.Timeline:
+                    var instTime = (TimeLineLayoutInstance*)inst;
+                    tree.LeafNode($"Parent: {SceneTool.GetKey(&instTime->Parent->ILayoutInstance):X}");
+                    var parentShift = 8 * (4 - (((instTime->Parent->Flags1 >> 4) & 7) + 1));
+                    var parentId = (ulong)instTime->Parent->Id.InstanceKey << 32 | instTime->Parent->SubId;
+                    var ptr = instTime->DataPtr;
+                    using (var nt0 = tree.Node($"Timeline data: autoplay={ptr->AutoPlay == 1}, loop={ptr->Loop == 1}", ptr->Instances.Length == 0))
+                    {
+                        if (nt0.Opened)
+                        {
+                            foreach (var inst2 in ptr->Instances)
+                                tree.LeafNode($"{parentId | ((ulong)inst2.SubId << parentShift):X}");
+                        }
+                    }
                     break;
             }
         }
@@ -465,6 +553,9 @@ public unsafe class DebugLayout : IDisposable
                 }
             }
         }
+
+        DrawTimeline(header);
+
         using (var ng = _tree.Node($"Layer group resources ({header->NumLayerGroupResources} at +{header->OffsetLayerGroupResources})", header->NumLayerGroupResources == 0))
         {
             if (ng.Opened)
@@ -479,18 +570,17 @@ public unsafe class DebugLayout : IDisposable
         var filterList = header->Filters;
         if (filterList != null)
         {
-            using (var nl = _tree.Node($"Filters ({filterList->NumEntries} at +{header->OffsetFilters}+{filterList->OffsetEntries})", filterList->NumEntries == 0))
+            using var nl = _tree.Node($"Filters ({filterList->NumEntries} at +{header->OffsetFilters}+{filterList->OffsetEntries})", filterList->NumEntries == 0);
+            if (nl.Opened)
             {
-                if (nl.Opened)
+                foreach (ref var f in filterList->Entries)
                 {
-                    foreach (ref var f in filterList->Entries)
-                    {
-                        var unks = "";// $"; unks: {f.u0} {f.u8} {f.uC} {f.u14} {f.u18}";
-                        _tree.LeafNode($"[{f.Key:X}] = terr={f.TerritoryTypeId} cfc={f.CfcId}{unks}");
-                    }
+                    var unks = "";// $"; unks: {f.u0} {f.u8} {f.uC} {f.u14} {f.u18}";
+                    _tree.LeafNode($"[{f.Key:X}] = terr={f.TerritoryTypeId} cfc={f.CfcId}{unks}");
                 }
             }
         }
+
         return true;
     }
 
@@ -656,10 +746,7 @@ public unsafe class DebugLayout : IDisposable
             var inst = layer->Instance(instOffset);
             var key = prefabKey == 0 ? ((ulong)inst->Key) << 32 : prefabKey | (inst->Key << subShift);
             if (_insts.ContainsKey(key))
-            {
-                Service.Log.Error($"Duplicate instances with key {key:X16}");
                 continue;
-            }
             _insts.Add(key, new() { LayerGroupId = layerGroupId, LayerId = layerId, InstanceId = (uint)(key >> 32), SubId = (uint)key, Type = inst->Type, InFile = true, ExpectedToBeInGame = expectedInGame });
 
             if (inst->Type is InstanceType.SharedGroup or InstanceType.HelperObject)
@@ -787,7 +874,7 @@ public unsafe class DebugLayout : IDisposable
                     if (inst.Instance != null)
                     {
                         var trans = inst.Instance->GetTranslationImpl();
-                        _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, *trans, 0xFFFF00FF);
+                        _dd.DrawWorldLine(Service.ObjectTable.LocalPlayer?.Position ?? default, *trans, 0xFFFF00FF);
                     }
                 }
                 else
@@ -805,5 +892,135 @@ public unsafe class DebugLayout : IDisposable
     {
         var unks = "";//$" {v.u8:X} {v.uC} {v.u3C} {v.u60} {v.u64}";
         tree.LeafNode($"{tag} [{v.NumRefs}] {v.Type}{unks} trans=[{v.Transform.Translation} {v.Transform.Rotation} {v.Transform.Scale}] bb=[{v.BoundsMin}-{v.BoundsMax}], mat={v.MaterialId:X}/{v.MaterialMask:X}");
+    }
+
+    private unsafe void DrawTimeline(FileSceneHeader* header)
+    {
+        var timeList = header->Timelines;
+        if (timeList != null)
+        {
+            using var nt = _tree.Node($"Timelines ({timeList->NumEntries} at +{header->OffsetTimelines}+{timeList->OffsetEntries})", timeList->NumEntries == 0);
+            if (nt.Opened)
+            {
+                foreach (ref var t in timeList->Entries)
+                {
+                    var atk = LayoutUtils.ReadString(t.ActionTimelineKey);
+                    using var ntt = _tree.Node($"[{t.SubId:X2}] '{LayoutUtils.ReadString(t.Type)}' path='{atk}' autoplay={t.AutoPlay == 1} loop={t.Loop == 1}", t.Instances.Length == 0);
+                    if (ntt.Opened)
+                    {
+                        if (atk.Length == 0)
+                        {
+                            var tmlb = (TmlbFile*)((byte*)Unsafe.AsPointer(ref t) + t.OffsetTmlb);
+                            var numElements = tmlb->NumElements;
+                            byte* tmlbData = &tmlb->DataOffset;
+                            for (var i = 0; i < tmlb->NumElements; i++)
+                            {
+                                var tag2 = Encoding.UTF8.GetString(new Span<byte>(tmlbData, 4).ToArray());
+                                var elemSize = *(uint*)(tmlbData + 4);
+                                tmlbData += elemSize;
+                                _tree.LeafNode($"{tag2} ({elemSize} bytes)");
+                            }
+                        }
+
+                        using var nttt = _tree.Node("Instances");
+                        if (nttt.Opened)
+                        {
+                            var j = 0;
+                            foreach (var inst in t.Instances)
+                                _tree.LeafNode($"[{j++}] subid={inst.SubId:X2} unk={inst.Unknown:X2}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static unsafe void DrawActionController(UITree tree, string label, SGActionController* controller, DebugGameCollision coll)
+    {
+        using var nd = tree.Node($"{label}: {(nint)controller:X}", controller == null);
+        if (!nd.Opened)
+            return;
+
+        tree.LeafNode($"Animation type: {controller->AnimationType}");
+        switch (controller->AnimationType)
+        {
+            case 1:
+            case 2:
+            case 3:
+                {
+                    var controllerDoor = (SGDoorActionController*)controller;
+                    var childCount = (controllerDoor->Door1 == null ? 0 : 1) + (controllerDoor->Door2 == null ? 0 : 1) + (controllerDoor->Collision == null ? 0 : 1);
+                    using var nd0 = tree.Node($"Children: {childCount}", childCount == 0);
+                    if (nd0.Opened)
+                    {
+                        if (controllerDoor->Collision != null)
+                            DrawInstance(tree, "[collision]", controllerDoor->Collision->Layout, &controllerDoor->Collision->TriggerBoxLayoutInstance.ILayoutInstance, coll);
+                        if (controllerDoor->Door1 != null)
+                            DrawInstance(tree, "[door1]", controllerDoor->Door1->Layout, &controllerDoor->Door1->ILayoutInstance, coll);
+                        if (controllerDoor->Door2 != null)
+                            DrawInstance(tree, "[door2]", controllerDoor->Door2->Layout, &controllerDoor->Door2->ILayoutInstance, coll);
+                    }
+                }
+                break;
+            case 4:
+            case 5:
+                {
+                    var controllerRot = (SGRotationActionController*)controller;
+                    var childCount = (controllerRot->ChildGroup == null ? 0 : 1) + (controllerRot->HasChild1 ? 1 : 0) + (controllerRot->HasChild2 ? 1 : 0);
+                    using var nr = tree.Node($"Children: {childCount}", childCount == 0);
+                    if (nr.Opened)
+                    {
+                        if (controllerRot->ChildGroup != null)
+                            DrawInstance(tree, "[primary]", controllerRot->ChildGroup->Layout, &controllerRot->ChildGroup->ILayoutInstance, coll);
+                        if (controllerRot->Child1 != null)
+                            DrawInstance(tree, "[1]", controllerRot->Child1->Layout, controllerRot->Child1, coll);
+                        if (controllerRot->Child2 != null)
+                            DrawInstance(tree, "[2]", controllerRot->Child1->Layout, controllerRot->Child2, coll);
+                    }
+                }
+                break;
+            case 12:
+            case 13:
+                {
+                    var controllerTrans = (SGTransformActionController*)controller;
+                    using var nc = tree.Node($"Children: {controllerTrans->NumObjects}", controllerTrans->NumObjects == 0);
+                    if (nc.Opened)
+                    {
+                        for (var i = 0; i < controllerTrans->NumObjects; i++)
+                        {
+                            var inst = controllerTrans->Objects[i];
+                            DrawInstance(tree, $"[{i}]", inst.Instance->Layout, inst.Instance, coll);
+                        }
+                    }
+                    var t1 = controllerTrans->TranslationTimer.Start;
+                    var t2 = controllerTrans->RotationTimer.Start;
+                    var t3 = controllerTrans->ScaleTimer.Start;
+                    tree.LeafNode($"Translation (base): {t1}");
+                    tree.LeafNode($"Rotation (base): {t2}");
+                    tree.LeafNode($"Scale (base): {t3}");
+                }
+                break;
+        }
+    }
+
+    private unsafe bool HasAnyCollision(SharedGroupLayoutInstance* inst)
+    {
+        foreach (var i in inst->Instances.Instances)
+        {
+            var child = i.Value->Instance;
+            switch (child->Id.Type)
+            {
+                case InstanceType.BgPart:
+                    var cast = (BgPartsLayoutInstance*)child;
+                    if (cast->HasCollision())
+                        return true;
+                    break;
+                case InstanceType.SharedGroup:
+                    if (HasAnyCollision((SharedGroupLayoutInstance*)child))
+                        return true;
+                    break;
+            }
+        }
+        return false;
     }
 }

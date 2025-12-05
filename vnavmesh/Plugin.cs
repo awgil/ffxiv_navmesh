@@ -5,7 +5,6 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Navmesh.Movement;
 using System;
-using System.IO;
 using System.Numerics;
 using System.Reflection;
 
@@ -29,13 +28,18 @@ public sealed class Plugin : IDalamudPlugin
                 GetType("Dalamud.Service`1", true)!.MakeGenericType(dalamud.GetType().Assembly.GetType("Dalamud.Dalamud", true)!).
                 GetMethod("Get")!.Invoke(null, BindingFlags.Default, null, Array.Empty<object>(), null);
         var dalamudStartInfo = (DalamudStartInfo)dalamudRoot?.GetType().GetProperty("StartInfo", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(dalamudRoot)!;
-        InteropGenerator.Runtime.Resolver.GetInstance.Setup(0, dalamudStartInfo.GameVersion?.ToString() ?? "", new(Path.Combine(dalamud.ConfigDirectory.FullName, "cs.json")));
+
+#if LOCAL_CS
+        InteropGenerator.Runtime.Resolver.GetInstance.Setup(0, dalamudStartInfo.GameVersion?.ToString() ?? "", new(System.IO.Path.Combine(dalamud.ConfigDirectory.FullName, "cs.json")));
         FFXIVClientStructs.Interop.Generated.Addresses.Register();
         InteropGenerator.Runtime.Resolver.GetInstance.Resolve();
+#endif
 
         dalamud.Create<Service>();
         Service.Config.Load(dalamud.ConfigFile);
         Service.Config.Modified += () => Service.Config.Save(dalamud.ConfigFile);
+
+        //DtUtils.LogHandler = (msg, ex) => Service.Log.Debug(ex, $"[DT] {msg}");
 
         _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
         _followPath = new(dalamud, _navmeshManager);
@@ -78,16 +82,28 @@ public sealed class Plugin : IDalamudPlugin
         Service.CommandManager.AddHandler("/vnavmesh", new CommandInfo(OnCommand) { HelpMessage = cmd.HelpMessage, ShowInHelp = false }); // legacy
 
         Service.Framework.Update += OnUpdate;
+        Service.ClientState.ZoneInit += ClientState_ZoneInit;
+
+        // prefetch seed points
+        var _ = FloodFill.GetAsync();
+    }
+
+    private void ClientState_ZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
+    {
+        _wndMain.OnZoneChange();
     }
 
     public void Dispose()
     {
+        Service.ClientState.ZoneInit -= ClientState_ZoneInit;
         Service.Framework.Update -= OnUpdate;
 
         Service.CommandManager.RemoveHandler("/vnav");
         Service.CommandManager.RemoveHandler("/vnavmesh");
         Service.PluginInterface.UiBuilder.Draw -= Draw;
         WindowSystem.RemoveAllWindows();
+
+        Slog.Instance().Dispose();
 
         _ipcProvider.Dispose();
         _wndMain.Dispose();
@@ -196,7 +212,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void MoveToCommand(string[] args, bool relativeToPlayer, bool fly)
     {
-        var originActor = relativeToPlayer ? Service.ClientState.LocalPlayer : null;
+        var originActor = relativeToPlayer ? Service.ObjectTable.LocalPlayer : null;
         var origin = originActor?.Position ?? new();
         var offset = new Vector3(
             float.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture),

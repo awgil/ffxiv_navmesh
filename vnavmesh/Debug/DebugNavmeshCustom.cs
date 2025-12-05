@@ -4,6 +4,7 @@ using DotRecast.Core;
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
+
 using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
@@ -14,7 +15,7 @@ namespace Navmesh.Debug;
 
 class DebugNavmeshCustom : IDisposable
 {
-    private record struct HeightfieldComparison(float DurationOld, float DurationNew, bool Identical);
+    public record struct HeightfieldComparison(float DurationOld, float DurationNew, bool Identical);
 
     public class Customization : NavmeshCustomization
     {
@@ -22,14 +23,14 @@ class DebugNavmeshCustom : IDisposable
         public bool LoadExisting = true;
 
         public override int Version => 1;
-        public override bool IsFlyingSupported(SceneDefinition definition) => Flyable;
+        public override bool IsFlyingSupported(uint terr) => Flyable;
 
         private static NavmeshCustomization? Existing => NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType) is { } t && t.Version > 0 ? t : null;
 
-        public override void CustomizeScene(SceneExtractor scene)
+        public override void CustomizeTile(Tile tile)
         {
             if (LoadExisting)
-                Existing?.CustomizeScene(scene);
+                Existing?.CustomizeTile(tile);
         }
 
         public override void CustomizeSettings(DtNavMeshCreateParams config)
@@ -74,12 +75,12 @@ class DebugNavmeshCustom : IDisposable
 
         public State CurrentState => _task == null ? State.NotBuilt : !_task.IsCompleted ? State.InProgress : _task.IsFaulted ? State.Failed : State.Ready;
         public SceneDefinition? Scene => _task != null && _task.IsCompletedSuccessfully ? _scene : null;
-        public SceneExtractor? Extractor => _task != null && _task.IsCompletedSuccessfully ? _builder?.Scene : null;
+        public SceneExtractor? Extractor => null; // _task != null && _task.IsCompletedSuccessfully ? _builder?.Scene : null;
         public IntermediateData? Intermediates => _task != null && _task.IsCompletedSuccessfully ? _intermediates : null;
         public NavmeshQuery? Query => _task != null && _task.IsCompletedSuccessfully ? _query : null;
-        public DtNavMesh? Navmesh => _task != null && _task.IsCompletedSuccessfully ? _builder?.Navmesh.Mesh : null;
+        public DtNavMesh? Navmesh => null; // _task != null && _task.IsCompletedSuccessfully ? _builder?.Navmesh.Mesh : null;
         public DtNavMeshQuery? MeshQuery => _task != null && _task.IsCompletedSuccessfully ? _query?.MeshQuery : null;
-        public VoxelMap? Volume => _task != null && _task.IsCompletedSuccessfully ? _builder?.Navmesh.Volume : null;
+        //public VoxelMap? Volume => _task != null && _task.IsCompletedSuccessfully ? _builder?.Navmesh.Volume : null;
         public VoxelPathfind? VolumeQuery => _task != null && _task.IsCompletedSuccessfully ? _query?.VolumeQuery : null;
 
         public void Dispose()
@@ -117,6 +118,7 @@ class DebugNavmeshCustom : IDisposable
         {
             try
             {
+                /*
                 var timer = Timer.Create();
                 _builder = new(scene, customization);
 
@@ -138,6 +140,7 @@ class DebugNavmeshCustom : IDisposable
                 _query = new(_builder.Navmesh);
                 Service.Log.Debug($"navmesh build time: {timer.Value().TotalMilliseconds}ms");
                 _manager.ReplaceMesh(_builder.Navmesh);
+                */
             }
             catch (Exception ex)
             {
@@ -148,7 +151,7 @@ class DebugNavmeshCustom : IDisposable
     }
 
     // TODO: should each debug drawer handle tiled geometry itself?
-    private class PerTile : IDisposable
+    public class PerTile : IDisposable
     {
         public DebugSolidHeightfield? DrawSolidHeightfield;
         public DebugCompactHeightfield? DrawCompactHeightfield;
@@ -173,8 +176,9 @@ class DebugNavmeshCustom : IDisposable
     private DebugDrawer _dd;
     private DebugGameCollision _coll;
     private DebugExtractedCollision? _drawExtracted;
-    private HeightfieldComparison? _globalHFC;
+    private Task<HeightfieldComparison>? _globalHFC;
     private PerTile[,]? _debugTiles;
+    private NavmeshManager _manager;
 
     private Vector3 _dest = new();
 
@@ -184,6 +188,7 @@ class DebugNavmeshCustom : IDisposable
     {
         _dd = dd;
         _coll = coll;
+        _manager = manager;
         _navmesh = new(manager);
         _configDirectory = configDir;
     }
@@ -233,13 +238,13 @@ class DebugNavmeshCustom : IDisposable
         ImGui.InputFloat("Z", ref _dest.Z);
         if (ImGui.Button("Pathfind"))
         {
-            var player = Service.ClientState.LocalPlayer;
+            var player = Service.ObjectTable.LocalPlayer;
             var playerPos = player?.Position ?? default;
             _navmesh.Query!.PathfindMesh(playerPos, _dest, true, true, new());
         }
 
         var navmesh = _navmesh.Navmesh!;
-        navmesh.CalcTileLoc((Service.ClientState.LocalPlayer?.Position ?? default).SystemToRecast(), out var playerTileX, out var playerTileZ);
+        navmesh.CalcTileLoc((Service.ObjectTable.LocalPlayer?.Position ?? default).SystemToRecast(), out var playerTileX, out var playerTileZ);
         _tree.LeafNode($"Player tile: {playerTileX}x{playerTileZ}");
 
         _drawExtracted ??= new(_navmesh.Scene!, _navmesh.Extractor!, _tree, _dd, _coll, _configDirectory);
@@ -255,10 +260,15 @@ class DebugNavmeshCustom : IDisposable
                 {
                     if (ng.Opened)
                     {
-                        _globalHFC ??= CompareAllHeightfields(_navmesh.Extractor!);
-                        _tree.LeafNode($"Old: {_globalHFC.Value.DurationOld:f3}");
-                        _tree.LeafNode($"New: {_globalHFC.Value.DurationNew:f3}");
-                        _tree.LeafNode($"Match: {_globalHFC.Value.Identical}");
+                        _globalHFC ??= Task.Run(() => CompareAllHeightfields(_navmesh.Extractor!));
+                        if (_globalHFC.IsCompleted)
+                        {
+                            _tree.LeafNode($"Old: {_globalHFC.Result.DurationOld:f3}");
+                            _tree.LeafNode($"New: {_globalHFC.Result.DurationNew:f3}");
+                            _tree.LeafNode($"Match: {_globalHFC.Result.Identical}");
+                        }
+                        else
+                            _tree.LeafNode("Calculating...");
                     }
                 }
 

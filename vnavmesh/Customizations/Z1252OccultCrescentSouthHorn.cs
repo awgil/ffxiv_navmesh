@@ -1,6 +1,5 @@
 ﻿using DotRecast.Detour;
 using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace Navmesh.Customizations;
 
@@ -9,15 +8,13 @@ internal class Z1252OccultCrescentSouthHorn : NavmeshCustomization
 {
     public override int Version => 3;
 
-    public override void CustomizeScene(SceneExtractor scene)
+    public override void CustomizeTile(Tile tile)
     {
-        if (scene.Meshes.TryGetValue("bg/ex5/03_ocn_o6/btl/o6b1/collision/o6b1_a5_stc02.pcb", out var mesh))
-        {
-            // bottom stair of second-tier staircase around SW tower is too steep even though it's <55 degrees, probably because of rasterization bs, extend it outward by 1y to make slope more gradual
-            var verts = CollectionsMarshal.AsSpan(mesh.Parts[221].Vertices);
-            verts[8].X += 1;
-            verts[16].X += 1;
-        }
+        // the bottom triangle on the staircase has a 51-degree slope, but because none of the instances are axis-aligned, they all end up marginally too steep after being rasterized
+        // to fix this, we can move the instance very slightly downward on the Y-axis so that the bottom stair falls within the max-climb threshold
+        // (changing max-climb for the whole territory would probably result in incorrect connections, but i haven't tested it)
+        foreach (var inst in tile.ObjectsByPath("bg/ex5/03_ocn_o6/btl/o6b1/collision/o6b1_a5_stc02.pcb"))
+            inst.Instance.WorldTransform.M42 -= 0.05f;
     }
 
     public override void CustomizeSettings(DtNavMeshCreateParams config)

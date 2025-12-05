@@ -16,7 +16,7 @@ public abstract class DebugRecast : IDisposable
 
     public static void DrawBaseInfo(UITree _tree, RcVec3f bbMin, RcVec3f bbMax, float cellSize, float cellHeight)
     {
-        var playerPos = Service.ClientState.LocalPlayer?.Position ?? default;
+        var playerPos = Service.ObjectTable.LocalPlayer?.Position ?? default;
         _tree.LeafNode($"Bounds: [{bbMin}] - [{bbMax}]");
         _tree.LeafNode($"Cell size: {cellSize}x{cellHeight}");
         _tree.LeafNode($"Player's cell: {(int)((playerPos.X - bbMin.X) / cellSize)}x{(int)((playerPos.Y - bbMin.Y) / cellHeight)}x{(int)((playerPos.Z - bbMin.Z) / cellSize)}");

@@ -1,11 +1,17 @@
 ﻿using Dalamud.Memory;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using FFXIVClientStructs.Interop;
 using FFXIVClientStructs.STD;
 using System;
+using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Navmesh;
 
@@ -74,6 +80,26 @@ struct ExdZoneSharedGroup
         Unknown14 = sg.Unknown14 ? (byte)1 : (byte)0,
         Unknown15 = sg.Unknown15 ? (byte)1 : (byte)0,
     };
+}
+
+public static class Utils
+{
+    public static void Time(string label, Action t)
+    {
+        var s = Stopwatch.StartNew();
+        t();
+        s.Stop();
+        Service.Log.Verbose($"[Timer] {label} took {s.ElapsedMilliseconds:f3}ms");
+    }
+
+    public static T Time<T>(string label, Func<T> t)
+    {
+        var s = Stopwatch.StartNew();
+        var res = t();
+        s.Stop();
+        Service.Log.Verbose($"[Timer] {label} took {s.ElapsedMilliseconds:f3}ms");
+        return res;
+    }
 }
 
 public unsafe static class LayoutUtils
@@ -167,4 +193,50 @@ public unsafe static class LayoutUtils
 
     public static string FestivalString(GameMain.Festival f) => $"{(uint)(f.Phase << 16) | f.Id:X}";
     public static string FestivalsString(ReadOnlySpan<GameMain.Festival> f) => $"{FestivalString(f[0])}.{FestivalString(f[1])}.{FestivalString(f[2])}.{FestivalString(f[3])}";
+    public static unsafe T ReadField<T>(void* address, int offset) where T : unmanaged => *(T*)((IntPtr)address + offset);
+
+    public static string DumpBytes(ReadOnlySpan<byte> data)
+    {
+        var sb = new StringBuilder();
+        for (var i = 0; i < data.Length; i++)
+        {
+            sb.Append(data[i].ToString("X2"));
+            sb.Append(' ');
+        }
+        return sb.ToString();
+    }
+
+    public static void DumpVt(void* ptr)
+    {
+        if (ptr == null)
+            return;
+        var vt = *(nint*)ptr;
+        var m = Process.GetCurrentProcess().MainModule!.BaseAddress;
+        Service.Log.Debug($"VT of {(nint)ptr:X}: +{vt - m:X}");
+    }
+}
+
+static class LayoutExtensions
+{
+    public static bool HasCollision(ref readonly this BgPartsLayoutInstance p) => p.AnalyticShapeDataCrc > 0 || p.CollisionMeshPathCrc > 0;
+    public static bool HasEnabledFlag(ref readonly this BgPartsLayoutInstance p) => p.ILayoutInstance.HasEnabledFlag();
+    public static bool HasEnabledFlag(ref readonly this CollisionBoxLayoutInstance p) => p.TriggerBoxLayoutInstance.ILayoutInstance.HasEnabledFlag();
+    public static bool HasEnabledFlag(ref readonly this ILayoutInstance p) => (p.Flags3 & 0x10) != 0;
+
+    public static string Display(this AABB b) => $"AABB {{ Min = {b.Min}, Max = {b.Max} }}";
+    public static string Display(this Transform t) => $"Transform {{ Translation = {t.Translation}, Type = {t.Type}, Rotation = {t.Rotation}, Scale = {t.Scale} }}";
+    public static string Display(this Matrix4x3 m) => $"Matrix {{ {m.M11}, {m.M12}, {m.M13}; {m.M21}, {m.M22}, {m.M23}; {m.M31}, {m.M32}, {m.M33}; {m.M41}, {m.M42}, {m.M43} }}";
+}
+
+public static class Matrix
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Matrix4x4 CreateTransform(Vector3 translation, Quaternion rotation, Vector3 scale)
+    {
+        var tx = Matrix4x4.CreateTranslation(translation);
+        var rx = Matrix4x4.CreateFromQuaternion(rotation);
+        var sx = Matrix4x4.CreateScale(scale);
+
+        return sx * rx * tx;
+    }
 }

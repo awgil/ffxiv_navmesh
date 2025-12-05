@@ -1,6 +1,7 @@
 ﻿using Dalamud.Bindings.ImGui;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
@@ -321,14 +322,14 @@ public class DebugExtractedCollision : IDisposable
         return coll;
     }
 
-    private Vector4 MeshColor(SceneExtractor.Mesh mesh) =>
+    public static Vector4 MeshColor(SceneExtractor.Mesh mesh) =>
         mesh.MeshType.HasFlag(SceneExtractor.MeshType.Terrain) ? new(0, 1, 0, 0.55f) :
         mesh.MeshType.HasFlag(SceneExtractor.MeshType.FileMesh) ? new(1, 1, 0, 0.55f) :
         new(1, 0, 0, 0.55f);
 
     private void ExportMesh()
     {
-        var key = NavmeshManager.GetCacheKey(_scene);
+        var key = _scene.TerritoryID.ToString();
         var outFile = new FileInfo($"{_configDirectory}/export/{key}.obj");
 
         var verts = new List<Vector3>();

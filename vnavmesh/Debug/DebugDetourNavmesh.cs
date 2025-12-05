@@ -47,13 +47,13 @@ public class DebugDetourNavmesh : DebugRecast
         }
     }
 
-    public void Draw()
+    public void Draw(int playerTileX, int playerTileZ)
     {
-        DrawMesh();
+        DrawMesh(playerTileX, playerTileZ);
         DrawQuery();
     }
 
-    private void DrawMesh()
+    private void DrawMesh(int playerX, int playerZ)
     {
         using var nr = _tree.Node("Detour navmesh");
         if (!nr.Opened)
@@ -64,8 +64,9 @@ public class DebugDetourNavmesh : DebugRecast
         _tree.LeafNode($"Tile size: {param.tileWidth:f3}x{param.tileHeight:f3} (max {param.maxPolys} polys per tile)");
 
         using var nt = _tree.Node($"Tiles (max {param.maxTiles})###tiles");
-        if (nt.SelectedOrHovered)
-            VisualizeWithClosedList();
+        // this causes pretty terrible lag, maybe we should expose an option for it
+        //if (nt.SelectedOrHovered)
+        //    VisualizeWithClosedList();
         if (nt.Opened)
         {
             for (int i = 0; i < param.maxTiles; ++i)
@@ -73,7 +74,7 @@ public class DebugDetourNavmesh : DebugRecast
                 var tile = _navmesh.GetTile(i);
                 if (tile.data == null)
                     continue;
-                using var ntile = _tree.Node($"Tile {i} at {tile.data.header.x}x{tile.data.header.y}x{tile.data.header.layer}: flags={tile.flags:X}, salt={tile.salt}, base poly ref={_navmesh.GetPolyRefBase(tile):X}###{i}");
+                using var ntile = _tree.Node($"Tile {i} at {tile.data.header.x}x{tile.data.header.y}x{tile.data.header.layer}: flags={tile.flags:X}, salt={tile.salt}, base poly ref={_navmesh.GetPolyRefBase(tile):X}###{i}", defaultOpen: (tile.data.header.x, tile.data.header.y) == (playerX, playerZ));
                 if (!ntile.Opened)
                     continue;
 
@@ -236,7 +237,7 @@ public class DebugDetourNavmesh : DebugRecast
                     builder.AddMesh(0, startingPrimitive, 0, 0, 0);
                 }
             }
-            Service.Log.Debug($"navmesh rough visualization tile #{tileIndex} build time: {timer.Value().TotalMilliseconds:f3}ms");
+            Service.Log.Verbose($"navmesh rough visualization tile #{tileIndex} build time: {timer.Value().TotalMilliseconds:f3}ms");
         }
         return perTile.VisuRough;
     }
@@ -283,7 +284,7 @@ public class DebugDetourNavmesh : DebugRecast
                 builder.AddMesh(0, startingPrimitive, sub.triCount, 0, 1);
                 startingPrimitive += sub.triCount;
             }
-            Service.Log.Debug($"navmesh detail visualization tile #{tileIndex} build time: {timer.Value().TotalMilliseconds:f3}ms");
+            Service.Log.Verbose($"navmesh detail visualization tile #{tileIndex} build time: {timer.Value().TotalMilliseconds:f3}ms");
         }
         return perTile.VisuDetail;
     }
@@ -328,6 +329,9 @@ public class DebugDetourNavmesh : DebugRecast
     // effect + data are expected to be already bound
     private void VisualizeRoughPolygon(DtMeshTile tile, EffectMesh.Data visu, DtPoly poly, bool colorByArea, bool highlight)
     {
+        if ((poly.flags & Navmesh.FLAGS_DISABLED) != 0)
+            return;
+
         if (poly.GetPolyType() != DtPolyTypes.DT_POLYTYPE_OFFMESH_CONNECTION)
         {
             if (poly.vertCount < 3)

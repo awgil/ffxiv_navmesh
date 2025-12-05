@@ -36,7 +36,7 @@ public class UITree
         }
     }
 
-    public NodeRaii Node(string text, bool leaf = false, uint color = 0xffffffff)
+    public NodeRaii Node(string text, bool leaf = false, uint color = 0xffffffff, bool defaultOpen = false)
     {
         var id = ImGui.GetID(text);
         var flags = ImGuiTreeNodeFlags.None;
@@ -44,6 +44,8 @@ public class UITree
             flags |= ImGuiTreeNodeFlags.Selected;
         if (leaf)
             flags |= ImGuiTreeNodeFlags.Leaf;
+        if (defaultOpen)
+            flags |= ImGuiTreeNodeFlags.DefaultOpen;
 
         ImGui.PushID((int)id);
         ImGui.PushStyleColor(ImGuiCol.Text, color);

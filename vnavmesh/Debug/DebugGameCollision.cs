@@ -38,7 +38,7 @@ public unsafe class DebugGameCollision : IDisposable
     private delegate bool RaycastDelegate(SceneWrapper* self, RaycastHit* result, ulong layerMask, RaycastParams* param);
     private Hook<RaycastDelegate>? _raycastHook;
 
-    private RaycastHit? _savedHit;
+    public RaycastHit? Saved;
 
     public DebugGameCollision(DebugDrawer dd)
     {
@@ -71,8 +71,8 @@ public unsafe class DebugGameCollision : IDisposable
                     _raycastHook.Disable();
         }
 
-        if (_savedHit != null && ImGui.Button("Reset remembered raycast hit"))
-            _savedHit = null;
+        if (Saved != null && ImGui.Button("Reset remembered raycast hit"))
+            Saved = null;
 
         var module = Framework.Instance()->BGCollisionModule;
         ImGui.TextUnformatted($"Module: {(nint)module:X}->{(nint)module->SceneManager:X} ({module->SceneManager->NumScenes} scenes, {module->LoadInProgressCounter} loads)");
@@ -290,7 +290,7 @@ public unsafe class DebugGameCollision : IDisposable
             var ac = res.V3 - res.V1;
             var normal = Vector3.Normalize(Vector3.Cross(ab, ac));
             _tree.LeafNode($"Normal: {normal} (slope={Angle.Acos(normal.Y)})");
-            _tree.LeafNode($"Material: {res.Material:X}");
+            _tree.LeafNode($"Material: {res.Material:X} ({(SceneExtractor.MaterialFlags)res.Material})");
             DrawCollider(res.Object);
             VisualizeCollider(res.Object, _materialId, _materialMask);
             _tree.LeafNode($"Vertices: {res.V1}, {res.V2}, {res.V3}");
@@ -306,8 +306,8 @@ public unsafe class DebugGameCollision : IDisposable
 
     private RaycastHit? GetRaycastHit(SceneWrapper* s, int index, Vector2 screenPos)
     {
-        if (_savedHit != null)
-            return _savedHit;
+        if (Saved != null)
+            return Saved;
 
         var clipPos = new Vector3(2 * screenPos.X / _dd.ViewportSize.X - 1, 1 - 2 * screenPos.Y / _dd.ViewportSize.Y, 1);
         Matrix4x4.Invert(_dd.ViewProj, out var invViewProj);
@@ -322,8 +322,8 @@ public unsafe class DebugGameCollision : IDisposable
         var arg = new RaycastParams() { Origin = &sphere, Direction = &dir, MaxDistance = &maxDist, MaterialFilter = &filter };
         if (s->Raycast(&res, _shownLayers.Raw, &arg))
         {
-            if (_savedHit == null && ImGui.GetIO().KeyShift)
-                _savedHit = res;
+            if (Saved == null && ImGui.GetIO().KeyShift)
+                Saved = res;
 
             return res;
         }
@@ -341,6 +341,8 @@ public unsafe class DebugGameCollision : IDisposable
 
         var type = coll->GetColliderType();
         var layoutInstance = LayoutUtils.FindInstance(LayoutWorld.Instance()->ActiveLayout, (coll->LayoutObjectId << 32) | (coll->LayoutObjectId >> 32));
+        if (layoutInstance == null)
+            layoutInstance = LayoutUtils.FindInstance(LayoutWorld.Instance()->GlobalLayout, (coll->LayoutObjectId << 32) | (coll->LayoutObjectId >> 32));
         var color = layoutInstance == null || layoutInstance->Id.Type is not InstanceType.BgPart and not InstanceType.CollisionBox ? 0xff00ffff : 0xffffffff;
         if (type == ColliderType.Mesh)
         {
@@ -350,7 +352,7 @@ public unsafe class DebugGameCollision : IDisposable
             else if (collMesh->MeshIsSimple)
                 color = 0xff0000ff;
         }
-        using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, layout-id={coll->LayoutObjectId:X16}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}###{(nint)coll:X}", false, color);
+        using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, layout-id={coll->LayoutObjectId:X16}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}, type={(layoutInstance == null ? "0" : layoutInstance->Id.Type)}###{(nint)coll:X}", false, color);
         if (ImGui.BeginPopupContextItem($"###popup{(nint)coll:X}"))
         {
             ContextCollider(coll);
@@ -518,6 +520,9 @@ public unsafe class DebugGameCollision : IDisposable
 
     public void VisualizeCollider(Collider* coll, BitMask filterId, BitMask filterMask)
     {
+        if (coll == null)
+            return;
+
         switch (coll->GetColliderType())
         {
             case ColliderType.Streamed:
@@ -574,14 +579,6 @@ public unsafe class DebugGameCollision : IDisposable
                     _dd.DrawWorldLine(d, a, 0xff0000ff);
                 }
                 break;
-        }
-
-        if (coll != null)
-        {
-            Vector3 trans;
-            coll->GetTranslation(&trans);
-
-            _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, trans, 0xFFFF00FF);
         }
     }
 
@@ -676,7 +673,7 @@ public unsafe class DebugGameCollision : IDisposable
     private void VisualizeVertex(Vector3 worldPos, uint color)
     {
         _dd.DrawWorldSphere(worldPos, 0.1f, color);
-        if (Service.ClientState.LocalPlayer is { } p)
+        if (Service.ObjectTable.LocalPlayer is { } p)
             _dd.DrawWorldLine(p.Position, worldPos, color);
     }
 

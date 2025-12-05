@@ -25,7 +25,7 @@ public class NavmeshQuery
         }
     }
 
-    private class TeleportingQueryFilter : IDtQueryFilter
+    private class QueryFilterWithTeleports : IDtQueryFilter
     {
         private readonly DtQueryDefaultFilter _f = new();
 
@@ -33,7 +33,7 @@ public class NavmeshQuery
         {
             var cst = _f.GetCost(pa, pb, prevRef, prevTile, prevPoly, curRef, curTile, curPoly, nextRef, nextTile, nextPoly);
             // increase cost of regular connections instead of reducing cost of off-mesh connections, since lowering cost interferes with heuristic
-            if (!(curPoly.GetArea() == Navmesh.OffMeshEndpoint && nextPoly?.GetArea() == Navmesh.OffMeshEndpoint))
+            if (!(curPoly.GetArea() == Navmesh.AREA_ID_WARP && nextPoly?.GetArea() == Navmesh.AREA_ID_WARP))
                 cst *= 3;
             return cst;
         }
@@ -41,15 +41,13 @@ public class NavmeshQuery
 
         public bool PassFilter(long refs, DtMeshTile tile, DtPoly poly)
         {
-            // Service.Log.Debug($"processing ref {refs:X}");
-            return true;
+            return (poly.flags & Navmesh.FLAGS_DISABLED) == 0;
         }
     }
 
     public DtNavMeshQuery MeshQuery;
     public VoxelPathfind? VolumeQuery;
-    private readonly IDtQueryFilter _filter = new DtQueryDefaultFilter();
-    private readonly IDtQueryFilter _pathFilter = new TeleportingQueryFilter();
+    private readonly IDtQueryFilter _filter = new QueryFilterWithTeleports();
 
     public List<long> LastPath => _lastPath;
     private List<long> _lastPath = [];
@@ -75,7 +73,7 @@ public class NavmeshQuery
         var timer = Timer.Create();
         _lastPath.Clear();
         var opt = new DtFindPathOption(range > 0 ? new ToleranceHeuristic(range) : DtDefaultQueryHeuristic.Default, useRaycast ? DtFindPathOptions.DT_FINDPATH_ANY_ANGLE : 0, useRaycast ? 5 : 0);
-        MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _pathFilter, ref _lastPath, opt);
+        MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _filter, ref _lastPath, opt);
         if (_lastPath.Count == 0)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find path on mesh");
@@ -167,14 +165,14 @@ public class NavmeshQuery
     // returns VoxelMap.InvalidVoxel if not found, otherwise voxel index
     public ulong FindNearestVolumeVoxel(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5) => VolumeQuery != null ? VoxelSearch.FindNearestEmptyVoxel(VolumeQuery.Volume, p, new(halfExtentXZ, halfExtentY, halfExtentXZ)) : VoxelMap.InvalidVoxel;
 
-    // collect all mesh polygons reachable from specified polygon
-    public HashSet<long> FindReachableMeshPolys(long starting)
+    // collect all mesh polygons reachable from specified polygon(s)
+    public HashSet<long> FindReachableMeshPolys(params long[] starting)
     {
         HashSet<long> result = [];
-        if (starting == 0)
-            return result;
 
-        List<long> queue = [starting];
+        List<long> queue = [.. starting];
+        queue.RemoveAll(s => s == 0);
+
         while (queue.Count > 0)
         {
             var next = queue[^1];

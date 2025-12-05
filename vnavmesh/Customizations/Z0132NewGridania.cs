@@ -16,7 +16,8 @@ internal class Z0132NewGridania : NavmeshCustomization
     {
         if (scene.Meshes.TryGetValue("bg/ffxiv/fst_f1/twn/common/collision/f1t0_a0_plnt1.pcb", out var mesh))
             foreach (var inst in mesh.Instances)
-                // setting the planter as unwalkable has no effect and i don't feel like figuring out why so just double the height instead
+                // setting the planter as unwalkable has no effect because it's not actually tall enough to block the ground beneath it
+                // TODO: smells a bit like a rasterizer bug to me
                 inst.WorldTransform.M22 *= 2;
     }
 

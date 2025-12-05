@@ -91,6 +91,7 @@ public sealed unsafe class DebugTileManager : IDisposable
         }
         if (ImGui.Button($"Rebuild player tile {playerX}x{playerZ}"))
         {
+            _tiles.DebugData.Enabled = true;
             _selected = (playerX, playerZ);
             _tiles.RebuildTile(playerX, playerZ);
         }

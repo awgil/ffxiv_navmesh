@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace Navmesh.Customizations;
 
@@ -11,45 +10,34 @@ internal class Z1237SinusArdorum : NavmeshCustomization
 {
     public override int Version => 4;
 
-    public override void CustomizeScene(SceneExtractor scene)
+    public override void CustomizeTile(Tile tile)
     {
-        // annoying rock
-        scene.InsertCylinderCollider(new Vector3(2, 10, 2), new Vector3(-206.5f, 29, 301.5f));
+        tile.AddCylinder(new Vector3(2, 10, 2), new Vector3(-206.5f, 29, 301.5f));
 
-        // add box collider blocking entry path for green (depart) cosmoliner to discourage vnav from going through green cosmoliners on short paths
-        // later we add off-mesh connections between liners, so those will be used for long paths
+        List<InstanceWithMesh> toAdd = [];
+
         string[] doubleLiners = ["bg/ffxiv/cos_c1/hou/common/collision/c1w0_03_t300a.pcb", "bg/ffxiv/cos_c1/hou/common/collision/c1w0_03_t200a.pcb"];
 
         foreach (var liner in doubleLiners)
         {
-            if (scene.Meshes.TryGetValue(liner, out var cl))
+            foreach (var obj in tile.ObjectsByPath(liner))
             {
-                var box = SceneExtractor.BuildBoxMesh()[0];
-                foreach (ref var vert in CollectionsMarshal.AsSpan(box.Vertices))
-                {
-                    vert *= new Vector3(1.5f, 3.75f, 1.5f);
-                    vert += new Vector3(4.5f, 6.25f, 0.5f);
-                }
-                cl.Parts.Add(box);
+                var mtx = Matrix.CreateTransform(new(4.5f, 6.25f, 0.5f), Quaternion.Identity, new Vector3(1.5f, 3.75f, 1.5f)) * obj.Instance.WorldTransform.FullMatrix();
+                toAdd.Add(SceneTool.CreateSimpleBox(obj.Instance.Id + 0x100, mtx, obj.Instance.WorldBounds));
             }
         }
 
-        if (scene.Meshes.TryGetValue("bg/ffxiv/cos_c1/hou/common/collision/c1w0_03_t100a.pcb", out var mesh))
+        foreach (var obj in tile.ObjectsByPath("bg/ffxiv/cos_c1/hou/common/collision/c1w0_03_t100a.pcb"))
         {
-            var box = SceneExtractor.BuildBoxMesh()[0];
-            foreach (ref var vert in CollectionsMarshal.AsSpan(box.Vertices))
-            {
-                vert *= new Vector3(1.5f, 3.75f, 1.5f);
-                vert += new Vector3(0, 6.25f, 0.5f);
-            }
-            mesh.Parts.Add(box);
+            var mtx = Matrix.CreateTransform(new(0, 6.25f, 0.5f), Quaternion.Identity, new(1.5f, 3.75f, 1.5f)) * obj.Instance.WorldTransform.FullMatrix();
+            toAdd.Add(SceneTool.CreateSimpleBox(obj.Instance.Id + 0x100, mtx, obj.Instance.WorldBounds));
         }
 
-        if (scene.Meshes.TryGetValue("bg/ffxiv/cos_c1/hou/common/collision/c1w0_00_bx00d.pcb", out var mesh2))
-        {
-            foreach (var inst in mesh2.Instances)
-                inst.WorldTransform.M22 *= 2;
-        }
+        foreach (var obj in toAdd)
+            tile.Objects.TryAdd(obj.Instance.Id, obj);
+
+        foreach (var obj in tile.ObjectsByPath("bg/ffxiv/cos_c1/hou/common/collision/c1w0_00_bx00d.pcb"))
+            obj.Instance.WorldTransform.M22 *= 2;
     }
 
     const float pi = MathF.PI;

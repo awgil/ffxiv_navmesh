@@ -27,10 +27,10 @@ class DebugNavmeshCustom : IDisposable
 
         private static NavmeshCustomization? Existing => NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType) is { } t && t.Version > 0 ? t : null;
 
-        public override void CustomizeScene(SceneExtractor scene)
+        public override void CustomizeTile(Tile tile)
         {
             if (LoadExisting)
-                Existing?.CustomizeScene(scene);
+                Existing?.CustomizeTile(tile);
         }
 
         public override void CustomizeSettings(DtNavMeshCreateParams config)

@@ -8,6 +8,8 @@ using FFXIVClientStructs.STD;
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -224,4 +226,17 @@ static class LayoutExtensions
     public static string Display(this AABB b) => $"AABB {{ Min = {b.Min}, Max = {b.Max} }}";
     public static string Display(this Transform t) => $"Transform {{ Translation = {t.Translation}, Type = {t.Type}, Rotation = {t.Rotation}, Scale = {t.Scale} }}";
     public static string Display(this Matrix4x3 m) => $"Matrix {{ {m.M11}, {m.M12}, {m.M13}; {m.M21}, {m.M22}, {m.M23}; {m.M31}, {m.M32}, {m.M33}; {m.M41}, {m.M42}, {m.M43} }}";
+}
+
+public static class Matrix
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Matrix4x4 CreateTransform(Vector3 translation, Quaternion rotation, Vector3 scale)
+    {
+        var tx = Matrix4x4.CreateTranslation(translation);
+        var rx = Matrix4x4.CreateFromQuaternion(rotation);
+        var sx = Matrix4x4.CreateScale(scale);
+
+        return sx * rx * tx;
+    }
 }

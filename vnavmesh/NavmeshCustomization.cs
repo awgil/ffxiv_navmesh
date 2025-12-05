@@ -24,19 +24,16 @@ public class NavmeshCustomization
 
     public virtual bool IsFlyingSupported(uint territory) => Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(territory)?.TerritoryIntendedUse.RowId is 1 or 49 or 47; // 1 is normal outdoor, 49 is island, 47 is Diadem
 
-    // this is a customization point to add or remove colliders in the scene
-    public virtual void CustomizeScene(SceneExtractor scene) { }
-
     public virtual void CustomizeTile(Tile tile) { }
 
-    // this impl should be cheap, since it will be called very frequently
+    // this impl should be cheap, since it will be called dozens of times per frame
     public virtual bool FilterObject(ulong key, Pointer<ILayoutInstance> inst) => true;
 
     public virtual void CustomizeSettings(DtNavMeshCreateParams config) { }
 
     public virtual void CustomizeMesh(DtNavMesh mesh, List<uint> festivalLayers) { }
 
-    protected static void LinkPoints(DtNavMesh mesh, Vector3 startPos, Vector3 endPos)
+    protected static void LinkPoints(DtNavMesh mesh, Vector3 startPos, Vector3 endPos, bool bidirectional = false)
     {
         var refstart = InsertPointPoly(mesh, startPos, true);
         var refend = InsertPointPoly(mesh, endPos, false);
@@ -52,6 +49,9 @@ public class NavmeshCustomization
         link.bmin = link.bmax = 0;
         link.next = startTile.polyLinks[startPoly.index];
         startTile.polyLinks[startPoly.index] = idx;
+
+        if (bidirectional)
+            LinkPoints(mesh, endPos, startPos, false);
     }
 
     private static long InsertPointPoly(DtNavMesh mesh, Vector3 pos, bool start)
@@ -184,6 +184,21 @@ public static class SceneExtensions
 
 public static class TileExtensions
 {
+    public static (Vector2 Min, Vector2 Max) GetWorldBounds(this Tile tile)
+    {
+        var tileUnits = 2048 / tile.Customization.Settings.NumTiles[0];
+
+        var xmin = tileUnits * tile.X - 1024;
+        var zmin = tileUnits * tile.Z - 1024;
+        return (new(xmin, zmin), new(xmin + tileUnits, zmin + tileUnits));
+    }
+
+    public static bool Contains(this Tile tile, AABB objectBounds)
+    {
+        var (tileMin, tileMax) = tile.GetWorldBounds();
+        return objectBounds.Min.X < tileMax.X && objectBounds.Max.X > tileMin.X && objectBounds.Min.Z < tileMax.Y && objectBounds.Max.Z > tileMin.Y;
+    }
+
     public static void AddAxisAlignedCollider(this Tile tile, SceneExtractor.Mesh mesh, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default)
     {
         var transform = Matrix4x3.Identity;
@@ -192,6 +207,10 @@ public static class TileExtensions
         transform.M33 = scale.Z;
         transform.Row3 = worldTransform;
         var aabb = new AABB() { Min = transform.Row3 - scale, Max = transform.Row3 + scale };
+
+        if (!tile.Contains(aabb))
+            return;
+
         tile.Objects.Add((ulong)tile.Objects.Count, new(mesh, new(0ul, transform, aabb, setFlags, default), InstanceType.CollisionBox));
     }
     public static void AddBox(this Tile tile, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default) => AddAxisAlignedCollider(tile, SceneTool.Get().Meshes["<box>"], scale, worldTransform, setFlags);

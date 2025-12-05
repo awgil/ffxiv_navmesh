@@ -1,6 +1,5 @@
 ﻿using DotRecast.Detour;
 using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace Navmesh.Customizations;
 
@@ -8,17 +7,6 @@ namespace Navmesh.Customizations;
 internal class Z1252OccultCrescentSouthHorn : NavmeshCustomization
 {
     public override int Version => 3;
-
-    public override void CustomizeScene(SceneExtractor scene)
-    {
-        if (scene.Meshes.TryGetValue("bg/ex5/03_ocn_o6/btl/o6b1/collision/o6b1_a5_stc02.pcb", out var mesh))
-        {
-            // bottom stair of second-tier staircase around SW tower is too steep even though it's <55 degrees, probably because of rasterization bs, extend it outward by 1y to make slope more gradual
-            var verts = CollectionsMarshal.AsSpan(mesh.Parts[221].Vertices);
-            verts[8].X += 1;
-            verts[16].X += 1;
-        }
-    }
 
     public override void CustomizeTile(Tile tile)
     {

@@ -334,4 +334,6 @@ public class SceneTool
         mesh.MeshType = meshType;
         return Meshes[path] = mesh;
     }
+
+    public static InstanceWithMesh CreateSimpleBox(ulong id, Matrix4x4 transform, AABB bounds) => new(Get().Meshes["<box>"], new(id, new(transform), bounds, 0ul, 0ul), InstanceType.CollisionBox);
 }

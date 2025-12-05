@@ -5,10 +5,10 @@ internal class Z1188Kozamauka : NavmeshCustomization
 {
     public override int Version => 1;
 
-    public override void CustomizeScene(SceneExtractor scene)
+    public override void CustomizeTile(Tile tile)
     {
-        // contender #3 in the most cursed mesh transformation finalists
-        if (scene.Meshes.TryGetValue("bg/ex5/02_ykt_y6/fld/y6f2/collision/y6f2_x0_tst00.pcb", out var mesh))
-            mesh.Instances[0].WorldTransform.M42 += 0.05f;
+        // fence around the tent gets rasterized to be shorter than maxclimb :/
+        foreach (var obj in tile.ObjectsByPath("bg/ex5/02_ykt_y6/fld/y6f2/collision/y6f2_x0_tst00.pcb"))
+            obj.Instance.WorldTransform.M42 += 0.05f;
     }
 }

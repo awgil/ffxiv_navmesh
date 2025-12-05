@@ -28,16 +28,4 @@ internal class Z0132NewGridania : NavmeshCustomization
         LinkPoints(mesh, new(-21.689f, -4.302f, 16.821f), new(33.436f, -1.582f, 61.284f), bidirectional: true);
         LinkPoints(mesh, new(53.482f, -0.772f, 71.466f), new(3.601f, -2.647f, 34.097f), bidirectional: true);
     }
-
-    public override void CustomizeMesh(DtNavMesh mesh, List<uint> festivalLayers)
-    {
-        base.CustomizeMesh(mesh, festivalLayers);
-
-        // GC entrance to Barracks
-        LinkPoints(mesh, new(-65.98f, -0.5f, 3.3f), new(-75.4f, -0.5f, -3.47f));
-
-        //bridge to past aetheryte plaza and back
-        LinkPoints(mesh, new(-21.689f, -4.302f, 16.821f), new(33.436f, -1.582f, 61.284f));
-        LinkPoints(mesh, new(53.482f, -0.772f, 71.466f),  new(3.601f, -2.647f, 34.097f));
-    }
 }

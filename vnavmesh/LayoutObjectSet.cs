@@ -642,13 +642,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             case 1:
             case 2:
             case 3:
-                var door = (SGDoorActionController*)controller;
-                if (door->Door1 != null)
-                    _hiddenObjects[SceneTool.GetKey(&door->Door1->ILayoutInstance)] = true;
-                if (door->Door2 != null)
-                    _hiddenObjects[SceneTool.GetKey(&door->Door2->ILayoutInstance)] = true;
-                if (door->Collision != null)
-                    _hiddenObjects[SceneTool.GetKey(&door->Collision->TriggerBoxLayoutInstance.ILayoutInstance)] = true;
+                ProcessDoors((SGDoorActionController*)controller, parentTransform);
                 break;
             case 4:
             case 5:
@@ -682,6 +676,49 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         }
     }
 
+    private unsafe void ProcessDoors(SGDoorActionController* controller, in Transform parentTransform)
+    {
+        if (controller->Collision != null)
+            _hiddenObjects[SceneTool.GetKey(&controller->Collision->TriggerBoxLayoutInstance.ILayoutInstance)] = true;
+
+        Service.Log.Verbose($"process doors: {(nint)controller:X}");
+
+        var tx = parentTransform;
+        switch (controller->DoorType)
+        {
+            // standard doors
+            case 0:
+                var adj = MathF.PI * 2 - controller->MaxRotation;
+                var rotPositive = Quaternion.CreateFromAxisAngle(new(0, 1, 0), adj);
+                var rotNegative = Quaternion.CreateFromAxisAngle(new(0, 1, 0), -adj);
+                for (var i = 0; i < controller->DoorObjects.Length; i++)
+                {
+                    var rot = i % 2 == 0 ? rotNegative : rotPositive;
+                    var j = controller->DoorObjects[i].Value;
+                    if (j != null)
+                    {
+                        var local = tx.Apply(controller->BaseTransforms[i]);
+                        local.Rotation *= rot;
+                        OverrideTransform(&j->ILayoutInstance, local);
+                    }
+                }
+                break;
+
+            // vertical sliding doors TODO: find a set that are solid because i don't know which direction is which
+            // case 1:
+
+            // horizontal sliding doors
+            case 2:
+                foreach (var door in controller->DoorObjects)
+                    if (door.Value != null)
+                    {
+                        tx.Translation.Y += controller->MaxTranslation;
+                        OverrideTransform(&door.Value->ILayoutInstance, tx);
+                    }
+                break;
+        }
+    }
+
     private unsafe void ProcessTimeline(SharedGroupLayoutInstance* group, in Transform parentTransform)
     {
         var subShift = 8 * (4 - (((group->Flags1 >> 4) & 7) + 1));
@@ -710,16 +747,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         {
             case InstanceType.SharedGroup:
                 foreach (var inst in ((SharedGroupLayoutInstance*)thisPtr)->Instances.Instances)
-                {
-                    var instTransform = inst.Value->Transform;
-                    Transform transformAdj = new()
-                    {
-                        Translation = t.Translation + instTransform.Translation,
-                        Rotation = t.Rotation * instTransform.Rotation,
-                        Scale = t.Scale * instTransform.Scale
-                    };
-                    OverrideTransform(inst.Value->Instance, transformAdj);
-                }
+                    OverrideTransform(inst.Value->Instance, t.Apply(inst.Value->Transform));
                 break;
 
             case InstanceType.BgPart:

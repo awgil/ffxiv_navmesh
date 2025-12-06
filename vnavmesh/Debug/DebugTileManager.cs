@@ -31,6 +31,8 @@ public sealed unsafe class DebugTileManager : IDisposable
     public static readonly Vector2 UITileSize = new(40, 40);
     public static readonly Vector3 BoundsMin = new(-1024);
 
+    private string _meshFilter = "";
+
     public DebugTileManager(NavmeshManager tiles, DebugDrawer drawer, DebugGameCollision coll)
     {
         _tiles = tiles;
@@ -170,7 +172,7 @@ public sealed unsafe class DebugTileManager : IDisposable
                         if (node.SelectedOrHovered && obj.Type > 0)
                         {
                             highlightAll = false;
-                            var coll = FindCollider(obj.Type, key);
+                            var coll = FindCollider((InstanceType)obj.Type, key);
                             if (coll != null)
                             {
                                 _coll.VisualizeCollider(coll, default, default);
@@ -259,8 +261,6 @@ public sealed unsafe class DebugTileManager : IDisposable
         var coll = inst != null ? inst->GetCollider() : null;
         return coll;
     }
-
-    private string _meshFilter = "o6b1_a5_stc02";
 
     private void DrawInstances(Tile t)
     {

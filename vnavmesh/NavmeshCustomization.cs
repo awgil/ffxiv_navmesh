@@ -114,11 +114,15 @@ public class NavmeshCustomization
 
 // attribute that defines which territories particular customization applies to
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
-public class CustomizationTerritoryAttribute : Attribute
+public class CustomizationTerritoryAttribute(uint territoryID) : Attribute
 {
-    public uint TerritoryID;
+    public uint TerritoryID = territoryID;
+}
 
-    public CustomizationTerritoryAttribute(uint territoryID) => TerritoryID = territoryID;
+[AttributeUsage(AttributeTargets.Class)]
+public sealed class CustomizationBgAttribute(string bg) : Attribute
+{
+    public string Bg = bg;
 }
 
 // registry containing all customizations
@@ -142,6 +146,14 @@ public static class NavmeshCustomizationRegistry
             foreach (var attr in t.GetCustomAttributes<CustomizationTerritoryAttribute>())
             {
                 PerTerritory.Add(attr.TerritoryID, instance);
+            }
+
+            foreach (var bg in t.GetCustomAttributes<CustomizationBgAttribute>())
+            {
+                foreach (var terr in Service.LuminaSheet<Lumina.Excel.Sheets.TerritoryType>()?.Where(t => t.Bg == bg.Bg).Select(t => t.RowId) ?? [])
+                {
+                    PerTerritory.Add(terr, instance);
+                }
             }
         }
     }
@@ -211,7 +223,7 @@ public static class TileExtensions
         if (!tile.Contains(aabb))
             return;
 
-        tile.Objects.Add((ulong)tile.Objects.Count, new(mesh, new(0ul, transform, aabb, setFlags, default), InstanceType.CollisionBox));
+        tile.Objects.Add((ulong)tile.Objects.Count, new(mesh, new(0ul, transform, aabb, setFlags, default), SceneTool.InstanceType.Custom));
     }
     public static void AddBox(this Tile tile, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default) => AddAxisAlignedCollider(tile, SceneTool.Get().Meshes["<box>"], scale, worldTransform, setFlags);
     public static void AddCylinder(this Tile tile, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags setFlags = default) => AddAxisAlignedCollider(tile, SceneTool.Get().Meshes["<cylinder>"], scale, worldTransform, setFlags);

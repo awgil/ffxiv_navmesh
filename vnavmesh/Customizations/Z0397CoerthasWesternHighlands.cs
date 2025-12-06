@@ -3,7 +3,7 @@ using System.Numerics;
 
 namespace Navmesh.Customizations;
 
-[CustomizationTerritory(397), CustomizationTerritory(467), CustomizationTerritory(470), CustomizationTerritory(472), CustomizationTerritory(477), CustomizationTerritory(479), CustomizationTerritory(489), CustomizationTerritory(493), CustomizationTerritory(497), CustomizationTerritory(498), CustomizationTerritory(709), CustomizationTerritory(866)]
+[CustomizationBg("ex1/01_roc_r2/fld/r2f1/level/r2f1")]
 internal class Z0397CoerthasWesternHighlands : NavmeshCustomization
 {
     public override int Version => 1;

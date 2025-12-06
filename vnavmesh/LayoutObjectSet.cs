@@ -74,6 +74,8 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private readonly ConcurrentDictionary<ulong, bool> _hiddenObjects = [];
     private readonly ConcurrentDictionary<Pointer<ILayoutInstance>, MaybeEnabled> _dirtyObjects = [];
 
+    private readonly List<InstanceChangeArgs> _terrainsToLoad = [];
+
     // TODO: replace vtables instead
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.CreatePrimary> _bgCreate;
     private readonly HookAddress<BgPartsLayoutInstance.Delegates.SetProperties> _bgProps;
@@ -299,6 +301,11 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             }
         }
         _dirtyObjects.Clear();
+
+        foreach (var t in _terrainsToLoad)
+            Notify(t);
+
+        _terrainsToLoad.Clear();
     }
 
     private void NotifyObject(InstanceWithMesh inst, bool enabled)
@@ -330,6 +337,11 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         _dirtyObjects.Clear();
         _transformOverride.Clear();
         _hiddenObjects.Clear();
+        _terrainsToLoad.Clear();
+
+        var t = 0ul;
+        foreach (var terr in SceneTool.Get().GetTerrain(zone))
+            _terrainsToLoad.Add(new(zone, t++, terr));
     }
 
     private unsafe void ActivateExistingLayout(LayoutManager* layout)
@@ -681,8 +693,6 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         if (controller->Collision != null)
             _hiddenObjects[SceneTool.GetKey(&controller->Collision->TriggerBoxLayoutInstance.ILayoutInstance)] = true;
 
-        Service.Log.Verbose($"process doors: {(nint)controller:X}");
-
         var tx = parentTransform;
         switch (controller->DoorType)
         {
@@ -704,10 +714,10 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
                 }
                 break;
 
-            // vertical sliding doors TODO: find a set that are solid because i don't know which direction is which
+            // horizontally sliding doors TODO: find a set that are solid because i don't know which direction is which
             // case 1:
 
-            // horizontal sliding doors
+            // vertically sliding doors
             case 2:
                 foreach (var door in controller->DoorObjects)
                     if (door.Value != null)

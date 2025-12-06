@@ -58,7 +58,7 @@ class DebugNavmeshManager : IDisposable
                 _manager.Reload(false);
         }
         ImGui.SameLine();
-        ImGui.TextUnformatted($"z{_manager.Scene.LastLoadedZone}, {string.Join(".", _manager.GetActiveFestivals().Select(f => f.ToString("X")))}");
+        ImGui.TextUnformatted($"z{_manager.Scene.LastLoadedZone}, {string.Join(".", _manager.GetActiveFestivals().Select(f => f.ToString("X")))}, {Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(_manager.Scene.LastLoadedZone)?.Bg ?? ""}");
         ImGui.TextUnformatted($"Num pathfinding tasks: {(_manager.PathfindInProgress ? 1 : 0)} in progress, {_manager.NumQueuedPathfindRequests} queued");
 
         var s = Slog.Instance();

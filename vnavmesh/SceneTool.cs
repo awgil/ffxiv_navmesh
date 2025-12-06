@@ -11,7 +11,7 @@ using Mesh = Navmesh.SceneExtractor.Mesh;
 
 namespace Navmesh;
 
-public record class InstanceWithMesh(Mesh Mesh, MeshInstance Instance, InstanceType Type);
+public record class InstanceWithMesh(Mesh Mesh, MeshInstance Instance, SceneTool.InstanceType Type);
 
 public class SceneTool
 {
@@ -22,6 +22,14 @@ public class SceneTool
     private static readonly List<MeshPart> _meshSphere;
     private static readonly List<MeshPart> _meshCylinder;
     private static readonly List<MeshPart> _meshPlane;
+
+    public enum InstanceType : byte
+    {
+        BgPart = FFXIVClientStructs.FFXIV.Client.LayoutEngine.InstanceType.BgPart,
+        CollisionBox = FFXIVClientStructs.FFXIV.Client.LayoutEngine.InstanceType.CollisionBox,
+        Terrain = 100,
+        Custom = 101
+    }
 
     static SceneTool()
     {
@@ -291,7 +299,7 @@ public class SceneTool
                     {
                         var path = $"{terr}/tr{entry.MeshId:d4}.pcb";
                         var mesh = GetMeshByPath(path, MeshType.Terrain);
-                        obj.Add(new(mesh, new(0, Matrix4x3.Identity, entry.Bounds, 0ul, 0ul), InstanceType.ColliderLayer10));
+                        obj.Add(new(mesh, new(0, Matrix4x3.Identity, entry.Bounds, 0ul, 0ul), InstanceType.Terrain));
                     }
                 }
             }
@@ -335,5 +343,5 @@ public class SceneTool
         return Meshes[path] = mesh;
     }
 
-    public static InstanceWithMesh CreateSimpleBox(ulong id, Matrix4x4 transform, AABB bounds) => new(Get().Meshes["<box>"], new(id, new(transform), bounds, 0ul, 0ul), InstanceType.CollisionBox);
+    public static InstanceWithMesh CreateSimpleBox(ulong id, Matrix4x4 transform, AABB bounds) => new(Get().Meshes["<box>"], new(id, new(transform), bounds, 0ul, 0ul), InstanceType.Custom);
 }

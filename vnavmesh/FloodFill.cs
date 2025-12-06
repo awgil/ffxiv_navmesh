@@ -26,10 +26,18 @@ public class FloodFill
 
     public static FloodFill? Get() => _instance;
 
-    public static async Task<FloodFill> GetAsync()
+    public static async Task<FloodFill?> GetAsync()
     {
-        _instance ??= await Init();
-        return _instance!;
+        try
+        {
+            _instance ??= await Init();
+            return _instance;
+        }
+        catch (HttpRequestException ex)
+        {
+            Service.Log.Warning(ex, "Unable to fetch flood-fill data, navmesh pruning is disabled.");
+            return null;
+        }
     }
 
     public void AddPoint(uint zone, Vector3 point)
@@ -51,7 +59,7 @@ public class FloodFill
 
     private static async Task<FloodFill> Init()
     {
-        if (Service.PluginInterface.IsDev)
+        if (Service.PluginInterface.IsDev && false)
         {
             var finfo = new FileInfo("C:\\Users\\me\\source\\repos\\vnav\\seeds\\seeds.json");
             using var st = finfo.OpenRead();

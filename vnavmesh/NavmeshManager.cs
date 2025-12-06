@@ -276,7 +276,7 @@ public sealed partial class NavmeshManager : IDisposable
                     Query = new(Navmesh);
 
                     var ff = await FloodFill.GetAsync();
-                    if (ff.Seeds.TryGetValue(terr, out var ss))
+                    if (ff?.Seeds.TryGetValue(terr, out var ss) == true)
                         Prune(ss.Select(s => (Vector3)s));
 
                     NavmeshChanged.Invoke(Navmesh, Query);
@@ -335,9 +335,12 @@ public sealed partial class NavmeshManager : IDisposable
             ExecuteWhenIdle(async () =>
             {
                 var ff = await FloodFill.GetAsync();
-                ff.AddPoint(Service.ClientState.TerritoryType, pos);
-                await ff.Serialize();
-                Reload(true);
+                if (ff != null)
+                {
+                    ff.AddPoint(Service.ClientState.TerritoryType, pos);
+                    await ff.Serialize();
+                    Reload(true);
+                }
             }, default);
         }
     }

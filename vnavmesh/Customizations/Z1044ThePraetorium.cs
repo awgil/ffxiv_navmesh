@@ -1,6 +1,6 @@
 ﻿namespace Navmesh.Customizations;
 
-[CustomizationTerritory(1044)]
+[CustomizationBg("ffxiv/wil_w1/dun/w1d5/level/w1d5")]
 class Z1044ThePraetorium : NavmeshCustomization
 {
     public override int Version => 3;

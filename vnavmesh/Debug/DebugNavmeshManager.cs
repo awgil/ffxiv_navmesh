@@ -105,8 +105,11 @@ class DebugNavmeshManager : IDisposable
             Task.Run(async () =>
             {
                 var ff = await FloodFill.GetAsync();
-                ff.AddPoint(Service.ClientState.TerritoryType, playerPos);
-                await ff.Serialize();
+                if (ff != null)
+                {
+                    ff.AddPoint(Service.ClientState.TerritoryType, playerPos);
+                    await ff.Serialize();
+                }
             });
         }
         ImGui.SameLine();

@@ -1,4 +1,5 @@
 ﻿using Dalamud.Common;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
@@ -82,21 +83,22 @@ public sealed class Plugin : IDalamudPlugin
         Service.CommandManager.AddHandler("/vnavmesh", new CommandInfo(OnCommand) { HelpMessage = cmd.HelpMessage, ShowInHelp = false }); // legacy
 
         Service.Framework.Update += OnUpdate;
-        Service.ClientState.ZoneInit += ClientState_ZoneInit;
+        Service.Condition.ConditionChange += OnConditionChange;
 
         // prefetch seed points
         var _ = FloodFill.GetAsync();
     }
 
-    private void ClientState_ZoneInit(Dalamud.Game.ClientState.ZoneInitEventArgs obj)
+    private void OnConditionChange(ConditionFlag flag, bool value)
     {
-        _wndMain.OnZoneChange();
+        if (flag == ConditionFlag.BetweenAreas51 && value)
+            _wndMain.OnChangeAreas();
     }
 
     public void Dispose()
     {
-        Service.ClientState.ZoneInit -= ClientState_ZoneInit;
         Service.Framework.Update -= OnUpdate;
+        Service.Condition.ConditionChange -= OnConditionChange;
 
         Service.CommandManager.RemoveHandler("/vnav");
         Service.CommandManager.RemoveHandler("/vnavmesh");

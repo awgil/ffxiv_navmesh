@@ -59,7 +59,7 @@ public class FloodFill
 
     private static async Task<FloodFill> Init()
     {
-        if (Service.PluginInterface.IsDev && false)
+        if (Service.PluginInterface.IsDev)
         {
             var finfo = new FileInfo("C:\\Users\\me\\source\\repos\\vnav\\seeds\\seeds.json");
             using var st = finfo.OpenRead();

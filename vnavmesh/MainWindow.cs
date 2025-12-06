@@ -39,7 +39,7 @@ public class MainWindow : Window, IDisposable
         _dd.Dispose();
     }
 
-    public void OnZoneChange()
+    public void OnChangeAreas()
     {
         _debugGameColl.Saved = null;
     }

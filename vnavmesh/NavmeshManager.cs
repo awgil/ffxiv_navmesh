@@ -100,6 +100,9 @@ public sealed partial class NavmeshManager : IDisposable
     public event Action<Navmesh?, NavmeshQuery?> NavmeshChanged = delegate { };
     public event Action<uint> TerritoryChanged = delegate { };
 
+    public Exception? LastError;
+    private bool _shouldRestart;
+
     public DtNavMesh? Mesh;
     public VoxelMap? Volume;
 
@@ -198,6 +201,12 @@ public sealed partial class NavmeshManager : IDisposable
         }, 6);
         Volume = new(BoundsMin, BoundsMax, Customization.Settings.NumTiles);
         TerritoryChanged.Invoke(scene.LastLoadedZone);
+
+        if (_shouldRestart)
+        {
+            _shouldRestart = false;
+            InitGrid();
+        }
     }
 
     private void OnConfigModified()
@@ -289,6 +298,8 @@ public sealed partial class NavmeshManager : IDisposable
                 Log("tile batch completed");
             }, ex =>
             {
+                LastError = ex;
+                _shouldRestart = true;
                 Log(ex, $"tile batch failed; last change event was {Grid.LastEvent}");
             });
     }

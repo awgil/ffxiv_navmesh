@@ -772,6 +772,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     // TODO: reverse housing (lol)
     private unsafe bool IsIgnoredHousingItem(ILayoutInstance* thisPtr)
     {
+        // not using thisPtr->Layout because housing items are in the global layout, but the active layout is the one with the flag
         var active = LayoutWorld.Instance()->ActiveLayout;
         // type 0 = normal, type 2 = ???, type 4 = moon (not streamed)
         return thisPtr->Layer->Id == 0xFFFF && active != null && active->HousingType is 1 or 3;

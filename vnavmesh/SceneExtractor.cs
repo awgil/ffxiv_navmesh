@@ -102,7 +102,7 @@ public class SceneExtractor
                     foreach (ref var entry in new Span<ColliderStreamed.FileEntry>(header + 1, header->NumMeshes))
                     {
                         var mesh = AddMesh($"{terr}/tr{entry.MeshId:d4}.pcb", MeshType.Terrain);
-                        AddInstance(mesh, 0, ref Matrix4x3.Identity, ref entry.Bounds, 0, 0);
+                        AddInstance(mesh, 0, ref Matrix4x3.Identity, ref entry.Bounds, 0);
                     }
                 }
             }
@@ -112,7 +112,7 @@ public class SceneExtractor
         {
             var info = ExtractBgPartInfo(scene, part.key, part.transform, part.crc, part.analytic);
             if (info.path.Length > 0)
-                AddInstance(Meshes[info.path], part.key, ref info.transform, ref info.bounds, part.matId, part.matMask);
+                AddInstance(Meshes[info.path], part.key, ref info.transform, ref info.bounds, part.matId);
         }
 
         foreach (var coll in scene.Colliders)
@@ -124,7 +124,7 @@ public class SceneExtractor
 
             var info = ExtractColliderInfo(scene, coll.key, coll.transform, coll.crc, coll.type);
             if (info.path.Length > 0)
-                AddInstance(Meshes[info.path], coll.key, ref info.transform, ref info.bounds, coll.matId, coll.matMask);
+                AddInstance(Meshes[info.path], coll.key, ref info.transform, ref info.bounds, coll.matId);
         }
 
         // add fake colliders on overworld zone transitions to prevent fly pathfind from trying to go OOB there
@@ -132,7 +132,7 @@ public class SceneExtractor
         {
             var transform = new Matrix4x3(ex.transform.Compose());
             var bounds = CalculateBoxBounds(ref transform);
-            AddInstance(Meshes[_keyAnalyticBox], ex.key, ref transform, ref bounds, 0x202411, 0x7FFFFFFFF);
+            AddInstance(Meshes[_keyAnalyticBox], ex.key, ref transform, ref bounds, 0x202411);
         }
     }
 
@@ -206,9 +206,9 @@ public class SceneExtractor
         return mesh;
     }
 
-    private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId, ulong matMask)
+    private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId)
     {
-        var instance = new MeshInstance(id, worldTransform, worldBounds, ExtractMaterialFlags(matMask & matId), ExtractMaterialFlags(matMask & ~matId));
+        var instance = new MeshInstance(id, worldTransform, worldBounds, ExtractMaterialFlags(matId), default);
         mesh.Instances.Add(instance);
     }
 

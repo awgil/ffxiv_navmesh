@@ -769,6 +769,14 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         }
     }
 
+    // TODO: reverse housing (lol)
+    private unsafe bool IsIgnoredHousingItem(ILayoutInstance* thisPtr)
+    {
+        var active = LayoutWorld.Instance()->ActiveLayout;
+        // type 0 = normal, type 2 = ???, type 4 = moon (not streamed)
+        return thisPtr->Layer->Id == 0xFFFF && active != null && active->HousingType is 1 or 3;
+    }
+
     private unsafe void CreateObject(BgPartsLayoutInstance* thisPtr, string source)
     {
         Trace(thisPtr, $"pre-create({source})");
@@ -776,6 +784,12 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
         if (!thisPtr->HasCollision())
         {
             Trace(thisPtr, "skip (no collision)");
+            return;
+        }
+
+        if (IsIgnoredHousingItem(&thisPtr->ILayoutInstance))
+        {
+            Trace(thisPtr, "skip (housing)");
             return;
         }
 
@@ -804,6 +818,12 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
     private unsafe void CreateObject(CollisionBoxLayoutInstance* thisPtr, string source)
     {
         Trace(thisPtr, $"pre-create({source})");
+
+        if (IsIgnoredHousingItem(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance))
+        {
+            Trace(thisPtr, "skip (housing)");
+            return;
+        }
 
         var k = SceneTool.GetKey(&thisPtr->TriggerBoxLayoutInstance.ILayoutInstance);
 

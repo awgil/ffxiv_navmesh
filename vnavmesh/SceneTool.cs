@@ -205,7 +205,12 @@ public class SceneTool
         {
             if (TryGetAnalyticShapeData(bgPart->AnalyticShapeDataCrc, bgPart->Layout, out var shape))
             {
-                var mtxBounds = Matrix4x4.CreateScale((shape.BoundsMax - shape.BoundsMin) * 0.5f);
+                var scaleAdj = (shape.BoundsMax - shape.BoundsMin) * 0.5f;
+                // for cylinders specifically, Z coordinate is ignored
+                if (shape.Transform.Type == (int)FileLayerGroupAnalyticCollider.Type.Cylinder)
+                    scaleAdj.Z = scaleAdj.X;
+
+                var mtxBounds = Matrix4x4.CreateScale(scaleAdj);
                 mtxBounds.Translation = (shape.BoundsMax + shape.BoundsMin) * 0.5f;
                 var fullTransform = mtxBounds * shape.Transform.Compose() * transform.Compose();
                 var resultingTransform = new Matrix4x3(fullTransform);

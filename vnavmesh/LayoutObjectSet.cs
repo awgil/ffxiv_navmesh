@@ -426,7 +426,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             return;
         }
 
-        UpdateBgTransform(thisPtr);
+        UpdateBgTransform(thisPtr, "transform");
     }
 
     private unsafe void BgTransDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
@@ -439,7 +439,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             return;
         }
 
-        UpdateBgTransform(thisPtr);
+        UpdateBgTransform(thisPtr, "translation");
     }
 
     private unsafe void BgRotDetour(BgPartsLayoutInstance* thisPtr, Quaternion* value)
@@ -452,7 +452,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             return;
         }
 
-        UpdateBgTransform(thisPtr);
+        UpdateBgTransform(thisPtr, "rotation");
     }
 
     private unsafe void BgScaleDetour(BgPartsLayoutInstance* thisPtr, Vector3* value)
@@ -465,12 +465,13 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             return;
         }
 
-        UpdateBgTransform(thisPtr);
+        UpdateBgTransform(thisPtr, "scale");
     }
 
-    private unsafe void UpdateBgTransform(BgPartsLayoutInstance* thisPtr)
+    private unsafe void UpdateBgTransform(BgPartsLayoutInstance* thisPtr, string ty)
     {
-        Trace(thisPtr, "pre-update-transform");
+        Trace(thisPtr, $"pre-update-transform({ty})");
+
         var tx = thisPtr->GetTransformImpl();
 
         if (_objects.TryGetValue(&thisPtr->ILayoutInstance, out var inst))

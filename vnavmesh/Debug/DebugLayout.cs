@@ -178,27 +178,13 @@ public unsafe class DebugLayout : IDisposable
                     tree.LeafNode($"Gfx obj: {(nint)instBgPart->GraphicsObject:X}");
                     tree.LeafNode($"Collision type: {cType}");
                     tree.LeafNode($"Collider: {(nint)instBgPart->Collider:X} ({instBgPart->CollisionMeshPathCrc:X8} / {instBgPart->AnalyticShapeDataCrc:X8})");
-                    if (instBgPart->CollisionMeshPathCrc != 0)
+                    if (instBgPart->CollisionMeshPathCrc != 0 && layout->CrcToPath.TryGetValue(instBgPart->CollisionMeshPathCrc, out var rc, false))
                     {
-                        foreach (var (k, v) in layout->CrcToPath)
-                        {
-                            if (k == instBgPart->CollisionMeshPathCrc)
-                            {
-                                tree.LeafNode($"Collider path: {v.Value->DataString}");
-                                break;
-                            }
-                        }
+                        tree.LeafNode($"Collider path: {rc.Value->DataString})");
                     }
-                    if (instBgPart->AnalyticShapeDataCrc != 0)
+                    if (instBgPart->AnalyticShapeDataCrc != 0 && layout->CrcToAnalyticShapeData.TryGetValue(new LayoutManager.AnalyticShapeDataKey() { Key = instBgPart->AnalyticShapeDataCrc }, out var v, true))
                     {
-                        foreach (var (k, v) in layout->CrcToAnalyticShapeData)
-                        {
-                            if (k.Key == instBgPart->AnalyticShapeDataCrc)
-                            {
-                                DrawAnalyticShape(tree, "Shape data:", v);
-                                break;
-                            }
-                        }
+                        DrawAnalyticShape(tree, "Shape data:", v);
                     }
                     tree.LeafNode($"Collision material: {instBgPart->CollisionMaterialIdHigh:X8}{instBgPart->CollisionMaterialIdLow:X8} / {instBgPart->CollisionMaterialMaskHigh:X8}{instBgPart->CollisionMaterialMaskLow:X8}");
                     //tree.LeafNode($"unks: {instBgPart->u58} {instBgPart->u5C:X}");

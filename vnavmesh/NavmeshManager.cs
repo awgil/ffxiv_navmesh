@@ -167,8 +167,7 @@ public sealed partial class NavmeshManager : IDisposable
         if (Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
             return;
 
-        if (SeedMode)
-            RunSeedMode();
+        RunSeedMode();
     }
 
     public List<uint> GetActiveFestivals()
@@ -285,8 +284,8 @@ public sealed partial class NavmeshManager : IDisposable
                     Query = new(Navmesh);
 
                     var ff = await FloodFill.GetAsync();
-                    if (ff?.Seeds.TryGetValue(terr, out var ss) == true)
-                        Prune(ss.Select(s => (Vector3)s));
+                    if (ff.TryLookup(terr, out var ss))
+                        Prune(ss);
 
                     NavmeshChanged.Invoke(Navmesh, Query);
                 }
@@ -346,12 +345,9 @@ public sealed partial class NavmeshManager : IDisposable
             ExecuteWhenIdle(async () =>
             {
                 var ff = await FloodFill.GetAsync();
-                if (ff != null)
-                {
-                    ff.AddPoint(Service.ClientState.TerritoryType, pos);
-                    await ff.Serialize();
-                    Reload(true);
-                }
+                ff.AddPoint(Service.ClientState.TerritoryType, pos);
+                await ff.Serialize();
+                Reload(true);
             }, default);
         }
     }
@@ -485,7 +481,7 @@ public sealed partial class NavmeshManager : IDisposable
     public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, float range = 0, CancellationToken externalCancel = default)
     {
         if (_queryToken == null)
-            throw new Exception($"Can't initiate query - navmesh is not loaded");
+            throw new InvalidOperationException($"Can't initiate query - navmesh is not loaded");
 
         // task can be cancelled either by internal request (i.e. when navmesh is reloaded) or external
         var combined = CancellationTokenSource.CreateLinkedTokenSource(_queryToken.Token, externalCancel);
@@ -499,7 +495,7 @@ public sealed partial class NavmeshManager : IDisposable
             {
                 combined.Token.ThrowIfCancellationRequested();
                 if (Query == null)
-                    throw new Exception($"Can't pathfind, navmesh did not build successfully");
+                    throw new InvalidOperationException($"Can't pathfind, navmesh did not build successfully");
                 Log($"Executing pathfind from {from} to {to}");
                 return flying ? Query.PathfindVolume(from, to, UseRaycasts, UseStringPulling, combined.Token) : Query.PathfindMesh(from, to, UseRaycasts, UseStringPulling, combined.Token, range);
             }, combined.Token);

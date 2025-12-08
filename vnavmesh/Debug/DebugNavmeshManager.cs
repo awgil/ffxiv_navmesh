@@ -105,16 +105,14 @@ class DebugNavmeshManager : IDisposable
             Task.Run(async () =>
             {
                 var ff = await FloodFill.GetAsync();
-                if (ff != null)
-                {
-                    ff.AddPoint(Service.ClientState.TerritoryType, playerPos);
-                    await ff.Serialize();
-                }
+                ff.AddPoint(Service.ClientState.TerritoryType, playerPos);
+                await ff.Serialize();
+                _manager.Reload(true);
             });
         }
         ImGui.SameLine();
-        var pts = FloodFill.Get()?.Seeds.TryGetValue(Service.ClientState.TerritoryType, out var vs) == true ? vs : [];
-        ImGui.TextUnformatted($"Num points for current zone: {pts.Count}");
+        var pts = FloodFill.Get()?.TryLookup(Service.ClientState.TerritoryType, out var vs) == true ? vs : [];
+        ImGui.TextUnformatted($"Num points for current zone: {pts.Count()}");
 
         DrawPosition("Player", playerPos);
         DrawPosition("Target", _target);

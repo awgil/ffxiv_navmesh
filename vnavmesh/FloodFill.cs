@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Numerics;
 using System.Text.Json;
 using System.Threading.Tasks;
+
+using Seeds = System.Collections.Generic.Dictionary<uint, System.Collections.Generic.List<Navmesh.JsonVec>>;
 
 namespace Navmesh;
 
@@ -16,64 +19,94 @@ public record struct JsonVec(float X, float Y, float Z)
 
 public class FloodFill
 {
-    public Dictionary<uint, List<JsonVec>> Seeds = [];
-
     private static FloodFill? _instance;
 
-    public Action<FloodFill> Modified = delegate { };
+    public Action<uint, Vector3> PointAdded = delegate { };
+
+    public static readonly string LocalSource;
+    public static readonly string RemoteSource = "https://raw.githubusercontent.com/awgil/ffxiv_navmesh/refs/heads/seeds/seeds.json";
+
+    private readonly Seeds SeedsRemote;
+    private readonly Seeds SeedsLocal;
+
+    private FloodFill(Seeds remote, Seeds local)
+    {
+        SeedsRemote = remote;
+        SeedsLocal = local;
+    }
+
+    static FloodFill()
+    {
+        var dir = new DirectoryInfo(Service.PluginInterface.GetPluginConfigDirectory());
+        if (!dir.Exists)
+            dir.Create();
+
+        LocalSource = Path.Join(Service.PluginInterface.GetPluginConfigDirectory(), "seeds-local.json");
+    }
 
     internal static void Clear() => _instance = null;
 
     public static FloodFill? Get() => _instance;
 
-    public static async Task<FloodFill?> GetAsync()
+    public static async Task<FloodFill> GetAsync()
     {
-        try
-        {
-            _instance ??= await Init();
-            return _instance;
-        }
-        catch (HttpRequestException ex)
-        {
-            Service.Log.Warning(ex, "Unable to fetch flood-fill data, navmesh pruning is disabled.");
-            return null;
-        }
+        _instance ??= await Init();
+        return _instance;
     }
 
     public void AddPoint(uint zone, Vector3 point)
     {
-        Seeds.TryAdd(zone, []);
-        Seeds[zone].Add(point);
-        Modified.Invoke(this);
+        SeedsLocal.TryAdd(zone, []);
+        SeedsLocal[zone].Add(point);
+        PointAdded.Invoke(zone, point);
     }
 
     public async Task Serialize()
     {
-        if (Service.PluginInterface.IsDev)
-        {
-            var finfo = new FileInfo("C:\\Users\\me\\source\\repos\\vnav\\seeds\\seeds.json");
-            using var st = finfo.Create();
-            await JsonSerializer.SerializeAsync(st, new SortedDictionary<uint, List<JsonVec>>(Seeds), serOpts);
-        }
+        var finfo = new FileInfo(LocalSource);
+        using var st = finfo.Create();
+        await JsonSerializer.SerializeAsync(st, new SortedDictionary<uint, List<JsonVec>>(SeedsLocal), serOpts);
     }
 
     private static async Task<FloodFill> Init()
     {
-        if (Service.PluginInterface.IsDev)
+        Seeds remote = [];
+        Seeds local = [];
+
+        try
         {
-            var finfo = new FileInfo("C:\\Users\\me\\source\\repos\\vnav\\seeds\\seeds.json");
-            using var st = finfo.OpenRead();
-            return await FromStream(st);
-        }
-        else
-        {
-            var remote = "https://raw.githubusercontent.com/awgil/ffxiv_navmesh/refs/heads/seeds/seeds.json";
             var client = new HttpClient();
-            using HttpResponseMessage resp = await client.GetAsync(remote);
+            using HttpResponseMessage resp = await client.GetAsync(RemoteSource);
             resp.EnsureSuccessStatusCode();
             var body = await resp.Content.ReadAsStreamAsync();
-            return await FromStream(body);
+            remote = await FromStream(body);
         }
+        catch (HttpRequestException ex)
+        {
+            Service.Log.Warning(ex, "Unable to fetch seeds from Github, quality will be lacking");
+        }
+
+        try
+        {
+            var finfo = new FileInfo(LocalSource);
+            using var st = finfo.OpenRead();
+            local = await FromStream(st);
+        }
+        catch (FileNotFoundException ex)
+        {
+            Service.Log.Info(ex, "Local seeds file not found");
+        }
+
+        foreach (var (zone, seedsRemote) in remote)
+        {
+            if (local.TryGetValue(zone, out var seedsLocal))
+            {
+                // cleanup local seeds when remote is updated
+                seedsLocal.RemoveAll(l => seedsRemote.Any(r => Vector3.DistanceSquared(r, l) < 10));
+            }
+        }
+
+        return new(remote, local);
     }
 
     private static readonly JsonSerializerOptions deOpts = new() { ReadCommentHandling = JsonCommentHandling.Skip };
@@ -83,17 +116,25 @@ public class FloodFill
         IndentSize = 2
     };
 
-    private static async Task<FloodFill> FromStream(Stream s)
+    private static async Task<Seeds> FromStream(Stream s)
     {
         try
         {
-            var seeds = await JsonSerializer.DeserializeAsync<Dictionary<uint, List<JsonVec>>>(s, deOpts);
-            return new FloodFill() { Seeds = seeds! };
+            return await JsonSerializer.DeserializeAsync<Seeds>(s, deOpts) ?? [];
         }
         catch (JsonException ex)
         {
             Service.Log.Warning(ex, "Unable to load flood points");
-            return new();
+            return [];
         }
+    }
+
+    public bool TryLookup(uint territoryType, out IEnumerable<Vector3> points)
+    {
+        var collA = SeedsRemote.TryGetValue(territoryType, out var r) ? r : [];
+        var collB = SeedsLocal.TryGetValue(territoryType, out var l) ? l : [];
+
+        points = [.. collA, .. collB];
+        return collA.Count > 0 || collB.Count > 0;
     }
 }

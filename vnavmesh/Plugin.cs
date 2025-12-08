@@ -8,6 +8,7 @@ using Navmesh.Movement;
 using System;
 using System.Numerics;
 using System.Reflection;
+using System.Threading.Tasks;
 
 namespace Navmesh;
 
@@ -86,13 +87,22 @@ public sealed class Plugin : IDalamudPlugin
         Service.Condition.ConditionChange += OnConditionChange;
 
         // prefetch seed points
-        var _ = FloodFill.GetAsync();
+        Task.Run(async () =>
+        {
+            var ff = await FloodFill.GetAsync();
+            ff.PointAdded += OnPointAdded;
+        });
     }
 
     private void OnConditionChange(ConditionFlag flag, bool value)
     {
         if (flag == ConditionFlag.BetweenAreas51 && value)
             _wndMain.OnChangeAreas();
+    }
+
+    private void OnPointAdded(uint zone, Vector3 point)
+    {
+        _ipcProvider.SeedPointAdded.SendMessage(zone, point);
     }
 
     public void Dispose()
@@ -104,6 +114,9 @@ public sealed class Plugin : IDalamudPlugin
         Service.CommandManager.RemoveHandler("/vnavmesh");
         Service.PluginInterface.UiBuilder.Draw -= Draw;
         WindowSystem.RemoveAllWindows();
+
+        if (FloodFill.Get() is { } ff)
+            ff.PointAdded -= OnPointAdded;
 
         Slog.Instance().Dispose();
 

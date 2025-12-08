@@ -1,4 +1,6 @@
-﻿using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+﻿using Dalamud.Plugin.Ipc;
+using Dalamud.Plugin.Ipc.Exceptions;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 
 using Navmesh.Movement;
 using System;
@@ -11,6 +13,8 @@ namespace Navmesh;
 class IPCProvider : IDisposable
 {
     private List<Action> _disposeActions = new();
+
+    public ICallGateProvider<uint, Vector3, object> SeedPointAdded;
 
     public IPCProvider(NavmeshManager navmeshManager, FollowPath followPath, AsyncMoveRequest move, MainWindow mainWindow, DTRProvider dtr)
     {
@@ -53,6 +57,8 @@ class IPCProvider : IDisposable
 
         RegisterFunc("DTR.IsShown", () => Service.Config.EnableDTR);
         RegisterAction("DTR.SetShown", (bool v) => { Service.Config.EnableDTR = v; Service.Config.NotifyModified(); });
+
+        SeedPointAdded = Service.PluginInterface.GetIpcProvider<uint, Vector3, object>("vnavmesh.SeedPointAdded");
     }
 
     public void Dispose()
@@ -85,14 +91,30 @@ class IPCProvider : IDisposable
     private void RegisterFunc<TRet, T1, T2, T3>(string name, Func<T1, T2, T3, TRet> func)
     {
         var p = Service.PluginInterface.GetIpcProvider<T1, T2, T3, TRet>("vnavmesh." + name);
-        p.RegisterFunc(func);
+        p.RegisterFunc((a, b, c) =>
+        {
+            try { return func(a, b, c); }
+            catch (InvalidOperationException ex)
+            {
+                Service.Log.Warning(ex, "Error in IPC method");
+                throw new IpcNotReadyError("vnavmesh." + name);
+            }
+        });
         _disposeActions.Add(p.UnregisterFunc);
     }
 
     private void RegisterFunc<TRet, T1, T2, T3, T4>(string name, Func<T1, T2, T3, T4, TRet> func)
     {
         var p = Service.PluginInterface.GetIpcProvider<T1, T2, T3, T4, TRet>("vnavmesh." + name);
-        p.RegisterFunc(func);
+        p.RegisterFunc((a, b, c, d) =>
+        {
+            try { return func(a, b, c, d); }
+            catch (InvalidOperationException ex)
+            {
+                Service.Log.Warning(ex, "Error in IPC method");
+                throw new IpcNotReadyError("vnavmesh." + name);
+            }
+        });
         _disposeActions.Add(p.UnregisterFunc);
     }
 

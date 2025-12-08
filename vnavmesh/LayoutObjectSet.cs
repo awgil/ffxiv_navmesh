@@ -738,7 +738,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             {
                 List<uint> affectedInstances = [];
                 foreach (var i in inst.Value->DataPtr->Instances)
-                    affectedInstances.Add((uint)i.SubId << subShift);
+                    affectedInstances.Add(group->SubId | (uint)(i.SubId << subShift));
 
                 foreach (var child in group->Instances.Instances)
                     if (affectedInstances.Contains(child.Value->Instance->SubId))

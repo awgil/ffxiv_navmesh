@@ -1,6 +1,7 @@
 ﻿using Dalamud.Memory;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
+using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using FFXIVClientStructs.Interop;
@@ -226,6 +227,9 @@ static class LayoutExtensions
     public static string Display(this AABB b) => $"AABB {{ Min = {b.Min}, Max = {b.Max} }}";
     public static string Display(this Transform t) => $"Transform {{ Translation = {t.Translation}, Type = {t.Type}, Rotation = {t.Rotation}, Scale = {t.Scale} }}";
     public static string Display(this Matrix4x3 m) => $"Matrix {{ {m.M11}, {m.M12}, {m.M13}; {m.M21}, {m.M22}, {m.M23}; {m.M31}, {m.M32}, {m.M33}; {m.M41}, {m.M42}, {m.M43} }}";
+
+    public static string KeyString(ref readonly this ILayoutInstance p) => ((ulong)p.Id.InstanceKey << 32 | p.SubId).ToString("X16");
+    public static string KeyString(ref readonly this SharedGroupLayoutInstance g) => g.ILayoutInstance.KeyString();
 
     public static Transform Apply(in this Transform t, in Transform child)
     {

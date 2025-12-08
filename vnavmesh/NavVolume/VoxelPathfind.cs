@@ -66,7 +66,7 @@ public class VoxelPathfind
         //Service.Log.Debug($"volume pathfind: {fromPos} ({fromVoxel:X}) to {toPos} ({toVoxel:X})");
     }
 
-    public void Execute(CancellationToken cancel, int maxSteps = 100000000)
+    public void Execute(CancellationToken cancel, int maxSteps = 1000000)
     {
         for (int i = 0; i < maxSteps; ++i)
         {

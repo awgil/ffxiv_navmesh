@@ -145,7 +145,12 @@ public class SceneExtractor
                 // see Client::LayoutEngine::Layer::BgPartsLayoutInstance_calculateSRT
                 // S1*T1 * S*R*T = (S1*S*R,    0
                 //                  T1*SR + T, 1)
-                var mtxBounds = Matrix4x4.CreateScale((shape.bbMax - shape.bbMin) * 0.5f);
+                var scaleVector = (shape.bbMax - shape.bbMin) * 0.5f;
+                if (shape.transform.Type == (int)FileLayerGroupAnalyticCollider.Type.Cylinder)
+                    // z component is ignored for cylinder meshes and possibly others
+                    scaleVector.Z = scaleVector.X;
+
+                var mtxBounds = Matrix4x4.CreateScale(scaleVector);
                 mtxBounds.Translation = (shape.bbMin + shape.bbMax) * 0.5f;
                 var fullTransform = mtxBounds * shape.transform.Compose() * instanceTransform.Compose();
                 var resultingTransform = new Matrix4x3(fullTransform);

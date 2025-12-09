@@ -276,7 +276,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             return;
         }
 
-        if (Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51))
+        if (Service.Condition.Any(ConditionFlag.BetweenAreas, ConditionFlag.BetweenAreas51, ConditionFlag.OccupiedInCutSceneEvent, ConditionFlag.WatchingCutscene))
             return;
 
         foreach (var (ptr, obj) in _dirtyObjects)
@@ -813,7 +813,7 @@ public sealed unsafe partial class LayoutObjectSet : Subscribable<LayoutObjectSe
             IsBgPart = true,
             Transform = trans,
         };
-        Trace(thisPtr, $"create({source})", $"{obj.Instance!.Instance.WorldBounds.Display()}, stored={obj.Transform.Display()}");
+        Trace(thisPtr, $"create({source})", $"{obj.Instance!.Instance.WorldBounds.Display()}, stored={obj.Transform.Display()}\nenabled={obj.Enabled}, coll={thisPtr->HasCollision()}, mat={thisPtr->CollisionMaterialIdHigh:X8}{thisPtr->CollisionMaterialIdLow:X8}");
         _dirtyObjects[&thisPtr->ILayoutInstance] = _objects[&thisPtr->ILayoutInstance] = obj;
     }
 

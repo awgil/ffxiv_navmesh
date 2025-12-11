@@ -371,9 +371,8 @@ public class NavmeshRasterizer
                 z >>= _voxShiftZ;
                 if (x < _voxelizer.NumX && z < _voxelizer.NumZ)
                 {
-                    // add 1-cell "underhang" in case this span lies exactly on a tile boundary (which is actually fairly common for level geometry)
-                    // TODO figure out less of a hack for this - spans along a boundary should only occupy the lower voxel, not both
-                    _voxelizer.AddSpan(x, z, (yOrig.y0 - 1) >> _voxShiftY, yOrig.y1 >> _voxShiftY);
+                    // block pixels beneath the span for a distance roughly equal to agent height, otherwise volume pathfind will try to move the player through doorframes etc
+                    _voxelizer.AddSpan(x, z, (yOrig.y0 - _minSpanGap) >> _voxShiftY, yOrig.y1 >> _voxShiftY);
                 }
             }
         }

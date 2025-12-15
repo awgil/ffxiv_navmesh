@@ -28,7 +28,7 @@ internal class Z1237SinusArdorum : NavmeshCustomization
                 foreach (ref var vert in CollectionsMarshal.AsSpan(box.Vertices))
                 {
                     vert *= new Vector3(1.5f, 3.75f, 1.5f);
-                    vert += new Vector3(4.5f, 6.25f, 0.5f);
+                    vert += new Vector3(4.5f, 6.25f, -1);
                 }
                 cl.Parts.Add(box);
             }
@@ -40,7 +40,7 @@ internal class Z1237SinusArdorum : NavmeshCustomization
             foreach (ref var vert in CollectionsMarshal.AsSpan(box.Vertices))
             {
                 vert *= new Vector3(1.5f, 3.75f, 1.5f);
-                vert += new Vector3(0, 6.25f, 0.5f);
+                vert += new Vector3(0, 6.25f, -1);
             }
             mesh.Parts.Add(box);
         }

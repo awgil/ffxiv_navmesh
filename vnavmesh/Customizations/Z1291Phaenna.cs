@@ -31,7 +31,7 @@ internal class Z1291Phaenna : NavmeshCustomization
                 foreach (ref var vert in CollectionsMarshal.AsSpan(box.Vertices))
                 {
                     vert *= new Vector3(1.5f, 3.75f, 1.5f);
-                    vert += new Vector3(4.5f, 6.25f, 0.5f);
+                    vert += new Vector3(4.5f, 6.25f, -1);
                 }
                 cl.Parts.Add(box);
             }
@@ -57,7 +57,7 @@ internal class Z1291Phaenna : NavmeshCustomization
         (Vector3 DepartPoint, Vector3 ArrivePoint) getPoints(Vector3 worldPos, Vector3 rotation)
         {
             var q = Quaternion.CreateFromYawPitchRoll(rotation.Y, rotation.X, rotation.Z);
-            var adjD = Vector3.Transform(new(4.5f, 2.5f, 2.3f), q);
+            var adjD = Vector3.Transform(new(4.5f, 2.5f, 1.8f), q);
             var adjA = Vector3.Transform(new(-4.5f, 2.7f, 1.8f), q);
             return (adjD + worldPos, adjA + worldPos);
         }

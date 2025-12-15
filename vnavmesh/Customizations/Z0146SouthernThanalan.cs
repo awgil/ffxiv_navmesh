@@ -4,5 +4,5 @@
 internal class Z0146SouthernThanalan : NavmeshCustomization
 {
     // force rebuild (gates)
-    public override int Version => 1;
+    public override int Version => 2;
 }

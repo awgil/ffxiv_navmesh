@@ -110,6 +110,9 @@ public class SceneExtractor
 
         foreach (var part in scene.BgParts)
         {
+            if ((part.matId & 0x410) == 0x400)
+                continue;
+
             var info = ExtractBgPartInfo(scene, part.key, part.transform, part.crc, part.analytic);
             if (info.path.Length > 0)
                 AddInstance(Meshes[info.path], part.key, ref info.transform, ref info.bounds, part.matId);

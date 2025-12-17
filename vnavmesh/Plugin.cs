@@ -1,13 +1,10 @@
-﻿using Dalamud.Common;
-using Dalamud.Game.Command;
+﻿using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Navmesh.Movement;
 using System;
-using System.IO;
 using System.Numerics;
-using System.Reflection;
 
 namespace Navmesh;
 
@@ -25,13 +22,6 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!dalamud.ConfigDirectory.Exists)
             dalamud.ConfigDirectory.Create();
-        var dalamudRoot = dalamud.GetType().Assembly.
-                GetType("Dalamud.Service`1", true)!.MakeGenericType(dalamud.GetType().Assembly.GetType("Dalamud.Dalamud", true)!).
-                GetMethod("Get")!.Invoke(null, BindingFlags.Default, null, Array.Empty<object>(), null);
-        var dalamudStartInfo = (DalamudStartInfo)dalamudRoot?.GetType().GetProperty("StartInfo", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(dalamudRoot)!;
-        InteropGenerator.Runtime.Resolver.GetInstance.Setup(0, dalamudStartInfo.GameVersion?.ToString() ?? "", new(Path.Combine(dalamud.ConfigDirectory.FullName, "cs.json")));
-        FFXIVClientStructs.Interop.Generated.Addresses.Register();
-        InteropGenerator.Runtime.Resolver.GetInstance.Resolve();
 
         dalamud.Create<Service>();
         Service.Config.Load(dalamud.ConfigFile);

@@ -61,7 +61,7 @@ class DebugNavmeshManager : IDisposable
         if (_manager.Navmesh == null || _manager.Query == null)
             return;
 
-        var player = Service.ClientState.LocalPlayer;
+        var player    = Service.ObjectTable.LocalPlayer;
         var playerPos = player?.Position ?? default;
         ImGui.TextUnformatted($"Player pos: {playerPos}");
         if (ImGui.Button("Set target to current pos"))

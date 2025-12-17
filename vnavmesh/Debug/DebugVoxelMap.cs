@@ -41,7 +41,7 @@ public class DebugVoxelMap : IDisposable
         if (!nr.Opened)
             return;
 
-        var playerVoxel = _vm.FindLeafVoxel(Service.ClientState.LocalPlayer?.Position ?? default);
+        var playerVoxel = _vm.FindLeafVoxel(Service.ObjectTable.LocalPlayer?.Position ?? default);
         _tree.LeafNode($"Player's voxel: {playerVoxel.voxel:X} (empty={playerVoxel.empty})");
 
         for (int level = 0; level < _vm.Levels.Length; ++level)

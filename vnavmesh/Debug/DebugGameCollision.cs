@@ -104,6 +104,9 @@ public unsafe class DebugGameCollision : IDisposable
 
     private void GatherInfo()
     {
+        // FIXME
+        return;
+
         _streamedMeshes.Clear();
         _availableLayers.Reset();
         _availableMaterials.Reset();

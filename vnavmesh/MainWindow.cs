@@ -45,7 +45,7 @@ public class MainWindow : Window, IDisposable
         _debugGameColl.DrawVisualizers();
         if (Service.Config.ShowWaypoints)
         {
-            var player = Service.ClientState.LocalPlayer;
+            var player = Service.ObjectTable.LocalPlayer;
             if (player != null)
             {
                 var from = player.Position;

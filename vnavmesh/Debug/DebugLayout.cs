@@ -787,7 +787,7 @@ public unsafe class DebugLayout : IDisposable
                     if (inst.Instance != null)
                     {
                         var trans = inst.Instance->GetTranslationImpl();
-                        _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, *trans, 0xFFFF00FF);
+                        _dd.DrawWorldLine(Service.ObjectTable.LocalPlayer?.Position ?? default, *trans, 0xFFFF00FF);
                     }
                 }
                 else

@@ -44,6 +44,6 @@ jobs:
           version_number: ${{ env.tag }}
           path: "vnavmesh/bin/Release/vnavmesh/latest.zip"
           type: "testing"
-          dalamud_version: "13"
+          dalamud_version: "14"
         env:
           PUBLISHER_KEY: ${{ secrets.PUBLISHER_KEY }}

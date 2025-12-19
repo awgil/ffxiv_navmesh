@@ -10,12 +10,22 @@ using Navmesh.Render;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using Matrix4x4 = System.Numerics.Matrix4x4;
 using Vector3 = System.Numerics.Vector3;
 using Vector4 = System.Numerics.Vector4;
 
 namespace Navmesh.Debug;
+
+// FIXME: fields moved +8 bytes in 7.4
+[StructLayout(LayoutKind.Explicit, Size = 0x1F0)]
+unsafe struct ColliderStreamedEx
+{
+    [FieldOffset(0x1D0)] public ColliderStreamed.FileHeader* Header;
+    [FieldOffset(0x1D8)] public ColliderStreamed.FileEntry* Entries;
+    [FieldOffset(0x1E0)] public ColliderStreamed.Element* Elements;
+}
 
 public unsafe class DebugGameCollision : IDisposable
 {
@@ -104,9 +114,6 @@ public unsafe class DebugGameCollision : IDisposable
 
     private void GatherInfo()
     {
-        // FIXME
-        return;
-
         _streamedMeshes.Clear();
         _availableLayers.Reset();
         _availableMaterials.Reset();
@@ -120,7 +127,7 @@ public unsafe class DebugGameCollision : IDisposable
                 var collType = coll->GetColliderType();
                 if (collType == ColliderType.Streamed)
                 {
-                    var cast = (ColliderStreamed*)coll;
+                    var cast = (ColliderStreamedEx*)coll;
                     if (cast->Header != null && cast->Elements != null)
                     {
                         for (int i = 0; i < cast->Header->NumMeshes; ++i)
@@ -525,7 +532,7 @@ public unsafe class DebugGameCollision : IDisposable
         {
             case ColliderType.Streamed:
                 {
-                    var cast = (ColliderStreamed*)coll;
+                    var cast = (ColliderStreamedEx*)coll;
                     if (cast->Header != null && cast->Elements != null)
                     {
                         for (int i = 0; i < cast->Header->NumMeshes; ++i)

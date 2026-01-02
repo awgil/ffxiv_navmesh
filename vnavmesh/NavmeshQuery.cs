@@ -168,13 +168,13 @@ public class NavmeshQuery
     public ulong FindNearestVolumeVoxel(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5) => VolumeQuery != null ? VoxelSearch.FindNearestEmptyVoxel(VolumeQuery.Volume, p, new(halfExtentXZ, halfExtentY, halfExtentXZ)) : VoxelMap.InvalidVoxel;
 
     // collect all mesh polygons reachable from specified polygon
-    public HashSet<long> FindReachableMeshPolys(long starting)
+    public HashSet<long> FindReachableMeshPolys(params long[] starting)
     {
         HashSet<long> result = [];
-        if (starting == 0)
-            return result;
 
-        List<long> queue = [starting];
+        List<long> queue = [.. starting];
+        queue.RemoveAll(s => s == 0);
+
         while (queue.Count > 0)
         {
             var next = queue[^1];

@@ -114,9 +114,9 @@ public sealed class NavmeshManager : IDisposable
 
     internal void ReplaceMesh(Navmesh mesh)
     {
-        Log($"Mesh replaced");
         Navmesh = mesh;
         Query = new(Navmesh);
+        Log($"Mesh replaced");
         OnNavmeshChanged?.Invoke(Navmesh, Query);
     }
 
@@ -345,5 +345,47 @@ public sealed class NavmeshManager : IDisposable
     {
         if (task.IsFaulted)
             Service.Log.Error($"[NavmeshManager] Task failed with error: {task.Exception}");
+    }
+
+    public void Prune(IEnumerable<Vector3> points)
+    {
+        if (Navmesh == null || Query == null)
+            throw new InvalidOperationException("can't prune, mesh is missing");
+
+        var startPolys = points.Select(pt => Query.FindNearestMeshPoly(pt));
+        Log($"seeding from start polys: {string.Join(", ", startPolys.Select(p => p.ToString("X")))}");
+        var reachablePolys = Query.FindReachableMeshPolys([.. startPolys]);
+
+        var pruneCount = 0;
+        for (var i = 0; i < Navmesh.Mesh.GetMaxTiles(); i++)
+        {
+            var t = Navmesh.Mesh.GetTile(i);
+            if (t.data?.header == null)
+                continue;
+
+            var prBase = Navmesh.Mesh.GetPolyRefBase(t);
+            for (var j = 0; j < t.data.header.polyCount; j++)
+            {
+                var pref = prBase | (uint)j;
+                if (Navmesh.Mesh.GetPolyFlags(pref, out var fl).Failed())
+                {
+                    Log($"failed to fetch flags for {pref:X}");
+                    continue;
+                }
+                if (reachablePolys.Contains(pref))
+                {
+                    if (Navmesh.Mesh.SetPolyFlags(pref, fl & ~Navmesh.FLAGS_DISABLED).Failed())
+                        Log($"failed to set flags for {pref:X}");
+                }
+                else
+                {
+                    pruneCount++;
+                    if (Navmesh.Mesh.SetPolyFlags(pref, fl | Navmesh.FLAGS_DISABLED).Failed())
+                        Log($"failed to set flags for {pref:X}");
+                }
+            }
+        }
+
+        Log($"pruned {pruneCount} unreachable polygons");
     }
 }

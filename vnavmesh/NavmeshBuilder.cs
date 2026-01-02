@@ -1,9 +1,14 @@
 ﻿using DotRecast.Core;
+using DotRecast.Core.Numerics;
 using DotRecast.Detour;
+using DotRecast.Detour.Extras.Jumplink;
 using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Navmesh;
 
@@ -85,8 +90,91 @@ public class NavmeshBuilder
         }
     }
 
+    // TODO this is kinda more complicated than it needs to be because we're trying to maintain tile order in the output mesh
+    public List<RcBuilderResult> BuildTiles(Action? onTileFinished = null)
+    {
+        var tasks = new List<Task<(DtMeshData?, VoxelMap?, RcBuilderResult)>>();
+
+        int threadCount;
+
+        var maxThreads = Environment.ProcessorCount;
+        var wantedThreads = Service.Config.BuildMaxCores;
+        if (wantedThreads <= 0)
+            threadCount = maxThreads + wantedThreads;
+        else
+            threadCount = wantedThreads;
+        threadCount = Math.Clamp(threadCount, 1, maxThreads);
+
+        var sem = new SemaphoreSlim(threadCount, threadCount);
+
+        for (var z = 0; z < NumTilesZ; z++)
+        {
+            for (var x = 0; x < NumTilesX; x++)
+            {
+                var z0 = z;
+                var x0 = x;
+                tasks.Add(Task.Run(async () =>
+                {
+                    await sem.WaitAsync();
+                    try
+                    {
+                        var (tile, vox, rc) = BuildTile(x0, z0);
+
+                        VoxelMap? thisVolume = null;
+                        if (vox != null)
+                        {
+                            thisVolume = new VoxelMap(BoundsMin, BoundsMax, Settings.NumTiles);
+                            thisVolume.Build(vox, x0, z0);
+                        }
+
+                        onTileFinished?.Invoke();
+                        return (tile, thisVolume, rc);
+                    }
+                    finally
+                    {
+                        sem.Release();
+                    }
+                }));
+            }
+        }
+
+        var results = new List<RcBuilderResult>();
+
+        foreach (var t in tasks)
+        {
+            t.Wait();
+            var (tile, vox, result) = t.Result;
+            if (tile != null)
+                Navmesh.Mesh.AddTile(tile, 0, 0);
+            if (Navmesh.Volume != null && vox != null)
+                MergeTile(Navmesh.Volume, result.tileX, result.tileZ, vox);
+
+            results.Add(result);
+        }
+
+        return results;
+    }
+
+    private static void MergeTile(VoxelMap parent, int x, int z, VoxelMap child)
+    {
+        var shift = parent.RootTile.Subdivision.Count;
+
+        for (ushort i = 0; i < child.RootTile.Contents.Length; i++)
+        {
+            var contents = child.RootTile.Contents[i];
+            if ((contents & VoxelMap.VoxelOccupiedBit) == 0)
+                continue; // empty
+
+            if ((contents & VoxelMap.VoxelIdMask) != VoxelMap.VoxelIdMask)
+                contents += (ushort)shift;
+
+            parent.RootTile.Contents[i] = contents;
+        }
+        parent.RootTile.Subdivision.AddRange(child.RootTile.Subdivision);
+    }
+
     // this can be called concurrently; returns intermediate data that can be discarded if not used
-    public Intermediates BuildTile(int x, int z)
+    public (DtMeshData?, Voxelizer?, RcBuilderResult) BuildTile(int x, int z)
     {
         var timer = Timer.Create();
 
@@ -213,28 +301,67 @@ public class NavmeshBuilder
             buildBvTree = true, // TODO: false if using layers?
         };
         customization.CustomizeSettings(navmeshConfig);
+
+        var builderResult = new RcBuilderResult(x, z, shf, chf, cset, pmesh, dmesh, Telemetry);
+        var bl = new JumpLinkBuilder([builderResult]);
+
+        void addConnections(List<JumpLink> links)
+        {
+            foreach (var link in links)
+            {
+                RcVec3f prev = default;
+                for (var i = 0; i < link.startSamples.Length; i++)
+                {
+                    var p = link.startSamples[i].p;
+                    var q = link.endSamples[i].p;
+                    if (i == 0 || RcVecUtils.Dist2D(prev, p) > Settings.AgentRadius)
+                    {
+                        navmeshConfig.AddOffMeshConnection(p.RecastToSystem(), q.RecastToSystem(), Settings.AgentRadius, false);
+                        prev = p;
+                    }
+                }
+            }
+        }
+
+        if (Settings.GenerateEdgeClimbLinks)
+        {
+            var cfg = new JumpLinkBuilderConfig(
+                Settings.CellSize,
+                Settings.CellHeight,
+                Settings.AgentRadius,
+                Settings.AgentHeight,
+                Settings.AgentMaxClimb,
+                Settings.GroundTolerance,
+                -Settings.AgentRadius * 0.2f,
+                Settings.CellSize + 2 * Settings.AgentRadius + Settings.ClimbDownDistance,
+                -Settings.ClimbDownMaxHeight,
+                -Settings.ClimbDownMinHeight,
+                0
+            );
+            addConnections(bl.Build(cfg, JumpLinkType.EDGE_CLIMB_DOWN));
+        }
+
+        if (Settings.GenerateEdgeJumpLinks)
+        {
+            var cfg = new JumpLinkBuilderConfig(
+                Settings.CellSize,
+                Settings.CellHeight,
+                Settings.AgentRadius,
+                Settings.AgentHeight,
+                Settings.AgentMaxClimb,
+                Settings.GroundTolerance,
+                -Settings.AgentRadius * 0.2f,
+                Settings.EdgeJumpEndDistance,
+                -Settings.EdgeJumpMaxDrop,
+                -Settings.EdgeJumpMinDrop,
+                Settings.EdgeJumpHeight
+            );
+            addConnections(bl.Build(cfg, JumpLinkType.EDGE_JUMP));
+        }
+
         var navmeshData = DtNavMeshBuilder.CreateNavMeshData(navmeshConfig);
 
-        // 10. add tile to the navmesh
-        if (navmeshData != null)
-        {
-            lock (Navmesh.Mesh)
-            {
-                Navmesh.Mesh.AddTile(navmeshData, 0, 0);
-            }
-        }
-
-        // 11. build nav volume data
-        // TODO: keep local 1x1x16 voxel map, and just merge under lock
-        if (Navmesh.Volume != null && vox != null)
-        {
-            lock (Navmesh.Volume)
-            {
-                Navmesh.Volume.Build(vox, x, z);
-            }
-        }
-
         Service.Log.Debug($"built navmesh tile {x}x{z} in {timer.Value().TotalMilliseconds}ms");
-        return new(shf, chf, cset, pmesh, dmesh);
+        return (navmeshData, vox, builderResult);
     }
 }

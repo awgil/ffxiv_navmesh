@@ -1,4 +1,6 @@
-﻿using ImGuiNET;
+﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Components;
+using Dalamud.Interface.Utility.Raii;
 using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
@@ -13,6 +15,7 @@ public class Config
     public bool EnableDTR = true;
     public bool ShowQueryStatusInDTR = true;
     public bool AlignCameraToMovement;
+    public float AlignCameraHeight = -15;
     public bool ShowWaypoints;
     public bool ForceShowGameCollision;
     public bool CancelMoveOnUserInput;
@@ -21,6 +24,9 @@ public class Config
     public int StuckTimeoutMs = 500;
     public bool RetryOnStuck = true;
     public float RandomnessMultiplier = 1f;
+    public int BuildMaxCores = 1;
+
+    private static readonly int realMaxCores = Environment.ProcessorCount;
 
     public event Action? Modified;
 
@@ -36,6 +42,12 @@ public class Config
             NotifyModified();
         if (ImGui.Checkbox("Align camera to movement direction", ref AlignCameraToMovement))
             NotifyModified();
+        using (ImRaii.Disabled(!AlignCameraToMovement))
+        {
+            ImGui.SetNextItemWidth(200);
+            if (ImGui.SliderFloat("Camera height (degrees)", ref AlignCameraHeight, -75, 75))
+                NotifyModified();
+        }
         if (ImGui.Checkbox("Show active waypoints", ref ShowWaypoints))
             NotifyModified();
         if (ImGui.Checkbox("Always visualize game collision", ref ForceShowGameCollision))
@@ -45,9 +57,14 @@ public class Config
         if (ImGui.Checkbox("Stop pathing when stuck", ref StopOnStuck))
             NotifyModified();
 
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderInt("Max cores used during mesh build", ref BuildMaxCores, -8, realMaxCores))
+            NotifyModified();
+        ImGuiComponents.HelpMarker("0 = use all available; positive number = use that many cores; negative number = leave that many cores idle");
+
         if (StopOnStuck)
         {
-            if (ImGui.SliderFloat("Stuck tolerance (units/frame)", ref StuckTolerance, 0.01f, 0.075f))
+            if (ImGui.SliderFloat("Stuck tolerance (yalms/second)", ref StuckTolerance, 0.5f, 3f))
                 NotifyModified();
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("The minimum distance the object must move each frame to avoid being considered stuck.");

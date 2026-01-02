@@ -1,7 +1,7 @@
-﻿using Dalamud.Interface.Components;
+﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
 using DotRecast.Recast;
-using ImGuiNET;
 using System;
 
 namespace Navmesh;
@@ -33,6 +33,17 @@ public class NavmeshSettings
     public int PolyMaxVerts = 6;
     public float DetailSampleDist = 6f;
     public float DetailMaxSampleError = 1f;
+
+    public bool GenerateEdgeClimbLinks = false;
+    public bool GenerateEdgeJumpLinks = false;
+    public float GroundTolerance = 0.3f;
+    public float ClimbDownDistance = 0.4f;
+    public float ClimbDownMaxHeight = 3.2f;
+    public float ClimbDownMinHeight = 1.5f;
+    public float EdgeJumpEndDistance = 2f;
+    public float EdgeJumpHeight = 1.8f;
+    public float EdgeJumpMaxDrop = 500f;
+    public float EdgeJumpMinDrop = 1.5f;
 
     // we assume that bounds are constant -1024 to 1024 along each axis (since that's the quantization range of position in some packets)
     // there is some code that relies on tiling being power-of-2
@@ -229,6 +240,19 @@ public class NavmeshSettings
             Number of leaf voxels per axis per tile. Has to be power-of-2. [Limit: 1 <= value <= 32]
             Affects only nav volume.
             """);
+
+        ImGui.Checkbox("Generate climb-down links", ref GenerateEdgeClimbLinks);
+        ImGui.Checkbox("Generate jump-down links", ref GenerateEdgeJumpLinks);
+        DrawConfigFloat(ref GroundTolerance, 0, 50, 0.1f, "Ground tolerance", "Undocumented");
+        DrawConfigFloat(ref ClimbDownDistance, 0, 100, 0.1f, "Climb down distance", """
+            Horizontal distance for edge climb samples.
+            """);
+        DrawConfigFloat(ref ClimbDownMaxHeight, 0, 100, 0.5f, "Climb down max height", "Undocumented");
+        DrawConfigFloat(ref ClimbDownMinHeight, 0, 100, 0.5f, "Climb down min height", "Undocumented");
+        DrawConfigFloat(ref EdgeJumpEndDistance, 0, 100, 0.5f, "Edge jump end distance", "Undocumented");
+        DrawConfigFloat(ref EdgeJumpHeight, 0, 10, 0.1f, "Edge jump height", "Undocumented");
+        DrawConfigFloat(ref EdgeJumpMaxDrop, 0, 100, 0.1f, "Edge jump max drop", "Undocumented");
+        DrawConfigFloat(ref EdgeJumpMinDrop, 0, 100, 0.1f, "Edge jump min drop", "Undocumented");
     }
 
     private void DrawConfigFloat(ref float value, float min, float max, float increment, string label, string help)

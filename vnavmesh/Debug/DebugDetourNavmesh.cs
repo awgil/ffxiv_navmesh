@@ -1,6 +1,7 @@
 ﻿using DotRecast.Detour;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using Navmesh.Render;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -447,7 +448,18 @@ public class DebugDetourNavmesh : DebugRecast
 
     private void VisualizeVertex(Vector3 v) => _dd.DrawWorldPoint(v, 5, 0xff0000ff, 2);
 
-    private Vector3 GetVertex(DtMeshTile tile, int i) => new(tile.data.verts[i * 3], tile.data.verts[i * 3 + 1], tile.data.verts[i * 3 + 2]);
+    private Vector3 GetVertex(DtMeshTile tile, int i)
+    {
+        try
+        {
+            return new(tile.data.verts[i * 3], tile.data.verts[i * 3 + 1], tile.data.verts[i * 3 + 2]);
+        }
+        catch (IndexOutOfRangeException)
+        {
+            Service.Log.Debug($"vertex {i} is out of bounds for tile");
+            throw;
+        }
+    }
     private Vector3 GetDetailVertex(DtMeshTile tile, int i) => new(tile.data.detailVerts[i * 3], tile.data.detailVerts[i * 3 + 1], tile.data.detailVerts[i * 3 + 2]);
     private Vector3 GetDetailVertex(DtMeshTile tile, DtPoly poly, int localIndex) => localIndex < poly.vertCount
         ? GetVertex(tile, poly.verts[localIndex])

@@ -3,6 +3,7 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -34,7 +35,7 @@ public sealed class NavmeshManager : IDisposable
 
     private DirectoryInfo _cacheDir;
 
-    public NavmeshManager(DirectoryInfo cacheDir)
+    public unsafe NavmeshManager(DirectoryInfo cacheDir)
     {
         _cacheDir = cacheDir;
         cacheDir.Create(); // ensure directory exists
@@ -100,7 +101,7 @@ public sealed class NavmeshManager : IDisposable
                     return (cacheKey, scene);
                 }, cancel);
 
-                Log($"Kicking off build for '{cacheKey}'");
+                Log($"Kicking off build for '{cacheKey}' (reload={allowLoadFromCache})");
                 var navmesh = await Task.Run(() => BuildNavmesh(scene, cacheKey, allowLoadFromCache, cancel), cancel);
                 Log($"Mesh loaded: '{cacheKey}'");
                 Navmesh = navmesh;
@@ -200,8 +201,20 @@ public sealed class NavmeshManager : IDisposable
 
         var filter = LayoutUtils.FindFilter(layout);
         var filterKey = filter != null ? filter->Key : 0;
+
         var terrRow = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId);
-        return $"{terrRow?.Bg}//{filterKey:X}//{LayoutUtils.FestivalsString(layout->ActiveFestivals)}";
+
+        // CE always has a festival layer (i hope). the non-festival layout is briefly loaded when entering the zone, which triggers a useless mesh build (which is also expensive because the zone is large)
+        if (terrRow?.TerritoryIntendedUse.RowId == 60)
+        {
+            var fest = layout->ActiveFestivals[0];
+            if (fest.Id == 0 && fest.Phase == 0)
+                return "";
+        }
+
+        var sgs = LayoutUtils.GetZoneSharedGroupsEnabled(filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId);
+
+        return $"{terrRow?.Bg}//{filterKey:X}//{LayoutUtils.FestivalsString(layout->ActiveFestivals)}//{string.Join('.', sgs)}";
     }
 
     internal static unsafe string GetCacheKey(SceneDefinition scene)
@@ -210,8 +223,12 @@ public sealed class NavmeshManager : IDisposable
         var layout = LayoutWorld.Instance()->ActiveLayout;
         var filter = LayoutUtils.FindFilter(layout);
         var filterKey = filter != null ? filter->Key : 0;
-        var terrRow = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId);
-        return $"{terrRow?.Bg.ToString().Replace('/', '_')}__{filterKey:X}__{string.Join('.', scene.FestivalLayers.Select(id => id.ToString("X")))}";
+        var terrId = filter != null ? filter->TerritoryTypeId : layout->TerritoryTypeId;
+        var terrRow = Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(terrId);
+
+        static string numbers<T>(IEnumerable<T> nums) where T : INumber<T> => string.Join('.', nums.Select(n => n.ToString("X", CultureInfo.InvariantCulture)));
+
+        return $"{terrRow?.Bg.ToString().Replace('/', '_')}__{filterKey:X}__{numbers(scene.FestivalLayers)}__{numbers(scene.ZoneSGs)}";
     }
 
     private void ClearState()
@@ -238,6 +255,9 @@ public sealed class NavmeshManager : IDisposable
     {
         Log($"Build task started: '{cacheKey}'");
         var customization = NavmeshCustomizationRegistry.ForTerritory(scene.TerritoryID);
+        Log($"Customization for '{scene.TerritoryID}': {customization.GetType()}");
+
+        var layers = scene.FestivalLayers.ToList();
 
         // try reading from cache
         var cache = new FileInfo($"{_cacheDir.FullName}/{cacheKey}.navmesh");
@@ -248,7 +268,9 @@ public sealed class NavmeshManager : IDisposable
                 Log($"Loading cache: {cache.FullName}");
                 using var stream = cache.OpenRead();
                 using var reader = new BinaryReader(stream);
-                return Navmesh.Deserialize(reader, customization.Version);
+                var mesh = Navmesh.Deserialize(reader, customization.Version);
+                customization.CustomizeMesh(mesh.Mesh, layers);
+                return mesh;
             }
             catch (Exception ex)
             {
@@ -258,18 +280,13 @@ public sealed class NavmeshManager : IDisposable
         cancel.ThrowIfCancellationRequested();
 
         // cache doesn't exist or can't be used for whatever reason - build navmesh from scratch
-        // TODO: we can build multiple tiles concurrently
         var builder = new NavmeshBuilder(scene, customization);
-        var deltaProgress = 1.0f / (builder.NumTilesX * builder.NumTilesZ);
-        for (int z = 0; z < builder.NumTilesZ; ++z)
+        var deltaProgress = 0.99f / (builder.NumTilesX * builder.NumTilesZ);
+        builder.BuildTiles(() =>
         {
-            for (int x = 0; x < builder.NumTilesX; ++x)
-            {
-                builder.BuildTile(x, z);
-                _loadTaskProgress += deltaProgress;
-                cancel.ThrowIfCancellationRequested();
-            }
-        }
+            _loadTaskProgress += deltaProgress;
+            cancel.ThrowIfCancellationRequested();
+        });
 
         // write results to cache
         {
@@ -278,6 +295,8 @@ public sealed class NavmeshManager : IDisposable
             using var writer = new BinaryWriter(stream);
             builder.Navmesh.Serialize(writer);
         }
+        customization.CustomizeMesh(builder.Navmesh.Mesh, layers);
+        deltaProgress += 0.01f;
         return builder.Navmesh;
     }
 

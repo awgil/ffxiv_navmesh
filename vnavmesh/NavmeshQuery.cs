@@ -25,16 +25,38 @@ public class NavmeshQuery
         }
     }
 
+    private class TeleportingQueryFilter : IDtQueryFilter
+    {
+        private readonly DtQueryDefaultFilter _f = new();
+
+        public float GetCost(RcVec3f pa, RcVec3f pb, long prevRef, DtMeshTile prevTile, DtPoly prevPoly, long curRef, DtMeshTile curTile, DtPoly curPoly, long nextRef, DtMeshTile nextTile, DtPoly nextPoly)
+        {
+            var cst = _f.GetCost(pa, pb, prevRef, prevTile, prevPoly, curRef, curTile, curPoly, nextRef, nextTile, nextPoly);
+            // increase cost of regular connections instead of reducing cost of off-mesh connections, since lowering cost interferes with heuristic
+            if (!(curPoly.GetArea() == Navmesh.OffMeshEndpoint && nextPoly?.GetArea() == Navmesh.OffMeshEndpoint))
+                cst *= 3;
+            return cst;
+        }
+
+
+        public bool PassFilter(long refs, DtMeshTile tile, DtPoly poly)
+        {
+            // Service.Log.Debug($"processing ref {refs:X}");
+            return true;
+        }
+    }
+
     public DtNavMeshQuery MeshQuery;
     public VoxelPathfind? VolumeQuery;
     private readonly IDtQueryFilter _filter = new DtQueryDefaultFilter();
+    private readonly IDtQueryFilter _pathFilter = new TeleportingQueryFilter();
 
     public List<long> LastPath => _lastPath;
     private List<long> _lastPath = [];
 
     public NavmeshQuery(Navmesh navmesh)
     {
-        MeshQuery = new(navmesh.Mesh);
+        MeshQuery = new(navmesh.Mesh/*, s => Service.Log.Debug(s)*/);
         if (navmesh.Volume != null)
             VolumeQuery = new(navmesh.Volume);
     }
@@ -53,7 +75,7 @@ public class NavmeshQuery
         var timer = Timer.Create();
         _lastPath.Clear();
         var opt = new DtFindPathOption(range > 0 ? new ToleranceHeuristic(range) : DtDefaultQueryHeuristic.Default, useRaycast ? DtFindPathOptions.DT_FINDPATH_ANY_ANGLE : 0, useRaycast ? 5 : 0);
-        MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _filter, ref _lastPath, opt);
+        MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _pathFilter, ref _lastPath, opt);
         if (_lastPath.Count == 0)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find path on mesh");

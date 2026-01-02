@@ -102,7 +102,7 @@ public class SceneExtractor
                     foreach (ref var entry in new Span<ColliderStreamed.FileEntry>(header + 1, header->NumMeshes))
                     {
                         var mesh = AddMesh($"{terr}/tr{entry.MeshId:d4}.pcb", MeshType.Terrain);
-                        AddInstance(mesh, 0, ref Matrix4x3.Identity, ref entry.Bounds, 0, 0);
+                        AddInstance(mesh, 0, ref Matrix4x3.Identity, ref entry.Bounds, 0);
                     }
                 }
             }
@@ -110,9 +110,12 @@ public class SceneExtractor
 
         foreach (var part in scene.BgParts)
         {
+            if ((part.matId & 0x410) == 0x400)
+                continue;
+
             var info = ExtractBgPartInfo(scene, part.key, part.transform, part.crc, part.analytic);
             if (info.path.Length > 0)
-                AddInstance(Meshes[info.path], part.key, ref info.transform, ref info.bounds, part.matId, part.matMask);
+                AddInstance(Meshes[info.path], part.key, ref info.transform, ref info.bounds, part.matId);
         }
 
         foreach (var coll in scene.Colliders)
@@ -124,7 +127,7 @@ public class SceneExtractor
 
             var info = ExtractColliderInfo(scene, coll.key, coll.transform, coll.crc, coll.type);
             if (info.path.Length > 0)
-                AddInstance(Meshes[info.path], coll.key, ref info.transform, ref info.bounds, coll.matId, coll.matMask);
+                AddInstance(Meshes[info.path], coll.key, ref info.transform, ref info.bounds, coll.matId);
         }
 
         // add fake colliders on overworld zone transitions to prevent fly pathfind from trying to go OOB there
@@ -132,7 +135,7 @@ public class SceneExtractor
         {
             var transform = new Matrix4x3(ex.transform.Compose());
             var bounds = CalculateBoxBounds(ref transform);
-            AddInstance(Meshes[_keyAnalyticBox], ex.key, ref transform, ref bounds, 0x202411, 0x7FFFFFFFF);
+            AddInstance(Meshes[_keyAnalyticBox], ex.key, ref transform, ref bounds, 0x202411);
         }
     }
 
@@ -145,7 +148,12 @@ public class SceneExtractor
                 // see Client::LayoutEngine::Layer::BgPartsLayoutInstance_calculateSRT
                 // S1*T1 * S*R*T = (S1*S*R,    0
                 //                  T1*SR + T, 1)
-                var mtxBounds = Matrix4x4.CreateScale((shape.bbMax - shape.bbMin) * 0.5f);
+                var scaleVector = (shape.bbMax - shape.bbMin) * 0.5f;
+                if (shape.transform.Type == (int)FileLayerGroupAnalyticCollider.Type.Cylinder)
+                    // z component is ignored for cylinder meshes and possibly others
+                    scaleVector.Z = scaleVector.X;
+
+                var mtxBounds = Matrix4x4.CreateScale(scaleVector);
                 mtxBounds.Translation = (shape.bbMin + shape.bbMax) * 0.5f;
                 var fullTransform = mtxBounds * shape.transform.Compose() * instanceTransform.Compose();
                 var resultingTransform = new Matrix4x3(fullTransform);
@@ -206,9 +214,9 @@ public class SceneExtractor
         return mesh;
     }
 
-    private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId, ulong matMask)
+    private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId)
     {
-        var instance = new MeshInstance(id, worldTransform, worldBounds, ExtractMaterialFlags(matMask & matId), ExtractMaterialFlags(matMask & ~matId));
+        var instance = new MeshInstance(id, worldTransform, worldBounds, ExtractMaterialFlags(matId), default);
         mesh.Instances.Add(instance);
     }
 
@@ -310,7 +318,7 @@ public class SceneExtractor
         return res;
     }
 
-    private static List<MeshPart> BuildBoxMesh()
+    public static List<MeshPart> BuildBoxMesh()
     {
         var mesh = new MeshPart();
         mesh.Vertices.Add(new(-1, -1, -1));

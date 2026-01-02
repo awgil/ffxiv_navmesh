@@ -1,11 +1,12 @@
-﻿using Dalamud.Interface.Utility.Raii;
+﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
 using DotRecast.Core;
 using DotRecast.Core.Numerics;
 using DotRecast.Detour;
 using DotRecast.Recast;
-using ImGuiNET;
 using Navmesh.NavVolume;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Threading.Tasks;
 
@@ -23,17 +24,24 @@ class DebugNavmeshCustom : IDisposable
         public override int Version => 1;
         public override bool IsFlyingSupported(SceneDefinition definition) => Flyable;
 
+        private static NavmeshCustomization? Existing => NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType) is { } t && t.Version > 0 ? t : null;
+
         public override void CustomizeScene(SceneExtractor scene)
         {
             if (LoadExisting)
-            {
-                var tt = NavmeshCustomizationRegistry.ForTerritory(Service.ClientState.TerritoryType);
-                if (tt.Version > 0)
-                {
-                    Service.Log.Debug($"loading existing customization {tt}");
-                    tt.CustomizeScene(scene);
-                }
-            }
+                Existing?.CustomizeScene(scene);
+        }
+
+        public override void CustomizeSettings(DtNavMeshCreateParams config)
+        {
+            if (LoadExisting)
+                Existing?.CustomizeSettings(config);
+        }
+
+        public override void CustomizeMesh(DtNavMesh mesh, List<uint> festivalLayers)
+        {
+            if (LoadExisting)
+                Existing?.CustomizeMesh(mesh, festivalLayers);
         }
     }
 
@@ -46,13 +54,13 @@ class DebugNavmeshCustom : IDisposable
         {
             public int NumTilesX;
             public int NumTilesZ;
-            public NavmeshBuilder.Intermediates?[,] Tiles;
+            public RcBuilderResult?[,] Tiles;
 
             public IntermediateData(int numTilesX, int numTilesZ)
             {
                 NumTilesX = numTilesX;
                 NumTilesZ = numTilesZ;
-                Tiles = new NavmeshBuilder.Intermediates?[numTilesX, numTilesZ];
+                Tiles = new RcBuilderResult?[numTilesX, numTilesZ];
             }
         }
 
@@ -112,19 +120,19 @@ class DebugNavmeshCustom : IDisposable
                 var timer = Timer.Create();
                 _builder = new(scene, customization);
 
+                List<((int X, int Z), Task<NavmeshBuilder.Intermediates> Task)> _tiles = [];
+
                 // create tile data and add to navmesh
                 _intermediates = new(_builder.NumTilesX, _builder.NumTilesZ);
                 if (includeTiles)
                 {
-                    for (int z = 0; z < _builder.NumTilesZ; ++z)
-                    {
-                        for (int x = 0; x < _builder.NumTilesX; ++x)
-                        {
-                            _intermediates.Tiles[x, z] = _builder.BuildTile(x, z);
-                        }
-                    }
+                    foreach (var result in _builder.BuildTiles())
+                        _intermediates.Tiles[result.tileX, result.tileZ] = result;
+
                     //int x = 9, z = 15;
                     //_intermediates.Tiles[x, z] = _builder.BuildTile(x, z);
+                    Service.Log.Debug("running customization code");
+                    customization.CustomizeMesh(_builder.Navmesh.Mesh, [.. scene.FestivalLayers]);
                 }
 
                 _query = new(_builder.Navmesh);
@@ -267,17 +275,17 @@ class DebugNavmeshCustom : IDisposable
                             continue;
 
                         var debug = _debugTiles[x, z] ??= new();
-                        debug.DrawSolidHeightfield ??= new(inter.Value.SolidHeightfield, _tree, _dd);
+                        debug.DrawSolidHeightfield ??= new(inter.GetSolidHeightfield(), _tree, _dd);
                         debug.DrawSolidHeightfield.Draw();
-                        debug.DrawCompactHeightfield ??= new(inter.Value.CompactHeightfield, _tree, _dd);
+                        debug.DrawCompactHeightfield ??= new(inter.GetCompactHeightfield(), _tree, _dd);
                         debug.DrawCompactHeightfield.Draw();
-                        debug.DrawContourSet ??= new(inter.Value.ContourSet, _tree, _dd);
+                        debug.DrawContourSet ??= new(inter.GetContourSet(), _tree, _dd);
                         debug.DrawContourSet.Draw();
-                        debug.DrawPolyMesh ??= new(inter.Value.PolyMesh, _tree, _dd);
+                        debug.DrawPolyMesh ??= new(inter.GetMesh(), _tree, _dd);
                         debug.DrawPolyMesh.Draw();
-                        if (inter.Value.DetailMesh != null)
+                        if (inter.GetMeshDetail() is { } det)
                         {
-                            debug.DrawPolyMeshDetail ??= new(inter.Value.DetailMesh, _tree, _dd);
+                            debug.DrawPolyMeshDetail ??= new(det, _tree, _dd);
                             debug.DrawPolyMeshDetail.Draw();
                         }
 

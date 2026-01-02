@@ -1,11 +1,11 @@
-﻿using Dalamud.Hooking;
+﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Hooking;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
-using ImGuiNET;
 using Navmesh.Render;
 using System;
 using System.Collections.Generic;
@@ -351,7 +351,7 @@ public unsafe class DebugGameCollision : IDisposable
                 color = 0xff0000ff;
         }
         using var n = _tree.Node($"{type} {(nint)coll:X}, layers={coll->LayerMask:X8}, layout-id={coll->LayoutObjectId:X16}, refs={coll->NumRefs}, material={coll->ObjectMaterialValue:X}/{coll->ObjectMaterialMask:X}, flags={flagsText}###{(nint)coll:X}", false, color);
-        if (ImGui.BeginPopupContextItem())
+        if (ImGui.BeginPopupContextItem($"###popup{(nint)coll:X}"))
         {
             ContextCollider(coll);
             ImGui.EndPopup();
@@ -439,7 +439,7 @@ public unsafe class DebugGameCollision : IDisposable
         }
 
         if (layoutInstance != null)
-            DebugLayout.DrawInstance(_tree, "Layout instance:", LayoutWorld.Instance()->ActiveLayout, layoutInstance);
+            DebugLayout.DrawInstance(_tree, "Layout instance:", LayoutWorld.Instance()->ActiveLayout, layoutInstance, this);
     }
 
     private void DrawColliderMesh(ColliderMesh* coll)
@@ -574,6 +574,14 @@ public unsafe class DebugGameCollision : IDisposable
                     _dd.DrawWorldLine(d, a, 0xff0000ff);
                 }
                 break;
+        }
+
+        if (coll != null)
+        {
+            Vector3 trans;
+            coll->GetTranslation(&trans);
+
+            _dd.DrawWorldLine(Service.ClientState.LocalPlayer?.Position ?? default, trans, 0xFFFF00FF);
         }
     }
 

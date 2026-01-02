@@ -1,9 +1,9 @@
 ﻿using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Dalamud.Plugin.Services;
 
 namespace Navmesh.Movement;
 
@@ -96,7 +96,8 @@ public class FollowPath : IDisposable
         {
             if (Service.Config.StopOnStuck && posPreviousFrame.HasValue)
             {
-                float distance = Vector3.Distance(player.Position, posPreviousFrame.Value);
+                float delta = fwk.UpdateDelta.Milliseconds / 1000f;
+                float distance = Vector3.Distance(player.Position, posPreviousFrame.Value) / delta;
                 if (distance <= Service.Config.StuckTolerance)
                 {
                     _millisecondsWithNoSignificantMovement += fwk.UpdateDelta.Milliseconds;
@@ -141,7 +142,7 @@ public class FollowPath : IDisposable
             _camera.Enabled = Service.Config.AlignCameraToMovement;
             _camera.SpeedH = _camera.SpeedV = 360.Degrees();
             _camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
-            _camera.DesiredAltitude = -30.Degrees();
+            _camera.DesiredAltitude = Service.Config.AlignCameraHeight.Degrees();
         }
     }
 

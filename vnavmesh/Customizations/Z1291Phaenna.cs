@@ -10,7 +10,7 @@ namespace Navmesh.Customizations;
 [CustomizationTerritory(1291)]
 internal class Z1291Phaenna : NavmeshCustomization
 {
-    public override int Version => 4;
+    public override int Version => 5;
 
     public override void CustomizeScene(SceneExtractor scene)
     {
@@ -37,6 +37,7 @@ internal class Z1291Phaenna : NavmeshCustomization
             }
         }
 
+        // shitty rocks 1
         if (scene.Meshes.TryGetValue("bg/ffxiv/cos_c1/hou/c1w2/collision/c1w2_t0_roc31.pcb", out var rock))
         {
             var p = SceneExtractor.BuildBoxMesh()[0];
@@ -46,6 +47,13 @@ internal class Z1291Phaenna : NavmeshCustomization
                 vert += new Vector3(-1, 0, -0.5f);
             }
             rock.Parts.Add(p);
+        }
+
+        // shitty rocks 2
+        if (scene.Meshes.TryGetValue("bg/ffxiv/cos_c1/hou/c1w2/collision/c1w2_t0_roc32.pcb", out var rock2))
+        {
+            foreach (var inst in rock2.Instances)
+                inst.WorldTransform.M22 *= 2;
         }
     }
 

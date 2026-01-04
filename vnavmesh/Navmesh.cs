@@ -11,7 +11,7 @@ namespace Navmesh;
 public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? Volume)
 {
     public static readonly uint Magic = 0x444D564E; // 'NVMD'
-    public static readonly uint Version = 22;
+    public static readonly uint Version = 23;
     public const int FLAG_UNREACHABLE = 0x10;
     public const int AREAID_TELEPORT = 5;
 

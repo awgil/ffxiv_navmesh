@@ -106,6 +106,11 @@ public sealed class NavmeshManager : IDisposable
                 Log($"Mesh loaded: '{cacheKey}'");
                 Navmesh = navmesh;
                 Query = new(Navmesh);
+
+                var ff = await FloodFill.GetAsync();
+                if (ff.TryLookup(scene.TerritoryID, out var points))
+                    Prune(points);
+
                 OnNavmeshChanged?.Invoke(Navmesh, Query);
             }, cts.Token);
         }
@@ -122,7 +127,7 @@ public sealed class NavmeshManager : IDisposable
 
     private static bool InCutscene => Service.Condition[ConditionFlag.WatchingCutscene] || Service.Condition[ConditionFlag.OccupiedInCutSceneEvent];
 
-    public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, CancellationToken externalCancel = default, float range = 0)
+    public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, float range = 0, CancellationToken externalCancel = default)
     {
         if (_currentCTS == null)
             throw new Exception($"Can't initiate query - navmesh is not loaded");
@@ -141,7 +146,7 @@ public sealed class NavmeshManager : IDisposable
                 if (Query == null)
                     throw new Exception($"Can't pathfind, navmesh did not build successfully");
                 Log($"Executing pathfind from {from} to {to}");
-                return flying ? Query.PathfindVolume(from, to, UseRaycasts, UseStringPulling, combined.Token) : Query.PathfindMesh(from, to, UseRaycasts, UseStringPulling, combined.Token, range);
+                return flying ? Query.PathfindVolume(from, to, UseRaycasts, UseStringPulling, combined.Token) : Query.PathfindMesh(from, to, UseRaycasts, UseStringPulling, range, combined.Token);
             }, combined.Token);
             Log($"Pathfinding done: {path.Count} waypoints");
             return path;
@@ -374,13 +379,13 @@ public sealed class NavmeshManager : IDisposable
                 }
                 if (reachablePolys.Contains(pref))
                 {
-                    if (Navmesh.Mesh.SetPolyFlags(pref, fl & ~Navmesh.FLAGS_DISABLED).Failed())
+                    if (Navmesh.Mesh.SetPolyFlags(pref, fl & ~Navmesh.FLAG_UNREACHABLE).Failed())
                         Log($"failed to set flags for {pref:X}");
                 }
                 else
                 {
                     pruneCount++;
-                    if (Navmesh.Mesh.SetPolyFlags(pref, fl | Navmesh.FLAGS_DISABLED).Failed())
+                    if (Navmesh.Mesh.SetPolyFlags(pref, fl | Navmesh.FLAG_UNREACHABLE).Failed())
                         Log($"failed to set flags for {pref:X}");
                 }
             }

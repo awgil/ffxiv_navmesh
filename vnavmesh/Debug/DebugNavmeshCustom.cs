@@ -235,7 +235,7 @@ class DebugNavmeshCustom : IDisposable
         {
             var player = Service.ObjectTable.LocalPlayer;
             var playerPos = player?.Position ?? default;
-            _navmesh.Query!.PathfindMesh(playerPos, _dest, true, true, new());
+            _navmesh.Query!.PathfindMesh(playerPos, _dest, true, true, 0, new());
         }
 
         var navmesh = _navmesh.Navmesh!;

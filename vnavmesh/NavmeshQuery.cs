@@ -12,11 +12,11 @@ public class NavmeshQuery
 {
     private class IntersectQuery : IDtPolyQuery
     {
-        public readonly List<long> Result = new();
+        public readonly List<long> Result = [];
         public void Process(DtMeshTile tile, DtPoly poly, long refs) => Result.Add(refs);
     }
 
-    private class ToleranceHeuristic(float tolerance) : IDtQueryHeuristic
+    public class GoalRadiusHeuristic(float tolerance) : IDtQueryHeuristic
     {
         float IDtQueryHeuristic.GetCost(RcVec3f neighbourPos, RcVec3f endPos)
         {
@@ -25,7 +25,7 @@ public class NavmeshQuery
         }
     }
 
-    private class TeleportingQueryFilter : IDtQueryFilter
+    public class TeleportAwareFilter : IDtQueryFilter
     {
         private readonly DtQueryDefaultFilter _f = new();
 
@@ -33,23 +33,28 @@ public class NavmeshQuery
         {
             var cst = _f.GetCost(pa, pb, prevRef, prevTile, prevPoly, curRef, curTile, curPoly, nextRef, nextTile, nextPoly);
             // increase cost of regular connections instead of reducing cost of off-mesh connections, since lowering cost interferes with heuristic
-            if (!(curPoly.GetArea() == Navmesh.OffMeshEndpoint && nextPoly?.GetArea() == Navmesh.OffMeshEndpoint))
+            if (!(curPoly.GetArea() == Navmesh.AREAID_TELEPORT && nextPoly?.GetArea() == Navmesh.AREAID_TELEPORT))
                 cst *= 3;
             return cst;
         }
 
 
-        public bool PassFilter(long refs, DtMeshTile tile, DtPoly poly)
+        public virtual bool PassFilter(long refs, DtMeshTile tile, DtPoly poly) => true;
+    }
+
+    public class FloodFillAwareFilter : TeleportAwareFilter
+    {
+        public override bool PassFilter(long refs, DtMeshTile tile, DtPoly poly)
         {
-            // Service.Log.Debug($"processing ref {refs:X}");
-            return true;
+            return (poly.flags & Navmesh.FLAG_UNREACHABLE) == 0;
         }
     }
 
     public DtNavMeshQuery MeshQuery;
     public VoxelPathfind? VolumeQuery;
     private readonly IDtQueryFilter _filter = new DtQueryDefaultFilter();
-    private readonly IDtQueryFilter _pathFilter = new TeleportingQueryFilter();
+    private readonly IDtQueryFilter _pathFilter = new TeleportAwareFilter();
+    private readonly IDtQueryFilter _reachableFilter = new FloodFillAwareFilter();
 
     public List<long> LastPath => _lastPath;
     private List<long> _lastPath = [];
@@ -61,7 +66,7 @@ public class NavmeshQuery
             VolumeQuery = new(navmesh.Volume);
     }
 
-    public List<Vector3> PathfindMesh(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling, CancellationToken cancel, float range = 0)
+    public List<Vector3> PathfindMesh(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling, float range, CancellationToken cancel)
     {
         var startRef = FindNearestMeshPoly(from);
         var endRef = FindNearestMeshPoly(to);
@@ -69,17 +74,17 @@ public class NavmeshQuery
         if (startRef == 0 || endRef == 0)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find polygon on a mesh");
-            return new();
+            return [];
         }
 
         var timer = Timer.Create();
         _lastPath.Clear();
-        var opt = new DtFindPathOption(range > 0 ? new ToleranceHeuristic(range) : DtDefaultQueryHeuristic.Default, useRaycast ? DtFindPathOptions.DT_FINDPATH_ANY_ANGLE : 0, useRaycast ? 5 : 0);
+        var opt = new DtFindPathOption(range > 0 ? new GoalRadiusHeuristic(range) : DtDefaultQueryHeuristic.Default, useRaycast ? DtFindPathOptions.DT_FINDPATH_ANY_ANGLE : 0, useRaycast ? 5 : 0);
         MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _pathFilter, ref _lastPath, opt);
         if (_lastPath.Count == 0)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find path on mesh");
-            return new();
+            return [];
         }
         Service.Log.Debug($"Pathfind took {timer.Value().TotalSeconds:f3}s: {string.Join(", ", _lastPath.Select(r => r.ToString("X")))}");
 
@@ -88,6 +93,8 @@ public class NavmeshQuery
         //if (polysPath.Last() != endRef)
         //    if (MeshQuery.ClosestPointOnPoly(polysPath.Last(), endPos, out var closest, out _).Succeeded())
         //        endPos = closest;
+
+        cancel.ThrowIfCancellationRequested();
 
         if (useStringPulling)
         {
@@ -112,7 +119,7 @@ public class NavmeshQuery
         if (VolumeQuery == null)
         {
             Service.Log.Error($"Nav volume was not built");
-            return new();
+            return [];
         }
 
         var startVoxel = FindNearestVolumeVoxel(from);
@@ -121,7 +128,7 @@ public class NavmeshQuery
         if (startVoxel == VoxelMap.InvalidVoxel || endVoxel == VoxelMap.InvalidVoxel)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startVoxel:X}) to {to} ({endVoxel:X}): failed to find empty voxel");
-            return new();
+            return [];
         }
 
         var timer = Timer.Create();
@@ -129,7 +136,7 @@ public class NavmeshQuery
         if (voxelPath.Count == 0)
         {
             Service.Log.Error($"Failed to find a path from {from} ({startVoxel:X}) to {to} ({endVoxel:X}): failed to find path on volume");
-            return new();
+            return [];
         }
         Service.Log.Debug($"Pathfind took {timer.Value().TotalSeconds:f3}s: {string.Join(", ", voxelPath.Select(r => $"{r.p} {r.voxel:X}"))}");
 
@@ -140,27 +147,27 @@ public class NavmeshQuery
     }
 
     // returns 0 if not found, otherwise polygon ref
-    public long FindNearestMeshPoly(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5)
+    public long FindNearestMeshPoly(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5, bool allowUnreachable = true)
     {
-        MeshQuery.FindNearestPoly(p.SystemToRecast(), new(halfExtentXZ, halfExtentY, halfExtentXZ), _filter, out var nearestRef, out _, out _);
+        MeshQuery.FindNearestPoly(p.SystemToRecast(), new(halfExtentXZ, halfExtentY, halfExtentXZ), allowUnreachable ? _filter : _reachableFilter, out var nearestRef, out _, out _);
         return nearestRef;
     }
 
-    public List<long> FindIntersectingMeshPolys(Vector3 p, Vector3 halfExtent)
+    public List<long> FindIntersectingMeshPolys(Vector3 p, Vector3 halfExtent, bool allowUnreachable = true)
     {
         IntersectQuery query = new();
-        MeshQuery.QueryPolygons(p.SystemToRecast(), halfExtent.SystemToRecast(), _filter, query);
+        MeshQuery.QueryPolygons(p.SystemToRecast(), halfExtent.SystemToRecast(), allowUnreachable ? _filter : _reachableFilter, query);
         return query.Result;
     }
 
     public Vector3? FindNearestPointOnMeshPoly(Vector3 p, long poly) => MeshQuery.ClosestPointOnPoly(poly, p.SystemToRecast(), out var closest, out _).Succeeded() ? closest.RecastToSystem() : null;
 
-    public Vector3? FindNearestPointOnMesh(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5) => FindNearestPointOnMeshPoly(p, FindNearestMeshPoly(p, halfExtentXZ, halfExtentY));
+    public Vector3? FindNearestPointOnMesh(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5, bool allowUnreachable = true) => FindNearestPointOnMeshPoly(p, FindNearestMeshPoly(p, halfExtentXZ, halfExtentY, allowUnreachable));
 
     // finds the point on the mesh within specified x/z tolerance and with largest Y that is still smaller than p.Y
-    public Vector3? FindPointOnFloor(Vector3 p, float halfExtentXZ = 5)
+    public Vector3? FindPointOnFloor(Vector3 p, float halfExtentXZ = 5, bool allowUnreachable = true)
     {
-        IEnumerable<long> polys = FindIntersectingMeshPolys(p, new(halfExtentXZ, 2048, halfExtentXZ));
+        IEnumerable<long> polys = FindIntersectingMeshPolys(p, new(halfExtentXZ, 2048, halfExtentXZ), allowUnreachable);
         return polys.Select(poly => FindNearestPointOnMeshPoly(p, poly)).Where(pt => pt != null && pt.Value.Y <= p.Y).MaxBy(pt => pt!.Value.Y);
     }
 

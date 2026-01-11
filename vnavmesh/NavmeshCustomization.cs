@@ -154,7 +154,7 @@ public static class SceneExtensions
         var aabb = new AABB() { Min = transform.Row3 - scale, Max = transform.Row3 + scale };
         var existingMesh = scene.Meshes[meshKey];
         var id = 0xbaadf00d00000001ul + (uint)existingMesh.Instances.Count;
-        existingMesh.Instances.Insert(0, new(id, transform, aabb, forceSetFlags, forceClearFlags));
+        existingMesh.Instances.Insert(0, new(id, transform, aabb, 0, forceSetFlags, forceClearFlags));
     }
 
     public static void InsertAABoxCollider(this SceneExtractor scene, Vector3 scale, Vector3 worldTransform, SceneExtractor.PrimitiveFlags forceSetFlags = default, SceneExtractor.PrimitiveFlags forceClearFlags = default) => InsertAxisAlignedCollider(scene, "<box>", scale, worldTransform, forceSetFlags, forceClearFlags);

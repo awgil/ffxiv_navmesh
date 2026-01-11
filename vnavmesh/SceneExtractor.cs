@@ -42,9 +42,10 @@ public class SceneExtractor
         public List<Primitive> Primitives = [];
     }
 
-    public class MeshInstance(ulong id, Matrix4x3 worldTransform, AABB worldBounds, PrimitiveFlags forceSetPrimFlags, PrimitiveFlags forceClearPrimFlags)
+    public class MeshInstance(ulong id, Matrix4x3 worldTransform, AABB worldBounds, ulong material, PrimitiveFlags forceSetPrimFlags, PrimitiveFlags forceClearPrimFlags)
     {
         public ulong Id = id;
+        public ulong Material = material;
         public Matrix4x3 WorldTransform = worldTransform;
         public AABB WorldBounds = worldBounds;
         public PrimitiveFlags ForceSetPrimFlags = forceSetPrimFlags;
@@ -110,9 +111,6 @@ public class SceneExtractor
 
         foreach (var part in scene.BgParts)
         {
-            if ((part.matId & 0x410) == 0x400)
-                continue;
-
             var info = ExtractBgPartInfo(scene, part.key, part.transform, part.crc, part.analytic);
             if (info.path.Length > 0)
                 AddInstance(Meshes[info.path], part.key, ref info.transform, ref info.bounds, part.matId);
@@ -216,7 +214,7 @@ public class SceneExtractor
 
     private void AddInstance(Mesh mesh, ulong id, ref Matrix4x3 worldTransform, ref AABB worldBounds, ulong matId)
     {
-        var instance = new MeshInstance(id, worldTransform, worldBounds, ExtractMaterialFlags(matId), default);
+        var instance = new MeshInstance(id, worldTransform, worldBounds, matId, ExtractMaterialFlags(matId), default);
         mesh.Instances.Add(instance);
     }
 

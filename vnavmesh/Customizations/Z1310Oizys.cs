@@ -102,7 +102,7 @@ internal class Z1310Oizys : NavmeshCustomization
 
         #region SW far
         // North Side -> SW Cosmo
-        addCosmoliner(new(-445, 101.5f, 746), default, new(-364, 44.5f, 401), new(0, -hpi, 0));
+        addCosmoliner(new(-445, 101.5f, 746), default, new(-388, 44.5f, 425), new(pi, 0, pi));
 
         // West Side -> West Cosmo
         addCosmoliner(new(-469, 101.5f, 770), new(0, hpi, 0), new(-661, 28, 455), new(-pi, 0, -pi));
@@ -121,7 +121,7 @@ internal class Z1310Oizys : NavmeshCustomization
         addCosmoliner(new(-388, 44.5f, 377), default, new(-542, 23, 144), new(-pi, 0, -pi));
 
         // E -> SE of base
-        addCosmoliner(new(-364, 44.5f, 401), new(0, -hpi, 0), new(68, 97.5f, 353), new(0, -hpi, 0));
+        addCosmoliner(new(-364, 44.5f, 401), new(0, -hpi, 0), new(68, 97.5f, 353), new(0, hpi, 0));
         #endregion
 
         #region W

@@ -97,7 +97,7 @@ internal class Z1310Oizys : NavmeshCustomization
         addCosmoliner(new(92, 97.5f, 329), default, new(180, -0.5f, 16), new(pi, 0, pi));
 
         // E -> Single on E
-        addCosmoliner(new(116, 97.5f, 353), new(0, -hpi, 0), new(319.215f, 100, 407), new(pi, 1.047f, pi));
+        addCosmoliner(new(116, 97.5f, 353), new(0, -hpi, 0), new(319.215f, 100, 407), new(pi, -1.047f, pi));
         #endregion
 
         #region SW far

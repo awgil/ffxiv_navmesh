@@ -60,6 +60,9 @@ internal class Z1310Oizys : NavmeshCustomization
             LinkPoints(mesh, depB, arrA);
         }
 
+        // add jump down point for a raised rock that a drone spawns on
+        LinkPoints(mesh, new(148.5f, -92, -540), new(150.25f, -92.725f, -536f));
+
         #region base
         // base -> N
         addCosmoliner(new(-180, 0.5f, 52), default, new(-150, -23, -213), new(pi, 0, pi));

@@ -95,6 +95,17 @@ internal class Z1310Oizys : NavmeshCustomization
         addCosmoliner(new(334, -154, -626), new(0, -hpi, 0), new(496, -52.5f, -337), default);
         #endregion
 
+        #region EE
+        // shadefleet N <-> NNE
+        addCosmoliner(new(724, 218.25f, -125), default, new(520, -52.5f, -313), new(0, -hpi, 0));
+
+        // shadefleet S <-> shadefleet N
+        addCosmoliner(new(670, 133.5f, 266), default, new(724, 218.25f, -77), new(pi, 0, pi));
+
+        // shadefleet S <-> mid east
+        addCosmoliner(new(646, 133.5f, 290), new(0, hpi, 0), new(360.785f, 100, 383), new(0, -1.047f, 0));
+        #endregion
+
         #region SE
         // North -> Mid East
         addCosmoliner(new(92, 97.5f, 329), default, new(180, -0.5f, 16), new(pi, 0, pi));

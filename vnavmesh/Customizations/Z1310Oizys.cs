@@ -2,6 +2,7 @@
 using Navmesh;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -60,6 +61,8 @@ internal class Z1310Oizys : NavmeshCustomization
             LinkPoints(mesh, depB, arrA);
         }
 
+        var festivalVersion = festivalLayers.FirstOrDefault() >> 16;
+
         // add jump down point for a raised rock that a drone spawns on
         LinkPoints(mesh, new(148.5f, -92, -540), new(150.25f, -92.725f, -536f));
 
@@ -96,14 +99,17 @@ internal class Z1310Oizys : NavmeshCustomization
         #endregion
 
         #region EE
-        // shadefleet N <-> NNE
-        addCosmoliner(new(724, 218.25f, -125), default, new(520, -52.5f, -313), new(0, -hpi, 0));
+        if (festivalVersion >= 0x11)
+        {
+            // shadefleet N <-> NNE
+            addCosmoliner(new(724, 218.25f, -125), default, new(520, -52.5f, -313), new(0, -hpi, 0));
 
-        // shadefleet S <-> shadefleet N
-        addCosmoliner(new(670, 133.5f, 266), default, new(724, 218.25f, -77), new(pi, 0, pi));
+            // shadefleet S <-> shadefleet N
+            addCosmoliner(new(670, 133.5f, 266), default, new(724, 218.25f, -77), new(pi, 0, pi));
 
-        // shadefleet S <-> mid east
-        addCosmoliner(new(646, 133.5f, 290), new(0, hpi, 0), new(360.785f, 100, 383), new(0, -1.047f, 0));
+            // shadefleet S <-> mid east
+            addCosmoliner(new(646, 133.5f, 290), new(0, hpi, 0), new(360.785f, 100, 383), new(0, -1.047f, 0));
+        }
         #endregion
 
         #region SE

@@ -1,5 +1,4 @@
-﻿using DotRecast.Detour;
-using Navmesh;
+﻿using Navmesh;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,172 +10,206 @@ namespace vnavmesh.Customizations;
 [CustomizationTerritory(1310)]
 internal class Z1310Oizys : NavmeshCustomization
 {
-    public override int Version => 1;
+	public override int Version => 1;
 
-    public override void CustomizeScene(SceneExtractor scene)
-    {
-        string[] doubleLiners = ["bg/ffxiv/cos_c1/hou/c1w3/collision/c1w3_03_t200a.pcb"];
+	public override void CustomizeScene(SceneExtractor scene)
+	{
+		string[] doubleLiners = ["bg/ffxiv/cos_c1/hou/c1w3/collision/c1w3_03_t200a.pcb"];
 
-        foreach (var liner in doubleLiners)
-        {
-            if (scene.Meshes.TryGetValue(liner, out var cl))
-            {
-                // prevent agent from trying to climb the side of the ramp of a green cosmoliner - can cause issues if idiots set a very high path tolerance
-                var departVerts = CollectionsMarshal.AsSpan(cl.Parts[29].Vertices);
-                departVerts[129].Y += 1;
-                departVerts[130].Y += 1;
-                departVerts[132].Y += 1;
-                departVerts[133].Y += 1;
+		foreach (var liner in doubleLiners)
+		{
+			if (scene.Meshes.TryGetValue(liner, out var cl))
+			{
+				// prevent agent from trying to climb the side of the ramp of a green cosmoliner - can cause issues if idiots set a very high path tolerance
+				var departVerts = CollectionsMarshal.AsSpan(cl.Parts[29].Vertices);
+				departVerts[129].Y += 1;
+				departVerts[130].Y += 1;
+				departVerts[132].Y += 1;
+				departVerts[133].Y += 1;
 
-                var box = SceneExtractor.BuildBoxMesh()[0];
-                foreach (ref var vert in CollectionsMarshal.AsSpan(box.Vertices))
-                {
-                    vert *= new Vector3(1.5f, 3.75f, 1.5f);
-                    vert += new Vector3(4.5f, 6.25f, -1);
-                }
-                cl.Parts.Add(box);
-            }
-        }
-    }
+				var box = SceneExtractor.BuildBoxMesh()[0];
+				foreach (ref var vert in CollectionsMarshal.AsSpan(box.Vertices))
+				{
+					vert *= new Vector3(1.5f, 3.75f, 1.5f);
+					vert += new Vector3(4.5f, 6.25f, -1);
+				}
+				cl.Parts.Add(box);
+			}
+		}
+	}
 
-    const float pi = MathF.PI;
-    const float hpi = pi / 2;
+	const float pi = MathF.PI;
+	const float hpi = pi / 2;
 
-    public override void CustomizeMesh(DtNavMesh mesh, List<uint> festivalLayers)
-    {
-        (Vector3 DepartPoint, Vector3 ArrivePoint) getPoints(Vector3 worldPos, Vector3 rotation)
-        {
-            var q = Quaternion.CreateFromYawPitchRoll(rotation.Y, rotation.X, rotation.Z);
-            var adjD = Vector3.Transform(new(4.5f, 2.5f, 0.8f), q);
-            var adjA = Vector3.Transform(new(-4.5f, 2.7f, 1.8f), q);
-            return (adjD + worldPos, adjA + worldPos);
-        }
+	public override void CustomizeMesh(Navmesh.Navmesh mesh, List<uint> festivalLayers)
+	{
+		(Vector3 DepartPoint, Vector3 ArrivePoint) getPoints(Vector3 worldPos, Vector3 rotation)
+		{
+			var q = Quaternion.CreateFromYawPitchRoll(rotation.Y, rotation.X, rotation.Z);
+			var adjD = Vector3.Transform(new(4.5f, 2.5f, 0.8f), q);
+			var adjA = Vector3.Transform(new(-4.5f, 2.7f, 1.8f), q);
+			return (adjD + worldPos, adjA + worldPos);
+		}
 
-        void addCosmoliner(Vector3 pointAPos, Vector3 pointARotation, Vector3 pointBPos, Vector3 pointBRotation)
-        {
-            var (depA, arrA) = getPoints(pointAPos, pointARotation);
-            var (depB, arrB) = getPoints(pointBPos, pointBRotation);
+		void addCosmoliner(Vector3 pointAPos, Vector3 pointARotation, Vector3 pointBPos, Vector3 pointBRotation)
+		{
+			var (depA, arrA) = getPoints(pointAPos, pointARotation);
+			var (depB, arrB) = getPoints(pointBPos, pointBRotation);
 
-            LinkPoints(mesh, depA, arrB);
-            LinkPoints(mesh, depB, arrA);
-        }
+			LinkPoints(mesh, depA, arrB);
+			LinkPoints(mesh, depB, arrA);
+		}
 
-        var festivalVersion = festivalLayers.FirstOrDefault() >> 16;
+		void addSoloLiner(Vector3 pointAPos, Vector3 pointARotation, Vector3 pointBPos, Vector3 pointBRotation)
+		{
+			var adjA = Vector3.Transform(new(0, 2.5f, 0.8f), Quaternion.CreateFromYawPitchRoll(pointARotation.Y, pointARotation.X, pointARotation.Z));
+			var adjB = Vector3.Transform(new(0, 2.7f, 1.8f), Quaternion.CreateFromYawPitchRoll(pointBRotation.Y, pointBRotation.X, pointBRotation.Z));
+			var ptA = pointAPos + adjA;
+			var ptB = pointBPos + adjB;
 
-        // add jump down point for a raised rock that a drone spawns on
-        LinkPoints(mesh, new(148.5f, -92, -540), new(150.25f, -92.725f, -536f));
+			LinkPoints(mesh, ptA, ptB);
+		}
 
-        #region base
-        // base -> N
-        addCosmoliner(new(-180, 0.5f, 52), default, new(-150, -23, -213), new(pi, 0, pi));
+		var festivalVersion = festivalLayers.LastOrDefault() >> 16;
 
-        // base -> W
-        addCosmoliner(new(-299, 0.5f, 138), new Vector3(0, hpi, 0), new(-518, 23, 120), new(0, -hpi, 0));
+		// add jump down point for a raised rock that a drone spawns on
+		LinkPoints(mesh, new(148.5f, -92, -540), new(150.25f, -92.725f, -536f));
 
-        // base -> E
-        addCosmoliner(new(-61, 0.5f, 138), new Vector3(0, -hpi, 0), new(156, -0.5f, -8), new(0, hpi, 0));
-        #endregion
+		#region base
+		// base -> N
+		addCosmoliner(new(-180, 0.5f, 52), default, new(-150, -23, -213), new(pi, 0, pi));
 
-        #region E
-        // North
-        addCosmoliner(new(180, -0.5f, -32), default, new(192, -54.5f, -376), new(pi, 0, pi));
+		// base -> W
+		addCosmoliner(new(-299, 0.5f, 138), new Vector3(0, hpi, 0), new(-518, 23, 120), new(0, -hpi, 0));
 
-        // East
-        addCosmoliner(new(204, -0.5f, -8), new(0, -hpi, 0), new(496, -52.5f, -289), new(-pi, 0, pi));
-        #endregion
+		// base -> E
+		addCosmoliner(new(-61, 0.5f, 138), new Vector3(0, -hpi, 0), new(156, -0.5f, -8), new(0, hpi, 0));
+		#endregion
 
-        #region NE
-        // E -> Far East (against map)
-        addCosmoliner(new(216, -54.5f, -400), new(0, -hpi, 0), new(472, -52.5f, -313), new(0, hpi, 0));
+		#region E
+		// North
+		addCosmoliner(new(180, -0.5f, -32), default, new(192, -54.5f, -376), new(pi, 0, pi));
 
-        // N -> Far N (against map, beside pin)
-        addCosmoliner(new(192, -54.5f, -424), default, new(310, -154, -602), new(-pi, 0, -pi));
-        #endregion
+		// East
+		addCosmoliner(new(204, -0.5f, -8), new(0, -hpi, 0), new(496, -52.5f, -289), new(-pi, 0, pi));
+		#endregion
 
-        #region NE far
-        // NE above location -> E below location name
-        addCosmoliner(new(334, -154, -626), new(0, -hpi, 0), new(496, -52.5f, -337), default);
-        #endregion
+		#region NE
+		// E -> Far East (against map)
+		addCosmoliner(new(216, -54.5f, -400), new(0, -hpi, 0), new(472, -52.5f, -313), new(0, hpi, 0));
 
-        #region EE
-        if (festivalVersion >= 0x11)
-        {
-            // shadefleet N <-> NNE
-            addCosmoliner(new(724, 218.25f, -125), default, new(520, -52.5f, -313), new(0, -hpi, 0));
+		// N -> Far N (against map, beside pin)
+		addCosmoliner(new(192, -54.5f, -424), default, new(310, -154, -602), new(-pi, 0, -pi));
+		#endregion
 
-            // shadefleet S <-> shadefleet N
-            addCosmoliner(new(670, 133.5f, 266), default, new(724, 218.25f, -77), new(pi, 0, pi));
+		#region NE far
+		// NE above location -> E below location name
+		addCosmoliner(new(334, -154, -626), new(0, -hpi, 0), new(496, -52.5f, -337), default);
 
-            // shadefleet S <-> mid east
-            addCosmoliner(new(646, 133.5f, 290), new(0, hpi, 0), new(360.785f, 100, 383), new(0, -1.047f, 0));
-        }
-        #endregion
+		if (festivalVersion >= 0x1A)
+		{
+			// NE cave
+			addCosmoliner(new(286, -154, -626), new(0, hpi, 0), new(92, -193, -776), new(-pi, 1.047f, pi));
 
-        #region SE
-        // North -> Mid East
-        addCosmoliner(new(92, 97.5f, 329), default, new(180, -0.5f, 16), new(pi, 0, pi));
+			// entrance 1
+			addSoloLiner(new(0.6f, -191.55f, -799.4f), new(0, hpi, 0), new(-88, -191.55f, -799.4f), new(0, -hpi, 0));
+			// entrance 2
+			addSoloLiner(new(-126.6f, -191.55f, -842), default, new(-126.6f, -191.55f, -892), new(-pi, 0, -pi));
+			// entrance 3
+			addSoloLiner(new(-184, -191.55f, -949.4f), new(0, hpi, 0), new(-289, -191.55f, -949.4f), new(0, -hpi, 0));
+			// entrance 4
+			addSoloLiner(new(-325.4f, -191.55f, -913), new(pi, 0, pi), new(-325.4f, -191.55f, -837), default);
 
-        // E -> Single on E
-        addCosmoliner(new(116, 97.5f, 353), new(0, -hpi, 0), new(319.215f, 100, 407), new(pi, -1.047f, pi));
-        #endregion
+			// exit 4
+			addSoloLiner(new(-306.6f, -191.55f, -837), default, new(-306.6f, -191.55f, -913), new(pi, 0, pi));
+			// exit 3
+			addSoloLiner(new(-289, -191.55f, -930.6f), new(0, -hpi, 0), new(-184, -191.55f, -930.6f), new(0, hpi, 0));
+			// exit 2
+			addSoloLiner(new(-145.4f, -191.55f, -892), new(-pi, 0, -pi), new(-145.4f, -191.55f, -842), default);
+			// exit 1
+			addSoloLiner(new(-88, -191.55f, -780.6f), new(0, -hpi, 0), new(0.6f, -191.55f, -780.6f), new(0, hpi, 0));
+		}
+		#endregion
 
-        #region SW far
-        // North Side -> SW Cosmo
-        addCosmoliner(new(-445, 101.5f, 746), default, new(-388, 44.5f, 425), new(pi, 0, pi));
+		#region EE
+		if (festivalVersion >= 0x0B)
+		{
+			// shadefleet N <-> NNE
+			addCosmoliner(new(724, 218.25f, -125), default, new(520, -52.5f, -313), new(0, -hpi, 0));
 
-        // West Side -> West Cosmo
-        addCosmoliner(new(-469, 101.5f, 770), new(0, hpi, 0), new(-661, 28, 455), new(-pi, 0, -pi));
-        #endregion
+			// shadefleet S <-> shadefleet N
+			addCosmoliner(new(670, 133.5f, 266), default, new(724, 218.25f, -77), new(pi, 0, pi));
 
-        #region SW wall
-        // N -> West of base
-        addCosmoliner(new(-661, 28, 407), default, new(-566, 23, 120), new(0, hpi, 0));
+			// shadefleet S <-> mid east
+			addCosmoliner(new(646, 133.5f, 290), new(0, hpi, 0), new(360.785f, 100, 383), new(0, -1.047f, 0));
+		}
+		#endregion
 
-        // E -> SE Cosmoliner
-        addCosmoliner(new(-637, 28, 431), new(0, -hpi, 0), new(-412, 44.5f, 401), new(0, hpi, 0));
-        #endregion
+		#region SE
+		// North -> Mid East
+		addCosmoliner(new(92, 97.5f, 329), default, new(180, -0.5f, 16), new(pi, 0, pi));
 
-        #region SW
-        // N -> West of base
-        addCosmoliner(new(-388, 44.5f, 377), default, new(-542, 23, 144), new(-pi, 0, -pi));
+		// E -> Single on E
+		addCosmoliner(new(116, 97.5f, 353), new(0, -hpi, 0), new(319.215f, 100, 407), new(pi, -1.047f, pi));
+		#endregion
 
-        // E -> SE of base
-        addCosmoliner(new(-364, 44.5f, 401), new(0, -hpi, 0), new(68, 97.5f, 353), new(0, hpi, 0));
-        #endregion
+		#region SW far
+		// North Side -> SW Cosmo
+		addCosmoliner(new(-445, 101.5f, 746), default, new(-388, 44.5f, 425), new(pi, 0, pi));
 
-        #region W
-        // North -> NW (Below Erg Eris)
-        addCosmoliner(new(-542, 23, 96), default, new(-530, -27.5f, -216), new(pi, 0, -pi));
-        #endregion
+		// West Side -> West Cosmo
+		addCosmoliner(new(-469, 101.5f, 770), new(0, hpi, 0), new(-661, 28, 455), new(-pi, 0, -pi));
+		#endregion
 
-        #region NW
-        // N -> NW (Above Erg Eris, below flower looking hole)
-        addCosmoliner(new(-530, -27.5f, -264), default, new(-702, -88, -470), new(pi, 0, -pi));
+		#region SW wall
+		// N -> West of base
+		addCosmoliner(new(-661, 28, 407), default, new(-566, 23, 120), new(0, hpi, 0));
 
-        // E -> Cosmoliner N of base
-        addCosmoliner(new(-506, -27.5f, -240), new(0, -hpi, 0), new(-174, -23, -237), new(0, hpi, 0));
-        #endregion
+		// E -> SE Cosmoliner
+		addCosmoliner(new(-637, 28, 431), new(0, -hpi, 0), new(-412, 44.5f, 401), new(0, hpi, 0));
+		#endregion
 
-        #region N
-        // N -> Far North
-        addCosmoliner(new(-150, -23, -261), default, new(-132, -75, -558), new(pi, 0, -pi));
+		#region SW
+		// N -> West of base
+		addCosmoliner(new(-388, 44.5f, 377), default, new(-542, 23, 144), new(-pi, 0, -pi));
 
-        // E -> NE
-        addCosmoliner(new(-126, -23, -237), new(0, -hpi, 0), new(168, -54.5f, -400), new(0, hpi, 0));
-        #endregion
+		// E -> SE of base
+		addCosmoliner(new(-364, 44.5f, 401), new(0, -hpi, 0), new(68, 97.5f, 353), new(0, hpi, 0));
+		#endregion
 
-        #region NN
-        // W -> Far NW (East Side
-        addCosmoliner(new(-156, -75.5f, -582), new(0, hpi, 0), new(-678, -88, -494), new(0, -hpi, 0));
+		#region W
+		// North -> NW (Below Erg Eris)
+		addCosmoliner(new(-542, 23, 96), default, new(-530, -27.5f, -216), new(pi, 0, -pi));
+		#endregion
 
-        // N -> FARR NW/Against N Wall
-        addCosmoliner(new(-132, -75.5f, -606), default, new(-456, -105f, -760), new(0, -hpi, 0));
-        #endregion
+		#region NW
+		// N -> NW (Above Erg Eris, below flower looking hole)
+		addCosmoliner(new(-530, -27.5f, -264), default, new(-702, -88, -470), new(pi, 0, -pi));
 
-        #region NNW
-        // North -> NW Cosmoliner
-        addCosmoliner(new(-702, -88, -518), default, new(-504, -105, -760), new(0, hpi, 0));
-        #endregion
-    }
+		// E -> Cosmoliner N of base
+		addCosmoliner(new(-506, -27.5f, -240), new(0, -hpi, 0), new(-174, -23, -237), new(0, hpi, 0));
+		#endregion
+
+		#region N
+		// N -> Far North
+		addCosmoliner(new(-150, -23, -261), default, new(-132, -75, -558), new(pi, 0, -pi));
+
+		// E -> NE
+		addCosmoliner(new(-126, -23, -237), new(0, -hpi, 0), new(168, -54.5f, -400), new(0, hpi, 0));
+		#endregion
+
+		#region NN
+		// W -> Far NW (East Side
+		addCosmoliner(new(-156, -75.5f, -582), new(0, hpi, 0), new(-678, -88, -494), new(0, -hpi, 0));
+
+		// N -> FARR NW/Against N Wall
+		addCosmoliner(new(-132, -75.5f, -606), default, new(-456, -105f, -760), new(0, -hpi, 0));
+		#endregion
+
+		#region NNW
+		// North -> NW Cosmoliner
+		addCosmoliner(new(-702, -88, -518), default, new(-504, -105, -760), new(0, hpi, 0));
+		#endregion
+	}
 }
 

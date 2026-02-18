@@ -8,118 +8,122 @@ namespace Navmesh.Debug;
 
 class DebugNavmeshManager : IDisposable
 {
-    private NavmeshManager _manager;
-    private FollowPath _path;
-    private AsyncMoveRequest _asyncMove;
-    private DTRProvider _dtr;
-    private UITree _tree = new();
-    private DebugDrawer _dd;
-    private DebugGameCollision _coll;
-    private Vector3 _target;
+	private NavmeshManager _manager;
+	private FollowPath _path;
+	private AsyncMoveRequest _asyncMove;
+	private DTRProvider _dtr;
+	private UITree _tree = new();
+	private DebugDrawer _dd;
+	private DebugGameCollision _coll;
+	private Vector3 _target;
 
-    private DebugDetourNavmesh? _drawNavmesh;
-    private DebugVoxelMap? _debugVoxelMap;
+	private DebugDetourNavmesh? _drawNavmesh;
+	private DebugVoxelMap? _debugVoxelMap;
+	private DebugLinks? _debugLinks;
 
-    public DebugNavmeshManager(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr)
-    {
-        _manager = manager;
-        _path = path;
-        _asyncMove = move;
-        _dtr = dtr;
-        _dd = dd;
-        _coll = coll;
-        _manager.OnNavmeshChanged += OnNavmeshChanged;
-    }
+	public DebugNavmeshManager(DebugDrawer dd, DebugGameCollision coll, NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr)
+	{
+		_manager = manager;
+		_path = path;
+		_asyncMove = move;
+		_dtr = dtr;
+		_dd = dd;
+		_coll = coll;
+		_manager.OnNavmeshChanged += OnNavmeshChanged;
+	}
 
-    public void Dispose()
-    {
-        _manager.OnNavmeshChanged -= OnNavmeshChanged;
-        _drawNavmesh?.Dispose();
-        _debugVoxelMap?.Dispose();
-    }
+	public void Dispose()
+	{
+		_manager.OnNavmeshChanged -= OnNavmeshChanged;
+		_drawNavmesh?.Dispose();
+		_debugVoxelMap?.Dispose();
+	}
 
-    public void Draw()
-    {
-        var progress = _manager.LoadTaskProgress;
-        if (progress >= 0)
-        {
-            ImGui.ProgressBar(progress, new Vector2(200, 0));
-        }
-        else
-        {
-            ImGui.SetNextItemWidth(100);
-            if (ImGui.Button("Reload"))
-                _manager.Reload(true);
-            ImGui.SameLine();
-            if (ImGui.Button("Rebuild"))
-                _manager.Reload(false);
-        }
-        ImGui.SameLine();
-        ImGui.TextUnformatted(_manager.CurrentKey);
-        ImGui.TextUnformatted($"Num pathfinding tasks: {(_manager.PathfindInProgress ? 1 : 0)} in progress, {_manager.NumQueuedPathfindRequests} queued");
+	public void Draw()
+	{
+		var progress = _manager.LoadTaskProgress;
+		if (progress >= 0)
+		{
+			ImGui.ProgressBar(progress, new Vector2(200, 0));
+		}
+		else
+		{
+			ImGui.SetNextItemWidth(100);
+			if (ImGui.Button("Reload"))
+				_manager.Reload(true);
+			ImGui.SameLine();
+			if (ImGui.Button("Rebuild"))
+				_manager.Reload(false);
+		}
+		ImGui.SameLine();
+		ImGui.TextUnformatted(_manager.CurrentKey);
+		ImGui.TextUnformatted($"Num pathfinding tasks: {(_manager.PathfindInProgress ? 1 : 0)} in progress, {_manager.NumQueuedPathfindRequests} queued");
 
-        if (_manager.Navmesh == null || _manager.Query == null)
-            return;
+		if (_manager.Navmesh == null || _manager.Query == null)
+			return;
 
-        var player = Service.ObjectTable.LocalPlayer;
-        var playerPos = player?.Position ?? default;
-        ImGui.TextUnformatted($"Player pos: {playerPos}");
-        if (ImGui.Button("Set target to current pos"))
-            _target = player?.Position ?? default;
-        ImGui.SameLine();
-        if (ImGui.Button("Set target to target pos"))
-            _target = player?.TargetObject?.Position ?? default;
-        ImGui.SameLine();
-        if (ImGui.Button("Set target to flag position"))
-            _target = MapUtils.FlagToPoint(_manager.Query) ?? default;
-        ImGui.SameLine();
-        ImGui.TextUnformatted($"Current target: {_target}");
+		var player = Service.ObjectTable.LocalPlayer;
+		var playerPos = player?.Position ?? default;
+		ImGui.TextUnformatted($"Player pos: {playerPos}");
+		if (ImGui.Button("Set target to current pos"))
+			_target = player?.Position ?? default;
+		ImGui.SameLine();
+		if (ImGui.Button("Set target to target pos"))
+			_target = player?.TargetObject?.Position ?? default;
+		ImGui.SameLine();
+		if (ImGui.Button("Set target to flag position"))
+			_target = MapUtils.FlagToPoint(_manager.Query) ?? default;
+		ImGui.SameLine();
+		ImGui.TextUnformatted($"Current target: {_target}");
 
-        if (ImGui.Button("Export bitmap"))
-            ExportBitmap(_manager.Navmesh, _manager.Query, playerPos);
+		if (ImGui.Button("Export bitmap"))
+			ExportBitmap(_manager.Navmesh, _manager.Query, playerPos);
 
-        ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
-        ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
-        ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);
-        if (ImGui.Button("Pathfind to target using navmesh"))
-            _asyncMove.MoveTo(_target, false);
-        ImGui.SameLine();
-        if (ImGui.Button("Pathfind to target using volume"))
-            _asyncMove.MoveTo(_target, true);
+		ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
+		ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
+		ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);
+		if (ImGui.Button("Pathfind to target using navmesh"))
+			_asyncMove.MoveTo(_target, false);
+		ImGui.SameLine();
+		if (ImGui.Button("Pathfind to target using volume"))
+			_asyncMove.MoveTo(_target, true);
 
-        DrawPosition("Player", playerPos);
-        DrawPosition("Target", _target);
-        DrawPosition("Flag", MapUtils.FlagToPoint(_manager.Query) ?? default);
-        DrawPosition("Floor", _manager.Query.FindPointOnFloor(playerPos) ?? default);
+		DrawPosition("Player", playerPos);
+		DrawPosition("Target", _target);
+		DrawPosition("Flag", MapUtils.FlagToPoint(_manager.Query) ?? default);
+		DrawPosition("Floor", _manager.Query.FindPointOnFloor(playerPos) ?? default);
 
-        _drawNavmesh ??= new(_manager.Navmesh.Mesh, _manager.Query.MeshQuery, _manager.Query.LastPath, _tree, _dd);
-        _drawNavmesh.Draw();
-        if (_manager.Navmesh.Volume != null)
-        {
-            _debugVoxelMap ??= new(_manager.Navmesh.Volume, _manager.Query.VolumeQuery, _tree, _dd);
-            _debugVoxelMap.Draw();
-        }
-    }
+		_drawNavmesh ??= new(_manager.Navmesh.Mesh, _manager.Query.MeshQuery, _manager.Query.LastPath, _tree, _dd);
+		_drawNavmesh.Draw();
+		if (_manager.Navmesh.Volume != null)
+		{
+			_debugVoxelMap ??= new(_manager.Navmesh.Volume, _manager.Query.VolumeQuery, _tree, _dd);
+			_debugVoxelMap.Draw();
+		}
 
-    private void DrawPosition(string tag, Vector3 position)
-    {
-        _manager.Navmesh!.Mesh.CalcTileLoc(position.SystemToRecast(), out var tileX, out var tileZ);
-        _tree.LeafNode($"{tag} position: {position:f3}, tile: {tileX}x{tileZ}, poly: {_manager.Query!.FindNearestMeshPoly(position):X}");
-        var voxel = _manager.Query.FindNearestVolumeVoxel(position);
-        if (_tree.LeafNode($"{tag} voxel: {voxel:X}###{tag}voxel").SelectedOrHovered && voxel != VoxelMap.InvalidVoxel)
-            _debugVoxelMap?.VisualizeVoxel(voxel);
-    }
+		_debugLinks ??= new(_manager.Navmesh, _dd);
+		_debugLinks.Draw();
+	}
 
-    private void ExportBitmap(Navmesh navmesh, NavmeshQuery query, Vector3 startingPos)
-    {
-        _manager.BuildBitmap(startingPos, "D:\\navmesh.bmp", 0.5f);
-    }
+	private void DrawPosition(string tag, Vector3 position)
+	{
+		_manager.Navmesh!.Mesh.CalcTileLoc(position.SystemToRecast(), out var tileX, out var tileZ);
+		_tree.LeafNode($"{tag} position: {position:f3}, tile: {tileX}x{tileZ}, poly: {_manager.Query!.FindNearestMeshPoly(position):X}");
+		var voxel = _manager.Query.FindNearestVolumeVoxel(position);
+		if (_tree.LeafNode($"{tag} voxel: {voxel:X}###{tag}voxel").SelectedOrHovered && voxel != VoxelMap.InvalidVoxel)
+			_debugVoxelMap?.VisualizeVoxel(voxel);
+	}
 
-    private void OnNavmeshChanged(Navmesh? navmesh, NavmeshQuery? query)
-    {
-        _drawNavmesh?.Dispose();
-        _drawNavmesh = null;
-        _debugVoxelMap?.Dispose();
-        _debugVoxelMap = null;
-    }
+	private void ExportBitmap(Navmesh navmesh, NavmeshQuery query, Vector3 startingPos)
+	{
+		_manager.BuildBitmap(startingPos, "D:\\navmesh.bmp", 0.5f);
+	}
+
+	private void OnNavmeshChanged(Navmesh? navmesh, NavmeshQuery? query)
+	{
+		_drawNavmesh?.Dispose();
+		_drawNavmesh = null;
+		_debugVoxelMap?.Dispose();
+		_debugVoxelMap = null;
+	}
 }

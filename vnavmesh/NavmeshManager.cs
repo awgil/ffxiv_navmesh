@@ -139,7 +139,7 @@ public sealed class NavmeshManager : IDisposable
 		{
 			using var autoDisposeCombined = combined;
 			using var autoDecrementCounter = new OnDispose(() => --_numActivePathfinds);
-			Log($"Kicking off pathfind from {from} to {to}");
+			LogInfo($"Kicking off pathfind from {from} to {to}");
 			var path = await Task.Run(() =>
 			{
 				combined.Token.ThrowIfCancellationRequested();
@@ -345,7 +345,8 @@ public sealed class NavmeshManager : IDisposable
 		return res;
 	}
 
-	private static void Log(string message) => Service.Log.Debug($"[NavmeshManager] [{Thread.CurrentThread.ManagedThreadId}] {message}");
+	private static void Log(string message) => Service.Log.Debug($"[NavmeshManager] [{Environment.CurrentManagedThreadId}] {message}");
+	private static void LogInfo(string message) => Service.Log.Info($"[NavmeshManager] [{Environment.CurrentManagedThreadId}] {message}");
 	private static void LogTaskError(Task task)
 	{
 		if (task.IsFaulted)

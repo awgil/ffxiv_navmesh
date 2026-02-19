@@ -10,7 +10,7 @@ namespace vnavmesh.Customizations;
 [CustomizationTerritory(1310)]
 internal class Z1310Oizys : NavmeshCustomization
 {
-	public override int Version => 1;
+	public override int Version => 2;
 
 	public override void CustomizeScene(SceneExtractor scene)
 	{
@@ -35,6 +35,17 @@ internal class Z1310Oizys : NavmeshCustomization
 				}
 				cl.Parts.Add(box);
 			}
+		}
+
+		if (scene.Meshes.TryGetValue("bg/ffxiv/cos_c1/hou/c1w3/collision/c1w3_03_t600a.pcb", out var mesh))
+		{
+			var box = SceneExtractor.BuildBoxMesh()[0];
+			foreach (ref var vert in CollectionsMarshal.AsSpan(box.Vertices))
+			{
+				vert *= new Vector3(1.5f, 3.75f, 1.5f);
+				vert += new Vector3(0, 6.25f, -1);
+			}
+			mesh.Parts.Add(box);
 		}
 	}
 

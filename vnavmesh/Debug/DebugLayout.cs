@@ -9,8 +9,33 @@ using FFXIVClientStructs.Interop;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace Navmesh.Debug;
+
+[StructLayout(LayoutKind.Explicit, Size = 0x70)]
+unsafe struct PathLayoutInstance
+{
+	[FieldOffset(0x60)] public PathDefinition* Definition;
+}
+
+[StructLayout(LayoutKind.Explicit, Size = 0x70)]
+unsafe struct PathDefinition
+{
+	[FieldOffset(0x18)] public PathSegment* SegmentsArray;
+	[FieldOffset(0x20)] public ushort NumSegments;
+
+	public readonly Span<PathSegment> Segments => new(SegmentsArray, NumSegments);
+}
+
+[StructLayout(LayoutKind.Explicit, Size = 0x10)]
+public unsafe struct PathSegment
+{
+	[FieldOffset(0x0)] public Vector3 Position;
+	[FieldOffset(0xC)] public ushort UnkWord;
+	[FieldOffset(0xE)] public byte UnkByte;
+}
 
 public unsafe class DebugLayout : IDisposable
 {
@@ -181,6 +206,23 @@ public unsafe class DebugLayout : IDisposable
 					tree.LeafNode($"Material: {instCollGeneric->MaterialIdHigh:X8}{instCollGeneric->MaterialIdLow:X8}/{instCollGeneric->MaterialMaskHigh:X8}{instCollGeneric->MaterialMaskLow:X8}");
 					tree.LeafNode($"Misc: active-by-default={instCollGeneric->TriggerBoxLayoutInstance.ActiveByDefault}");
 					//tree.LeafNode($"Unk: {instCollGeneric->ColliderLayoutInstance.u70}");
+					break;
+				case InstanceType.ClientPath:
+					var instPath = (PathLayoutInstance*)inst;
+					var def = instPath->Definition;
+					using (var npn = tree.Node($"Num path nodes: {def->Segments.Length}"))
+					{
+						if (npn.Opened)
+						{
+							for (var i = 0; i < def->Segments.Length; i++)
+							{
+								var seg = def->Segments[i];
+								ImGui.Text($"[{i}] {seg.Position} {seg.UnkWord:X2} {seg.UnkByte:X1}");
+							}
+						}
+						if (npn.SelectedOrHovered)
+							coll.DrawPath(def->Segments);
+					}
 					break;
 			}
 		}

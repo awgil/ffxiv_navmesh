@@ -112,6 +112,16 @@ public unsafe class DebugGameCollision : IDisposable
 		}
 	}
 
+	public void DrawPath(Span<PathSegment> pathSegments)
+	{
+		for (var i = 1; i < pathSegments.Length; i++)
+		{
+			var a = pathSegments[i - 1];
+			var b = pathSegments[i];
+			_dd.DrawWorldLine(a.Position, b.Position, 0xFF00FFAA, 2);
+		}
+	}
+
 	private void GatherInfo()
 	{
 		_streamedMeshes.Clear();

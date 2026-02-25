@@ -24,6 +24,9 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
 		ClientPath = 0x02,
 		Shortcut = 0x04,
 		Endpoint = 0x10,
+
+		ClientPathEnd = ClientPath | Endpoint,
+
 		Default = 0x3F
 	}
 

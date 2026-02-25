@@ -178,8 +178,6 @@ public class FollowPath : IDisposable
 	private static bool CheckCondition(Navmesh.AreaId areaId, out bool proceed)
 	{
 		proceed = false;
-		if (areaId.HasFlag(Navmesh.AreaId.Endpoint))
-			return false;
 
 		switch (areaId)
 		{
@@ -189,6 +187,10 @@ public class FollowPath : IDisposable
 			case Navmesh.AreaId.ClientPath:
 				// 61 is most dungeon clientpaths, 101 is cosmoliners
 				proceed = Service.Condition.Any(ConditionFlag.Jumping61, ConditionFlag.Unknown101);
+				return true;
+			case Navmesh.AreaId.ClientPathEnd:
+				// if we don't check the condition here, a path of two consecutive clientpaths will be terminated early (common in cosmic exploration)
+				proceed = !Service.Condition.Any(ConditionFlag.Jumping61, ConditionFlag.Unknown101);
 				return true;
 			default:
 				return false;

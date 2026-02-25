@@ -1,6 +1,7 @@
 ﻿using Dalamud.Game.ClientState.Conditions;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
+using Navmesh.Movement;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -127,7 +128,7 @@ public sealed class NavmeshManager : IDisposable
 
 	private static bool InCutscene => Service.Condition[ConditionFlag.WatchingCutscene] || Service.Condition[ConditionFlag.OccupiedInCutSceneEvent];
 
-	public Task<List<Vector3>> QueryPath(Vector3 from, Vector3 to, bool flying, float range = 0, CancellationToken externalCancel = default)
+	public Task<List<Waypoint>> QueryPath(Vector3 from, Vector3 to, bool flying, float range = 0, CancellationToken externalCancel = default)
 	{
 		if (_currentCTS == null)
 			throw new Exception($"Can't initiate query - navmesh is not loaded");

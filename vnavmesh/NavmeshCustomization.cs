@@ -10,6 +10,12 @@ using System.Reflection;
 
 namespace Navmesh;
 
+public enum LinkType
+{
+	ClientPath,
+	Warp,
+}
+
 // base class for per-territory navmesh customizations
 public class NavmeshCustomization
 {
@@ -29,12 +35,13 @@ public class NavmeshCustomization
 
 	public virtual void CustomizeMesh(Navmesh mesh, List<uint> festivalLayers) { }
 
-	protected static void LinkPoints(Navmesh nmesh, Vector3 startPos, Vector3 endPos)
+	protected static (long refStart, long refEnd) LinkPoints(Navmesh nmesh, Vector3 startPos, Vector3 endPos, Navmesh.AreaId areaId = Navmesh.AreaId.ClientPath)
 	{
-		nmesh.Links.Add((startPos, endPos));
 		var mesh = nmesh.Mesh;
-		var refstart = InsertPointPoly(mesh, startPos, true);
-		var refend = InsertPointPoly(mesh, endPos, false);
+		var refstart = InsertPointPoly(mesh, startPos, areaId);
+		var refend = InsertPointPoly(mesh, endPos, areaId | Navmesh.AreaId.Endpoint);
+
+		nmesh.Links.Add((mesh.GetPolyCenter(refstart).RecastToSystem(), mesh.GetPolyCenter(refend).RecastToSystem()));
 
 		mesh.GetTileAndPolyByRefUnsafe(refstart, out var startTile, out var startPoly);
 
@@ -47,9 +54,11 @@ public class NavmeshCustomization
 		link.bmin = link.bmax = 0;
 		link.next = startTile.polyLinks[startPoly.index];
 		startTile.polyLinks[startPoly.index] = idx;
+
+		return (refstart, refend);
 	}
 
-	private static long InsertPointPoly(DtNavMesh mesh, Vector3 pos, bool start)
+	private static long InsertPointPoly(DtNavMesh mesh, Vector3 pos, Navmesh.AreaId areaId)
 	{
 		var query = new DtNavMeshQuery(mesh);
 
@@ -63,7 +72,7 @@ public class NavmeshCustomization
 			vertCount = 1,
 			flags = 1
 		};
-		p.SetArea(Navmesh.AREAID_TELEPORT);
+		p.SetArea((int)areaId);
 		p.SetPolyType(DtPolyTypes.DT_POLYTYPE_OFFMESH_CONNECTION);
 		p.verts[0] = startTile.data.header.vertCount;
 

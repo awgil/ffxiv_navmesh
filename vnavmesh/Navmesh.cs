@@ -14,8 +14,18 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
 	public static readonly uint Magic = 0x444D564E; // 'NVMD'
 	public static readonly uint Version = 24;
 	public const int FLAG_UNREACHABLE = 0x10;
-	public const int AREAID_TELEPORT = 5;
 	public readonly List<(Vector3 Start, Vector3 End)> Links = []; // not serialized! actual links are added directly to the DtNavMesh, this field exists for visualization purposes
+
+	[Flags]
+	public enum AreaId
+	{
+		None = 0,
+		Warp = 0x01,
+		ClientPath = 0x02,
+		Shortcut = 0x04,
+		Endpoint = 0x10,
+		Default = 0x3F
+	}
 
 	// throws an exception on failure
 	public static Navmesh Deserialize(BinaryReader reader, int expectedCustomizationVersion)

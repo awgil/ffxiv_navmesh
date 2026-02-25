@@ -57,7 +57,7 @@ internal class Z1310Oizys : NavmeshCustomization
 		(Vector3 DepartPoint, Vector3 ArrivePoint) getPoints(Vector3 worldPos, Vector3 rotation)
 		{
 			var q = Quaternion.CreateFromYawPitchRoll(rotation.Y, rotation.X, rotation.Z);
-			var adjD = Vector3.Transform(new(4.5f, 2.5f, 0.8f), q);
+			var adjD = Vector3.Transform(new(4.5f, 2.5f, 1.5f), q);
 			var adjA = Vector3.Transform(new(-4.5f, 2.7f, 1.8f), q);
 			return (adjD + worldPos, adjA + worldPos);
 		}

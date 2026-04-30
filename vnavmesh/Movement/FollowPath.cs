@@ -141,10 +141,10 @@ public class FollowPath : IDisposable
 			OverrideAFK.ResetTimers();
 			_movement.Enabled = MovementAllowed;
 			_movement.DesiredPosition = Waypoints[0].Position;
-			if (_movement.DesiredPosition.Y > player.Position.Y && !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight] && !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Diving] && !IgnoreDeltaY) //Only do this bit if on a flying path
+			if (_movement.DesiredPosition.Y > player.Position.Y && !Service.Condition[ConditionFlag.InFlight] && !Service.Condition[ConditionFlag.Diving] && !IgnoreDeltaY) //Only do this bit if on a flying path
 			{
 				// walk->fly transition (TODO: reconsider?)
-				if (Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Mounted])
+				if (Service.Condition[ConditionFlag.Mounted])
 					ExecuteJump(); // Spam jump to take off
 				else
 				{
@@ -207,7 +207,7 @@ public class FollowPath : IDisposable
 	private unsafe void ExecuteJump()
 	{
 		// Unable to jump while diving, prevents spamming error messages.
-		if (Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Diving])
+		if (Service.Condition[ConditionFlag.Diving])
 			return;
 
 		if (DateTime.Now >= _nextJump)

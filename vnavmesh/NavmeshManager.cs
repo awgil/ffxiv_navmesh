@@ -154,6 +154,12 @@ public sealed class NavmeshManager : IDisposable
 		}, combined.Token);
 	}
 
+	public async Task<List<Vector3>> QueryPathBasic(Vector3 from, Vector3 to, bool flying, float range = 0, CancellationToken externalCancel = default)
+	{
+		var result = await QueryPath(from, to, flying, range, externalCancel);
+		return [.. result.Select(w => w.Position)];
+	}
+
 	// note: pixelSize should be power-of-2
 	public (Vector3 min, Vector3 max) BuildBitmap(Vector3 startingPos, string filename, float pixelSize, AABB? mapBounds = null)
 	{

@@ -18,9 +18,9 @@ class IPCProvider : IDisposable
 		RegisterFunc("Nav.BuildProgress", () => navmeshManager.LoadTaskProgress);
 		RegisterFunc("Nav.Reload", () => navmeshManager.Reload(true));
 		RegisterFunc("Nav.Rebuild", () => navmeshManager.Reload(false));
-		RegisterFunc("Nav.Pathfind", (Vector3 from, Vector3 to, bool fly) => navmeshManager.QueryPath(from, to, fly));
-		RegisterFunc("Nav.PathfindWithTolerance", (Vector3 from, Vector3 to, bool fly, float range) => navmeshManager.QueryPath(from, to, fly, range));
-		RegisterFunc("Nav.PathfindCancelable", (Vector3 from, Vector3 to, bool fly, CancellationToken cancel) => navmeshManager.QueryPath(from, to, fly, externalCancel: cancel));
+		RegisterFunc("Nav.Pathfind", (Vector3 from, Vector3 to, bool fly) => navmeshManager.QueryPathBasic(from, to, fly));
+		RegisterFunc("Nav.PathfindWithTolerance", (Vector3 from, Vector3 to, bool fly, float range) => navmeshManager.QueryPathBasic(from, to, fly, range));
+		RegisterFunc("Nav.PathfindCancelable", (Vector3 from, Vector3 to, bool fly, CancellationToken cancel) => navmeshManager.QueryPathBasic(from, to, fly, externalCancel: cancel));
 		RegisterAction("Nav.PathfindCancelAll", () => navmeshManager.Reload(true));
 		RegisterFunc("Nav.PathfindInProgress", () => navmeshManager.PathfindInProgress);
 		RegisterFunc("Nav.PathfindNumQueued", () => navmeshManager.NumQueuedPathfindRequests);
@@ -38,7 +38,7 @@ class IPCProvider : IDisposable
 		RegisterAction("Path.Stop", followPath.Stop);
 		RegisterFunc("Path.IsRunning", () => followPath.Waypoints.Count > 0);
 		RegisterFunc("Path.NumWaypoints", () => followPath.Waypoints.Count);
-		RegisterFunc("Path.ListWaypoints", () => followPath.Waypoints);
+		RegisterFunc("Path.ListWaypoints", () => followPath.Waypoints.Select(w => w.Position).ToList());
 		RegisterFunc("Path.GetMovementAllowed", () => followPath.MovementAllowed);
 		RegisterAction("Path.SetMovementAllowed", (bool v) => followPath.MovementAllowed = v);
 		RegisterFunc("Path.GetAlignCamera", () => Service.Config.AlignCameraToMovement);

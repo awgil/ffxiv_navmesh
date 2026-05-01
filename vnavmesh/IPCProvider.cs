@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
+using STT = System.Threading.Tasks;
 
 namespace Navmesh;
 
@@ -18,9 +19,12 @@ class IPCProvider : IDisposable
 		RegisterFunc("Nav.BuildProgress", () => navmeshManager.LoadTaskProgress);
 		RegisterFunc("Nav.Reload", () => navmeshManager.Reload(true));
 		RegisterFunc("Nav.Rebuild", () => navmeshManager.Reload(false));
-		RegisterFunc("Nav.Pathfind", (Vector3 from, Vector3 to, bool fly) => navmeshManager.QueryPath(from, to, fly));
-		RegisterFunc("Nav.PathfindWithTolerance", (Vector3 from, Vector3 to, bool fly, float range) => navmeshManager.QueryPath(from, to, fly, range));
-		RegisterFunc("Nav.PathfindCancelable", (Vector3 from, Vector3 to, bool fly, CancellationToken cancel) => navmeshManager.QueryPath(from, to, fly, externalCancel: cancel));
+		RegisterFunc("Nav.Pathfind", (Vector3 from, Vector3 to, bool fly) => AsVec(navmeshManager.QueryPath(from, to, fly)));
+		RegisterFunc("Nav.PathfindWithTolerance", (Vector3 from, Vector3 to, bool fly, float range) => AsVec(navmeshManager.QueryPath(from, to, fly, range)));
+		RegisterFunc("Nav.PathfindCancelable", (Vector3 from, Vector3 to, bool fly, CancellationToken cancel) => AsVec(navmeshManager.QueryPath(from, to, fly, externalCancel: cancel)));
+		RegisterFunc("Nav.PathfindEx", (Vector3 from, Vector3 to, bool fly) => AsTuple(navmeshManager.QueryPath(from, to, fly)));
+		RegisterFunc("Nav.PathfindWithToleranceEx", (Vector3 from, Vector3 to, bool fly, float range) => AsTuple(navmeshManager.QueryPath(from, to, fly, range)));
+		RegisterFunc("Nav.PathfindCancelableEx", (Vector3 from, Vector3 to, bool fly, CancellationToken cancel) => AsTuple(navmeshManager.QueryPath(from, to, fly, externalCancel: cancel)));
 		RegisterAction("Nav.PathfindCancelAll", () => navmeshManager.Reload(true));
 		RegisterFunc("Nav.PathfindInProgress", () => navmeshManager.PathfindInProgress);
 		RegisterFunc("Nav.PathfindNumQueued", () => navmeshManager.NumQueuedPathfindRequests);
@@ -38,7 +42,8 @@ class IPCProvider : IDisposable
 		RegisterAction("Path.Stop", followPath.Stop);
 		RegisterFunc("Path.IsRunning", () => followPath.Waypoints.Count > 0);
 		RegisterFunc("Path.NumWaypoints", () => followPath.Waypoints.Count);
-		RegisterFunc("Path.ListWaypoints", () => followPath.Waypoints);
+		RegisterFunc("Path.ListWaypoints", () => followPath.Waypoints.ConvertAll(w => w.Position));
+		RegisterFunc("Path.ListWaypointsEx", () => followPath.Waypoints.ConvertAll(w => (w.Position, (uint)w.Type)));
 		RegisterFunc("Path.GetMovementAllowed", () => followPath.MovementAllowed);
 		RegisterAction("Path.SetMovementAllowed", (bool v) => followPath.MovementAllowed = v);
 		RegisterFunc("Path.GetAlignCamera", () => Service.Config.AlignCameraToMovement);
@@ -62,6 +67,9 @@ class IPCProvider : IDisposable
 		foreach (var a in _disposeActions)
 			a();
 	}
+
+	private static async STT.Task<List<Vector3>> AsVec(STT.Task<List<Waypoint>> t) => (await t).ConvertAll(w => w.Position);
+	private static async STT.Task<List<(Vector3, uint)>> AsTuple(STT.Task<List<Waypoint>> t) => (await t).ConvertAll(w => (w.Position, (uint)w.Type));
 
 	private void RegisterFunc<TRet>(string name, Func<TRet> func)
 	{

@@ -241,7 +241,7 @@ public unsafe class DebugGameCollision : IDisposable
 		if (n.SelectedOrHovered || Service.Config.ForceShowGameCollision)
 			foreach (var coll in s->Colliders)
 				if (FilterCollider(coll))
-					VisualizeCollider(coll, _materialId, _materialMask);
+					VisualizeCollider(coll, _materialId, _materialMask, false);
 		if (n.Opened)
 			foreach (var coll in s->Colliders)
 				DrawCollider(coll);
@@ -281,7 +281,7 @@ public unsafe class DebugGameCollision : IDisposable
 				{
 					// TODO: visualize cell bounds?
 					foreach (var coll in node.Colliders)
-						VisualizeCollider(coll, _materialId, _materialMask);
+						VisualizeCollider(coll, _materialId, _materialMask, false);
 				}
 			}
 		}
@@ -536,7 +536,7 @@ public unsafe class DebugGameCollision : IDisposable
 		}
 	}
 
-	public void VisualizeCollider(Collider* coll, BitMask filterId, BitMask filterMask)
+	public void VisualizeCollider(Collider* coll, BitMask filterId, BitMask filterMask, bool drawLine = true)
 	{
 		if (coll == null)
 			return;
@@ -599,7 +599,7 @@ public unsafe class DebugGameCollision : IDisposable
 				break;
 		}
 
-		if (coll != null)
+		if (coll != null && drawLine)
 		{
 			Vector3 trans;
 			coll->GetTranslation(&trans);
@@ -625,6 +625,7 @@ public unsafe class DebugGameCollision : IDisposable
 		if (node->NumPrims > 0)
 		{
 			var renderer = GetDynamicMeshes();
+			renderer.AddInstance(new(world, color));
 			renderer.AddMesh(renderer.NumVertices, renderer.NumPrimitives, node->NumPrims, renderer.NumInstances, 1);
 			for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
 				renderer.AddVertex(node->Vertex(i));
@@ -644,7 +645,6 @@ public unsafe class DebugGameCollision : IDisposable
 				{
 					renderer.AddTriangle(prim.V1, prim.V1, prim.V1); // TODO: avoid degenerates...
 				}
-				renderer.AddInstance(new(world, color));
 			}
 		}
 

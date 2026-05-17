@@ -626,6 +626,7 @@ public unsafe class DebugGameCollision : IDisposable
 		{
 			var renderer = GetDynamicMeshes();
 			renderer.AddMesh(renderer.NumVertices, renderer.NumPrimitives, node->NumPrims, renderer.NumInstances, 1);
+			renderer.AddInstance(new(world, color));
 			for (int i = 0; i < node->NumVertsRaw + node->NumVertsCompressed; ++i)
 				renderer.AddVertex(node->Vertex(i));
 			foreach (ref var prim in node->Primitives)
@@ -644,7 +645,6 @@ public unsafe class DebugGameCollision : IDisposable
 				{
 					renderer.AddTriangle(prim.V1, prim.V1, prim.V1); // TODO: avoid degenerates...
 				}
-				renderer.AddInstance(new(world, color));
 			}
 		}
 

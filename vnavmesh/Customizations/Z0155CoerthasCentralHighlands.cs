@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using System.Collections.Generic;
 
 namespace Navmesh.Customizations;
 

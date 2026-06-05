@@ -17,4 +17,10 @@ class Z0155CoerthasCentralHighlands : NavmeshCustomization
             foreach (var inst in tower.Instances)
                 inst.ForceSetPrimFlags |= SceneExtractor.PrimitiveFlags.ForceWalkable;
     }
+
+	public override void CustomizeMesh(Navmesh mesh, List<uint> festivalLayers)
+	{
+        // doorway in Whitebrim Front
+        LinkPoints(mesh, new(-454.47195f, 211.4575f, -291.54233f), new(-457.46005f, 211.4575f, -291.67108f), Navmesh.AreaId.Shortcut);
+    }
 }

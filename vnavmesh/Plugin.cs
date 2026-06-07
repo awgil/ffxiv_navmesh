@@ -3,6 +3,7 @@ using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Navmesh.Benchmarking;
 using Navmesh.Movement;
 using System;
 using System.IO;
@@ -36,6 +37,8 @@ public sealed class Plugin : IDalamudPlugin
         dalamud.Create<Service>();
         Service.Config.Load(dalamud.ConfigFile);
         Service.Config.Modified += () => Service.Config.Save(dalamud.ConfigFile);
+        NavmeshDiagnostics.ErrorSink = message => Service.Log.Error(message);
+        NavmeshDiagnostics.RandomnessMultiplierProvider = () => Service.Config.RandomnessMultiplier;
 
         _navmeshManager = new(new($"{dalamud.ConfigDirectory.FullName}/meshcache"));
         _followPath = new(dalamud, _navmeshManager);
@@ -65,6 +68,7 @@ public sealed class Plugin : IDalamudPlugin
             /vnav stop → stop all movement
             /vnav reload → reload current territory's navmesh from cache
             /vnav rebuild → rebuild current territory's navmesh from scratch
+            /vnav benchcapture [name] [pairs] → save a benchmark snapshot for offline pathfinding tests
             /vnav aligncamera → toggle aligning camera to movement direction
             /vnav aligncamera true|yes|enable → enable aligning camera to movement direction
             /vnav aligncamera false|no|disable → disable aligning camera to movement direction
@@ -95,6 +99,8 @@ public sealed class Plugin : IDalamudPlugin
         _asyncMove.Dispose();
         _followPath.Dispose();
         _navmeshManager.Dispose();
+        NavmeshDiagnostics.ErrorSink = null;
+        NavmeshDiagnostics.RandomnessMultiplierProvider = static () => 1f;
     }
 
     public static void DuoLog(Exception ex)
@@ -141,6 +147,9 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "rebuild":
                 _navmeshManager.Reload(false);
+                break;
+            case "benchcapture":
+                BenchCaptureCommand(args);
                 break;
             case "moveto":
                 MoveToCommand(args, false, false);
@@ -213,6 +222,26 @@ public sealed class Plugin : IDalamudPlugin
         if (pt == null)
             return;
         _asyncMove.MoveTo(pt.Value, fly);
+    }
+
+    private void BenchCaptureCommand(string[] args)
+    {
+        var name = args.Length > 1 ? args[1] : DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var pairs = 100;
+        if (args.Length > 2 && int.TryParse(args[2], out var parsedPairs))
+            pairs = parsedPairs;
+
+        try
+        {
+            var directory = BenchmarkCapture.Capture(_navmeshManager, Service.PluginInterface.ConfigDirectory.FullName, name, pairs);
+            Service.ChatGui.Print($"[{Service.PluginInterface.Manifest.Name}] Benchmark snapshot saved: {directory}");
+            Service.Log.Info($"Benchmark snapshot saved: {directory}");
+        }
+        catch (Exception ex)
+        {
+            Service.ChatGui.PrintError($"[{Service.PluginInterface.Manifest.Name}] Benchmark snapshot failed: {ex.Message}");
+            Service.Log.Error(ex, "Benchmark snapshot failed");
+        }
     }
 
     private void AlignCameraCommand(string arg)

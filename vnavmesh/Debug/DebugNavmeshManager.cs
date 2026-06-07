@@ -80,7 +80,8 @@ class DebugNavmeshManager : IDisposable
 			ExportBitmap(_manager.Navmesh, _manager.Query, playerPos);
 
 		ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
-		ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
+		ImGui.Checkbox("Use mesh raycasts", ref _manager.UseMeshRaycasts);
+		ImGui.Checkbox("Use volume raycasts", ref _manager.UseVolumeRaycasts);
 		ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);
 		if (ImGui.Button("Pathfind to target using navmesh"))
 			_asyncMove.MoveTo(_target, false);

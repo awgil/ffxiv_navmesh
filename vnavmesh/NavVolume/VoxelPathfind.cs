@@ -53,7 +53,7 @@ public class VoxelPathfind
         _bestNodeIndex = 0;
         if (fromVoxel == VoxelMap.InvalidVoxel || toVoxel == VoxelMap.InvalidVoxel)
         {
-            Service.Log.Error($"Bad input cells: {fromVoxel:X} -> {toVoxel:X}");
+            NavmeshDiagnostics.Error($"Bad input cells: {fromVoxel:X} -> {toVoxel:X}");
             return;
         }
 
@@ -355,7 +355,7 @@ public class VoxelPathfind
     private Random _rng = new();
     private float CalculateGScore(ref Node parent, ulong destVoxel, Vector3 destPos, ref int parentIndex)
     {
-        float randomFactor = (float)_rng.NextDouble() * Service.Config.RandomnessMultiplier;
+        float randomFactor = (float)_rng.NextDouble() * NavmeshDiagnostics.RandomnessMultiplier;
 
         float baseDistance;
         float parentBaseG;

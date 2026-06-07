@@ -16,7 +16,8 @@ namespace Navmesh;
 // manager that loads navmesh matching current zone and performs async pathfinding queries
 public sealed class NavmeshManager : IDisposable
 {
-	public bool UseRaycasts = true;
+	public bool UseMeshRaycasts = false;
+	public bool UseVolumeRaycasts = true;
 	public bool UseStringPulling = true;
 
 	public string CurrentKey { get; private set; } = ""; // unique string representing currently loaded navmesh
@@ -106,7 +107,12 @@ public sealed class NavmeshManager : IDisposable
 				var navmesh = await Task.Run(() => BuildNavmesh(scene, cacheKey, allowLoadFromCache, cancel), cancel);
 				Log($"Mesh loaded: '{cacheKey}'");
 				Navmesh = navmesh;
-				Query = new(Navmesh);
+				Query = new(Navmesh)
+				{
+					MeshHeuristicScale = Service.Config.MeshHeuristicScale,
+					MeshPathCacheSize = Service.Config.MeshPathCacheSize,
+					NearestMeshPolyCacheSize = Service.Config.NearestMeshPolyCacheSize
+				};
 
 				var ff = await FloodFill.GetAsync();
 				if (ff.TryLookup(scene.TerritoryID, out var points))
@@ -121,7 +127,12 @@ public sealed class NavmeshManager : IDisposable
 	internal void ReplaceMesh(Navmesh mesh)
 	{
 		Navmesh = mesh;
-		Query = new(Navmesh);
+		Query = new(Navmesh)
+		{
+			MeshHeuristicScale = Service.Config.MeshHeuristicScale,
+			MeshPathCacheSize = Service.Config.MeshPathCacheSize,
+			NearestMeshPolyCacheSize = Service.Config.NearestMeshPolyCacheSize
+		};
 		Log($"Mesh replaced");
 		OnNavmeshChanged?.Invoke(Navmesh, Query);
 	}
@@ -140,16 +151,22 @@ public sealed class NavmeshManager : IDisposable
 		{
 			using var autoDisposeCombined = combined;
 			using var autoDecrementCounter = new OnDispose(() => --_numActivePathfinds);
-			LogInfo($"Kicking off pathfind from {from} to {to}");
+			if (NavmeshDiagnostics.IsDebugEnabled)
+				Log($"Kicking off pathfind from {from} to {to}");
 			var path = await Task.Run(() =>
 			{
 				combined.Token.ThrowIfCancellationRequested();
 				if (Query == null)
 					throw new Exception($"Can't pathfind, navmesh did not build successfully");
-				Log($"Executing pathfind from {from} to {to}");
-				return flying ? Query.PathfindVolume(from, to, UseRaycasts, UseStringPulling, combined.Token) : Query.PathfindMesh(from, to, UseRaycasts, UseStringPulling, range, combined.Token);
+				Query.MeshHeuristicScale = Service.Config.MeshHeuristicScale;
+				Query.MeshPathCacheSize = Service.Config.MeshPathCacheSize;
+				Query.NearestMeshPolyCacheSize = Service.Config.NearestMeshPolyCacheSize;
+				if (NavmeshDiagnostics.IsDebugEnabled)
+					Log($"Executing pathfind from {from} to {to}");
+				return flying ? Query.PathfindVolume(from, to, UseVolumeRaycasts, UseStringPulling, combined.Token) : Query.PathfindMesh(from, to, UseMeshRaycasts, UseStringPulling, range, combined.Token);
 			}, combined.Token);
-			Log($"Pathfinding done: {path.Count} waypoints");
+			if (NavmeshDiagnostics.IsDebugEnabled)
+				Log($"Pathfinding done: {path.Count} waypoints");
 			return path;
 		}, combined.Token);
 	}
@@ -353,7 +370,6 @@ public sealed class NavmeshManager : IDisposable
 	}
 
 	private static void Log(string message) => Service.Log.Debug($"[NavmeshManager] [{Environment.CurrentManagedThreadId}] {message}");
-	private static void LogInfo(string message) => Service.Log.Info($"[NavmeshManager] [{Environment.CurrentManagedThreadId}] {message}");
 	private static void LogTaskError(Task task)
 	{
 		if (task.IsFaulted)

@@ -74,7 +74,15 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
 
 	private static void SerializeMesh(BinaryWriter writer, DtNavMesh mesh)
 	{
-		writer.Write(mesh.GetTileCount());
+		var numTiles = 0;
+		for (int i = 0; i < mesh.GetMaxTiles(); ++i)
+		{
+			DtMeshTile tile = mesh.GetTile(i);
+			if (tile?.data?.header != null)
+				numTiles++;
+		}
+
+		writer.Write(numTiles);
 		SerializeMeshParams(writer, mesh.GetParams());
 		writer.Write(mesh.GetMaxVertsPerPoly());
 

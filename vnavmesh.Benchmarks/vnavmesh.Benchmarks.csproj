@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DotRecast\src\DotRecast.Core\DotRecast.Core.csproj" />
+    <ProjectReference Include="..\DotRecast\src\DotRecast.Detour\DotRecast.Detour.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\vnavmesh\Benchmarking\BenchmarkSnapshot.cs" Link="Shared\Benchmarking\BenchmarkSnapshot.cs" />
+    <Compile Include="..\vnavmesh\Diagnostics\NavmeshDiagnostics.cs" Link="Shared\Diagnostics\NavmeshDiagnostics.cs" />
+    <Compile Include="..\vnavmesh\Extensions.cs" Link="Shared\Extensions.cs" />
+    <Compile Include="..\vnavmesh\Movement\Waypoint.cs" Link="Shared\Movement\Waypoint.cs" />
+    <Compile Include="..\vnavmesh\Navmesh.cs" Link="Shared\Navmesh.cs" />
+    <Compile Include="..\vnavmesh\NavmeshQuery.cs" Link="Shared\NavmeshQuery.cs" />
+    <Compile Include="..\vnavmesh\NavVolume\VoxelMap.cs" Link="Shared\NavVolume\VoxelMap.cs" />
+    <Compile Include="..\vnavmesh\NavVolume\VoxelPathfind.cs" Link="Shared\NavVolume\VoxelPathfind.cs" />
+    <Compile Include="..\vnavmesh\NavVolume\VoxelSearch.cs" Link="Shared\NavVolume\VoxelSearch.cs" />
+    <Compile Include="..\vnavmesh\NavVolume\Voxelizer.cs" Link="Shared\NavVolume\Voxelizer.cs" />
+    <Compile Include="..\vnavmesh\Timer.cs" Link="Shared\Timer.cs" />
+  </ItemGroup>
+</Project>

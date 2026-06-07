@@ -24,6 +24,9 @@ public class Config
     public int StuckTimeoutMs = 500;
     public bool RetryOnStuck = true;
     public float RandomnessMultiplier = 1f;
+    public float MeshHeuristicScale = 10f;
+    public int MeshPathCacheSize = 2048;
+    public int NearestMeshPolyCacheSize = 4096;
     public int BuildMaxCores = 1;
 
     private static readonly int realMaxCores = Environment.ProcessorCount;
@@ -83,6 +86,24 @@ public class Config
         ImGui.SetNextItemWidth(200);
         if (ImGui.SliderFloat("Randomness Multiplier", ref RandomnessMultiplier, 0f, 1.0f, "%.2f"))
             NotifyModified();
+
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Mesh heuristic scale", ref MeshHeuristicScale, 1f, 10f, "%.1f"))
+        {
+            MeshHeuristicScale = Math.Clamp(MeshHeuristicScale, 0.01f, 20f);
+            NotifyModified();
+        }
+        ImGuiComponents.HelpMarker("1 = old conservative A* behavior; higher values reduce mesh exploration but can choose a slightly different route. Default: 10.");
+
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderInt("Mesh path cache size", ref MeshPathCacheSize, 0, 8192))
+            NotifyModified();
+        ImGuiComponents.HelpMarker("Caches polygon paths for repeated mesh queries with the same start and end polygons. 0 disables the cache.");
+
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderInt("Nearest mesh poly cache size", ref NearestMeshPolyCacheSize, 0, 8192))
+            NotifyModified();
+        ImGuiComponents.HelpMarker("Caches exact repeated nearest-poly lookups. 0 disables the cache.");
     }
 
     public void Save(FileInfo file)

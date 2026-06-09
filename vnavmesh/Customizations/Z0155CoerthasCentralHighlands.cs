@@ -22,18 +22,18 @@ class Z0155CoerthasCentralHighlands : NavmeshCustomization
     public override void CustomizeMesh(Navmesh mesh, List<uint> festivalLayers)
     {
         // doorway in Whitebrim Front
-	List<Vector3> doorwayWhitebrim = [new(-454.47195f, 211.4575f, -291.54233f), new(-457.46005f, 211.4575f, -291.67108f)];
-	for (var i = 0; i<doorwayWhitebrim.Count-1; i++)
+        List<Vector3> doorwayWhitebrim = [new(-454.47195f, 211.4575f, -291.54233f), new(-457.46005f, 211.4575f, -291.67108f)];
+        for (var i = 0; i<doorwayWhitebrim.Count-1; i++)
         {
-                LinkPoints(mesh, doorwayWhitebrim[i], doorwayWhitebrim[i+1], Navmesh.AreaId.Shortcut);
-                LinkPoints(mesh, doorwayWhitebrim[i+1], doorwayWhitebrim[i], Navmesh.AreaId.Shortcut);
+            LinkPoints(mesh, doorwayWhitebrim[i], doorwayWhitebrim[i+1], Navmesh.AreaId.Shortcut);
+            LinkPoints(mesh, doorwayWhitebrim[i+1], doorwayWhitebrim[i], Navmesh.AreaId.Shortcut);
         }
         // doorway between observatorium and dragonhead
-	List<Vector3> doorwayMartiallais = [new(198.35889f, 257f, 76.33306f), new(205.2478f, 256.14615f, 83.13481f)];
-	for (var i = 0; i<doorwayMartiallais.Count-1; i++)
+        List<Vector3> doorwayMartiallais = [new(198.35889f, 257f, 76.33306f), new(205.2478f, 256.14615f, 83.13481f)];
+        for (var i = 0; i<doorwayMartiallais.Count-1; i++)
         {
-                LinkPoints(mesh, doorwayMartiallais[i], doorwayMartiallais[i+1], Navmesh.AreaId.Shortcut);
-                LinkPoints(mesh, doorwayMartiallais[i+1], doorwayMartiallais[i], Navmesh.AreaId.Shortcut);
+            LinkPoints(mesh, doorwayMartiallais[i], doorwayMartiallais[i+1], Navmesh.AreaId.Shortcut);
+            LinkPoints(mesh, doorwayMartiallais[i+1], doorwayMartiallais[i], Navmesh.AreaId.Shortcut);
         }
 
         // parapet at Dragonhead
@@ -51,8 +51,8 @@ class Z0155CoerthasCentralHighlands : NavmeshCustomization
         ];
         for (var i = 0; i<walkway.Count-1; i++)
         {
-                LinkPoints(mesh, walkway[i], walkway[i+1], Navmesh.AreaId.Shortcut);
-                LinkPoints(mesh, walkway[i+1], walkway[i], Navmesh.AreaId.Shortcut);
+            LinkPoints(mesh, walkway[i], walkway[i+1], Navmesh.AreaId.Shortcut);
+            LinkPoints(mesh, walkway[i+1], walkway[i], Navmesh.AreaId.Shortcut);
         }
     }
 }

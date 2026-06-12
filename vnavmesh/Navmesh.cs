@@ -20,11 +20,11 @@ public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? 
 	public enum AreaId
 	{
 		None = 0,
-		Warp = 0x01,
-		ClientPath = 0x02,
-		Shortcut = 0x04,
-		Endpoint = 0x10,
+		Warp = 0x01, // direct teleportation, i.e. aetheryte (not implemented)
+		ClientPath = 0x02, // predefined path activated by walking into a triggerbox (e.g. cosmoliner, some transitions in dungeons, etc)
+		Shortcut = 0x04, // regular shortcut followed at normal movement speed, faster due to a shorter overall path (e.g. dropping down from a ledge or walking through a gap that recast thinks is too narrow)
 
+		Endpoint = 0x10, // these need to be marked for FollowPath logic and heuristic purposes
 		ClientPathEnd = ClientPath | Endpoint,
 
 		Default = 0x3F

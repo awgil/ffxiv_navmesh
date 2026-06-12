@@ -45,7 +45,7 @@ public class NavmeshQuery
 					Navmesh.AreaId.Warp => 1,
 					Navmesh.AreaId.ClientPath => 3,
 					Navmesh.AreaId.Shortcut => 8,
-					_ => 10
+					_ => costMulti
 				};
 
 			return cst * costMulti;

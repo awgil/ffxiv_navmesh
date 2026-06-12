@@ -81,7 +81,7 @@ internal class Z1310Oizys : NavmeshCustomization
 			LinkPoints(mesh, ptA, ptB);
 		}
 
-		var festivalVersion = festivalLayers.LastOrDefault() >> 16;
+		var festivalPhase = festivalLayers.LastOrDefault() >> 16;
 
 		// add jump down point for a raised rock that a drone spawns on
 		LinkPoints(mesh, new(148.5f, -92, -540), new(150.25f, -92.725f, -536f));
@@ -117,7 +117,7 @@ internal class Z1310Oizys : NavmeshCustomization
 		// NE above location -> E below location name
 		addCosmoliner(new(334, -154, -626), new(0, -hpi, 0), new(496, -52.5f, -337), default);
 
-		if (festivalVersion >= 0x1A)
+		if (festivalPhase >= 0x1A)
 		{
 			// NE cave
 			addCosmoliner(new(286, -154, -626), new(0, hpi, 0), new(92, -193, -776), new(-pi, 1.047f, pi));
@@ -143,7 +143,7 @@ internal class Z1310Oizys : NavmeshCustomization
 		#endregion
 
 		#region EE
-		if (festivalVersion >= 0x0B)
+		if (festivalPhase >= 0x0B)
 		{
 			// shadefleet N <-> NNE
 			addCosmoliner(new(724, 218.25f, -125), default, new(520, -52.5f, -313), new(0, -hpi, 0));

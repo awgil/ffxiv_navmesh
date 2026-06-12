@@ -465,6 +465,16 @@ public unsafe class DebugGameCollision : IDisposable
 	private void DrawColliderMesh(ColliderMesh* coll)
 	{
 		DrawResource(coll->Resource);
+		if (ImGui.Button("Copy translation to clipboard"))
+		{
+			var t = coll->Translation;
+			var r = coll->Rotation;
+
+			if (MathF.Abs(MathF.Abs(r.X) - MathF.PI) < 0.1f)
+				r.Y *= -1;
+
+			ImGui.SetClipboardText($"{LayoutUtils.Vec3ToSource(t)}, {LayoutUtils.Vec3ToSource(r)}");
+		}
 		_tree.LeafNode($"Translation: {Vec3Str(coll->Translation)}");
 		_tree.LeafNode($"Rotation: {Vec3Str(coll->Rotation)}");
 		_tree.LeafNode($"Scale: {Vec3Str(coll->Scale)}");

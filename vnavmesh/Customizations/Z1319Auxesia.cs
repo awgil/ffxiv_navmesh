@@ -41,18 +41,19 @@ internal class Z1319Auxesia : NavmeshCustomization
 
 	public override void CustomizeMesh(Navmesh.Navmesh mesh, List<uint> festivalLayers)
 	{
-		(Vector3 DepartPoint, Vector3 ArrivePoint) getPoints(Vector3 worldPos, Vector3 rotation)
+		(Vector3 DepartPoint, Vector3 ArrivePoint) getPoints(Vector3 worldPos, Vector3 rotation, bool wide)
 		{
 			var q = Quaternion.CreateFromYawPitchRoll(rotation.Y, rotation.X, rotation.Z);
-			var adjD = Vector3.Transform(new(4.5f, 2.5f, 1.5f), q);
-			var adjA = Vector3.Transform(new(-4.5f, 2.7f, 1.8f), q);
+			var offX = wide ? 9 : 4.5f;
+			var adjD = Vector3.Transform(new(offX, 2.5f, 1.5f), q);
+			var adjA = Vector3.Transform(new(-offX, 2.7f, 1.8f), q);
 			return (adjD + worldPos, adjA + worldPos);
 		}
 
-		void addCosmoliner(Vector3 pointAPos, Vector3 pointARotation, Vector3 pointBPos, Vector3 pointBRotation)
+		void addCosmoliner(Vector3 pointAPos, Vector3 pointARotation, Vector3 pointBPos, Vector3 pointBRotation, bool wide = false)
 		{
-			var (depA, arrA) = getPoints(pointAPos, pointARotation);
-			var (depB, arrB) = getPoints(pointBPos, pointBRotation);
+			var (depA, arrA) = getPoints(pointAPos, pointARotation, wide);
+			var (depB, arrB) = getPoints(pointBPos, pointBRotation, wide);
 
 			LinkPoints(mesh, depA, arrB);
 			LinkPoints(mesh, depB, arrA);
@@ -133,6 +134,22 @@ internal class Z1319Auxesia : NavmeshCustomization
 
 		// sylvan -> blossomingway
 		addCosmoliner(new Vector3(-616.971f, 206, -345.029f), new Vector3(pi, -0.785f, pi), new Vector3(-767, 185, -17.321f), new Vector3(0, 0.175f, 0));
+		#endregion
+
+		// third expansion: stratostone
+		if (festivalPhase < 24)
+			return;
+
+		#region Stratostone
+		addCosmoliner(new Vector3(-259.427f, 167.5f, 326.385f), new Vector3(-pi, -0.698f, -pi), new Vector3(-667.941f, 115, 614.165f), new Vector3(0, -0.733f, 0));
+		#endregion
+
+		// final expansion: grandma laurel
+		if (festivalPhase < 27)
+			return;
+
+		#region Grandma Laurel
+		addCosmoliner(new Vector3(193, 483, -380), new Vector3(0, hpi, 0), new Vector3(126, 166, -139), new Vector3(0, -0.786f, 0), true);
 		#endregion
 	}
 }

@@ -10,7 +10,7 @@ namespace vnavmesh.Customizations;
 [CustomizationTerritory(1319)]
 internal class Z1319Auxesia : NavmeshCustomization
 {
-	public override int Version => 1;
+	public override int Version => 2;
 
 	public override void CustomizeScene(SceneExtractor scene)
 	{
@@ -34,6 +34,10 @@ internal class Z1319Auxesia : NavmeshCustomization
 				mesh.Parts.Add(box);
 			}
 		}
+
+		scene.InsertCylinderCollider(new Vector3(1, 10, 1), new(-572.3f, 200, -480), SceneExtractor.PrimitiveFlags.ForceUnwalkable);
+		scene.InsertCylinderCollider(new Vector3(3, 10, 3), new(-556.5f, 200, -498.4f), SceneExtractor.PrimitiveFlags.ForceUnwalkable);
+		scene.InsertCylinderCollider(new Vector3(3, 10, 3), new(-559, 200, -448.5f), SceneExtractor.PrimitiveFlags.ForceUnwalkable);
 	}
 
 	const float pi = MathF.PI;

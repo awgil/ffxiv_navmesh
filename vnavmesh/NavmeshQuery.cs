@@ -165,6 +165,12 @@ public class NavmeshQuery
 		return res;
 	}
 
+	public bool IsPointOnMesh(Vector3 p, float halfExtentY = 5, bool allowUnreachable = true)
+	{
+		MeshQuery.FindNearestPoly(p.SystemToRecast(), new(0, halfExtentY, 0), allowUnreachable ? _filter : _reachableFilter, out _, out _, out var isOverPoly);
+		return isOverPoly;
+	}
+
 	// returns 0 if not found, otherwise polygon ref
 	public long FindNearestMeshPoly(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5, bool allowUnreachable = true)
 	{

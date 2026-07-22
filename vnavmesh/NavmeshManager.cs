@@ -1,4 +1,5 @@
 ﻿using Dalamud.Game.ClientState.Conditions;
+using DotRecast.Detour;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
 using Navmesh.Movement;
@@ -128,7 +129,7 @@ public sealed class NavmeshManager : IDisposable
 
 	private static bool InCutscene => Service.Condition[ConditionFlag.WatchingCutscene] || Service.Condition[ConditionFlag.OccupiedInCutSceneEvent];
 
-	public Task<List<Waypoint>> QueryPath(Vector3 from, Vector3 to, bool flying, float range = 0, CancellationToken externalCancel = default)
+	public Task<List<Waypoint>> QueryPath(Vector3 from, Vector3 to, bool flying, float range = 0, CancellationToken externalCancel = default, Vector3? avoidCenter = null, float avoidRadius = 0)
 	{
 		if (_currentCTS == null)
 			throw new Exception($"Can't initiate query - navmesh is not loaded");
@@ -147,16 +148,21 @@ public sealed class NavmeshManager : IDisposable
 				if (Query == null)
 					throw new Exception($"Can't pathfind, navmesh did not build successfully");
 				Log($"Executing pathfind from {from} to {to}");
-				return flying ? Query.PathfindVolume(from, to, UseRaycasts, UseStringPulling, combined.Token) : Query.PathfindMesh(from, to, UseRaycasts, UseStringPulling, range, combined.Token);
+				if (flying)
+					return Query.PathfindVolume(from, to, UseRaycasts, UseStringPulling, combined.Token, avoidCenter, avoidRadius);
+				// same fast-path as volume: don't pay for avoid filtering when the straight line never enters
+				IDtQueryFilter? filter = avoidRadius > 0 && avoidCenter is { } center && NavmeshQuery.SegmentEntersAvoid(from, to, center, avoidRadius)
+					? new NavmeshQuery.AvoidRadiusFilter(center, avoidRadius) : null;
+				return Query.PathfindMesh(from, to, UseRaycasts, UseStringPulling, range, combined.Token, filter);
 			}, combined.Token);
 			Log($"Pathfinding done: {path.Count} waypoints");
 			return path;
 		}, combined.Token);
 	}
 
-	public async Task<List<Vector3>> QueryPathBasic(Vector3 from, Vector3 to, bool flying, float range = 0, CancellationToken externalCancel = default)
+	public async Task<List<Vector3>> QueryPathBasic(Vector3 from, Vector3 to, bool flying, float range = 0, CancellationToken externalCancel = default, Vector3? avoidCenter = null, float avoidRadius = 0)
 	{
-		var result = await QueryPath(from, to, flying, range, externalCancel);
+		var result = await QueryPath(from, to, flying, range, externalCancel, avoidCenter, avoidRadius);
 		return [.. result.Select(w => w.Position)];
 	}
 

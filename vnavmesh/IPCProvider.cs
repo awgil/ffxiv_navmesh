@@ -20,6 +20,7 @@ class IPCProvider : IDisposable
 		RegisterFunc("Nav.Rebuild", () => navmeshManager.Reload(false));
 		RegisterFunc("Nav.Pathfind", (Vector3 from, Vector3 to, bool fly) => navmeshManager.QueryPathBasic(from, to, fly));
 		RegisterFunc("Nav.PathfindWithTolerance", (Vector3 from, Vector3 to, bool fly, float range) => navmeshManager.QueryPathBasic(from, to, fly, range));
+		RegisterFunc("Nav.PathfindAvoid", (Vector3 from, Vector3 to, bool fly, Vector3 avoidCenter, float avoidRadius) => navmeshManager.QueryPathBasic(from, to, fly, avoidCenter: avoidCenter, avoidRadius: avoidRadius));
 		RegisterFunc("Nav.PathfindCancelable", (Vector3 from, Vector3 to, bool fly, CancellationToken cancel) => navmeshManager.QueryPathBasic(from, to, fly, externalCancel: cancel));
 		RegisterAction("Nav.PathfindCancelAll", () => navmeshManager.Reload(true));
 		RegisterFunc("Nav.PathfindInProgress", () => navmeshManager.PathfindInProgress);

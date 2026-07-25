@@ -12,7 +12,7 @@ namespace Navmesh;
 public record class Navmesh(int CustomizationVersion, DtNavMesh Mesh, VoxelMap? Volume)
 {
 	public static readonly uint Magic = 0x444D564E; // 'NVMD'
-	public static readonly uint Version = 24;
+	public static readonly uint Version = 25;
 	public const int FLAG_UNREACHABLE = 0x10;
 	public readonly List<(Vector3 Start, Vector3 End)> Links = []; // not serialized! actual links are added directly to the DtNavMesh, this field exists for visualization purposes
 

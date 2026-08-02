@@ -116,7 +116,7 @@ class DebugNavmeshManager : IDisposable
 
 	private void ExportBitmap(Navmesh navmesh, NavmeshQuery query, Vector3 startingPos)
 	{
-		_manager.BuildBitmap(startingPos, "D:\\navmesh.bmp", 0.5f);
+		_manager.BuildBitmap([startingPos], "D:\\navmesh.bmp", 0.5f);
 	}
 
 	private void OnNavmeshChanged(Navmesh? navmesh, NavmeshQuery? query)

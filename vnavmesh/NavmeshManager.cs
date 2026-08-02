@@ -161,15 +161,15 @@ public sealed class NavmeshManager : IDisposable
 	}
 
 	// note: pixelSize should be power-of-2
-	public (Vector3 min, Vector3 max) BuildBitmap(Vector3 startingPos, string filename, float pixelSize, AABB? mapBounds = null)
+	public (Vector3 min, Vector3 max) BuildBitmap(List<Vector3> starting, string filename, float pixelSize, AABB? mapBounds = null)
 	{
 		if (Navmesh == null || Query == null)
 			throw new InvalidOperationException($"Can't build bitmap - navmesh creation is in progress");
 
 		bool inBounds(Vector3 vert) => mapBounds is not AABB aabb || vert.X >= aabb.Min.X && vert.Y >= aabb.Min.Y && vert.Z >= aabb.Min.Z && vert.X <= aabb.Max.X && vert.Y <= aabb.Max.Y && vert.Z <= aabb.Max.Z;
 
-		var startPoly = Query.FindNearestMeshPoly(startingPos);
-		var reachablePolys = Query.FindReachableMeshPolys(startPoly);
+		var startPolys = starting.Select(p => Query.FindNearestMeshPoly(p));
+		var reachablePolys = Query.FindReachableMeshPolys([.. startPolys]);
 
 		HashSet<long> polysInbounds = [];
 
@@ -200,7 +200,7 @@ public sealed class NavmeshManager : IDisposable
 			bitmap.RasterizePolygon(Navmesh.Mesh, p);
 		}
 		bitmap.Save(filename);
-		Service.Log.Debug($"Generated nav bitmap '{filename}' @ {startingPos}: {bitmap.MinBounds}-{bitmap.MaxBounds}");
+		Service.Log.Debug($"Generated nav bitmap '{filename}' @ {string.Join(", ", starting)}: {bitmap.MinBounds}-{bitmap.MaxBounds}");
 		return (bitmap.MinBounds, bitmap.MaxBounds);
 	}
 

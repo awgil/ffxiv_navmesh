@@ -26,8 +26,10 @@ class IPCProvider : IDisposable
 		RegisterFunc("Nav.PathfindNumQueued", () => navmeshManager.NumQueuedPathfindRequests);
 		RegisterFunc("Nav.IsAutoLoad", () => Service.Config.AutoLoadNavmesh);
 		RegisterAction("Nav.SetAutoLoad", (bool v) => { Service.Config.AutoLoadNavmesh = v; Service.Config.NotifyModified(); });
-		RegisterFunc("Nav.BuildBitmap", (Vector3 startingPos, string filename, float pixelSize) => navmeshManager.BuildBitmap(startingPos, filename, pixelSize));
-		RegisterFunc("Nav.BuildBitmapBounded", (Vector3 startingPos, string filename, float pixelSize, Vector3 minBounds, Vector3 maxBounds) => navmeshManager.BuildBitmap(startingPos, filename, pixelSize, new AABB { Min = minBounds, Max = maxBounds }));
+		RegisterFunc("Nav.BuildBitmap", (Vector3 startingPos, string filename, float pixelSize) => navmeshManager.BuildBitmap([startingPos], filename, pixelSize));
+		RegisterFunc("Nav.BuildBitmapBounded", (Vector3 startingPos, string filename, float pixelSize, Vector3 minBounds, Vector3 maxBounds) => navmeshManager.BuildBitmap([startingPos], filename, pixelSize, new AABB { Min = minBounds, Max = maxBounds }));
+		RegisterFunc("Nav.BuildBitmapMulti", (List<Vector3> starting, string filename, float pixelSize) => navmeshManager.BuildBitmap(starting, filename, pixelSize));
+		RegisterFunc("Nav.BuildBitmapMultiBounded", (List<Vector3> starting, string filename, float pixelSize, Vector3 minBounds, Vector3 maxBounds) => navmeshManager.BuildBitmap(starting, filename, pixelSize, new AABB { Min = minBounds, Max = maxBounds }));
 
 		RegisterFunc("Query.Mesh.NearestPoint", (Vector3 p, float halfExtentXZ, float halfExtentY) => navmeshManager.Query?.FindNearestPointOnMesh(p, halfExtentXZ, halfExtentY));
 		RegisterFunc("Query.Mesh.IsPointOnMesh", (Vector3 p, float halfExtentY, bool allowUnreachable) => navmeshManager.Query?.IsPointOnMesh(p, halfExtentY, allowUnreachable) == true);

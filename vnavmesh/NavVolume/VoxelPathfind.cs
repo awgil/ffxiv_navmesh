@@ -28,6 +28,10 @@ public class VoxelPathfind
     private bool _useRaycast;
     private bool _allowReopen = false; // this is extremely expensive and doesn't seem to actually improve the result
     private float _raycastLimitSq = float.MaxValue;
+    private Vector3 _avoidCenter;
+    private float _avoidRadius;
+    private float _avoidRadiusSq;
+    private float _minAvoidDistSq; // don't go closer to center than this (start dist if inside, else full radius)
 
     public VoxelMap Volume => _volume;
     public Span<Node> NodeSpan => CollectionsMarshal.AsSpan(_nodes);
@@ -37,13 +41,227 @@ public class VoxelPathfind
         _volume = volume;
     }
 
-    public List<(ulong voxel, Vector3 p)> FindPath(ulong fromVoxel, ulong toVoxel, Vector3 fromPos, Vector3 toPos, bool useRaycast, bool returnIntermediatePoints, CancellationToken cancel)
+    public List<(ulong voxel, Vector3 p)> FindPath(ulong fromVoxel, ulong toVoxel, Vector3 fromPos, Vector3 toPos, bool useRaycast, bool returnIntermediatePoints, CancellationToken cancel, Vector3? avoidCenter = null, float avoidRadius = 0)
     {
         _useRaycast = useRaycast;
+        _avoidCenter = avoidCenter ?? default;
+        _avoidRadius = avoidRadius > 0 && avoidCenter.HasValue ? avoidRadius : 0;
+        _avoidRadiusSq = _avoidRadius * _avoidRadius;
+        _minAvoidDistSq = _avoidRadius > 0 ? MathF.Min(_avoidRadiusSq, FlatDistSq(fromPos)) : 0;
+
+        if (_avoidRadius > 0)
+        {
+            // Identical to a normal pathfind when the straight line never enters the disc
+            if (!SegmentViolatesAvoid(fromPos, toPos))
+                return FindPathUnavoided(fromVoxel, toVoxel, fromPos, toPos, useRaycast, returnIntermediatePoints, cancel);
+
+            // Hard guarantee without searching around the whole cylinder: corridor of short normal pathfinds
+            if (TryFindPathAroundAvoid(fromVoxel, toVoxel, fromPos, toPos, useRaycast, returnIntermediatePoints, cancel) is { Count: > 0 } around)
+                return around;
+        }
+
+        // fallback to A* when there's terrain blocks
         Start(fromVoxel, toVoxel, fromPos, toPos);
         Execute(cancel);
         return BuildPathToVisitedNode(_bestNodeIndex, returnIntermediatePoints);
     }
+
+    private List<(ulong voxel, Vector3 p)> FindPathUnavoided(ulong fromVoxel, ulong toVoxel, Vector3 fromPos, Vector3 toPos, bool useRaycast, bool returnIntermediatePoints, CancellationToken cancel)
+    {
+        var savedRadius = _avoidRadius;
+        var savedMin = _minAvoidDistSq;
+        _avoidRadius = 0;
+        _minAvoidDistSq = 0;
+        _useRaycast = useRaycast;
+        try
+        {
+            Start(fromVoxel, toVoxel, fromPos, toPos);
+            Execute(cancel);
+            return BuildPathToVisitedNode(_bestNodeIndex, returnIntermediatePoints);
+        }
+        finally
+        {
+            _avoidRadius = savedRadius;
+            _minAvoidDistSq = savedMin;
+        }
+    }
+
+    private List<(ulong voxel, Vector3 p)>? TryFindPathAroundAvoid(ulong fromVoxel, ulong toVoxel, Vector3 fromPos, Vector3 toPos, bool useRaycast, bool returnIntermediatePoints, CancellationToken cancel)
+    {
+        if (BuildAroundAvoidWaypoints(fromPos, toPos) is not { Count: > 1 } corners)
+            return null;
+
+        var merged = new List<(ulong voxel, Vector3 p)> { (fromVoxel, fromPos) };
+        var curPos = fromPos;
+        var curVoxel = fromVoxel;
+        for (var i = 1; i < corners.Count; ++i)
+        {
+            cancel.ThrowIfCancellationRequested();
+            var nextPos = corners[i];
+            var nextVoxel = i == corners.Count - 1 ? toVoxel : VoxelAt(nextPos);
+            if (nextVoxel == VoxelMap.InvalidVoxel)
+                return null;
+
+            // prefer LoS along the geometric corridor, otherwise pathfind and make sure it still clears
+            List<(ulong voxel, Vector3 p)> leg;
+            if (!SegmentViolatesAvoid(curPos, nextPos) && VoxelSearch.LineOfSight(_volume, curVoxel, nextVoxel, curPos, nextPos))
+            {
+                leg = [(nextVoxel, nextPos)];
+            }
+            else
+            {
+                leg = FindPathUnavoided(curVoxel, nextVoxel, curPos, nextPos, useRaycast, returnIntermediatePoints, cancel);
+                if (leg.Count == 0 || PathViolatesAvoid(leg))
+                    return null;
+                leg.RemoveAt(0); // already have curPos in merged
+                if (leg.Count == 0 || (leg[^1].p - nextPos).LengthSquared() > 0.01f)
+                    leg.Add((nextVoxel, nextPos));
+            }
+
+            merged.AddRange(leg);
+            curPos = nextPos;
+            curVoxel = nextVoxel;
+        }
+
+        if (merged.Count == 0 || (merged[^1].p - toPos).LengthSquared() > 0.01f)
+            merged.Add((toVoxel, toPos));
+        return PathViolatesAvoid(merged) ? null : merged;
+    }
+
+    private bool PathViolatesAvoid(List<(ulong voxel, Vector3 p)> path)
+    {
+        for (var i = 1; i < path.Count; ++i)
+        {
+            if (SegmentViolatesAvoid(path[i - 1].p, path[i].p))
+                return true;
+        }
+        return false;
+    }
+
+    private List<Vector3>? BuildAroundAvoidWaypoints(Vector3 from, Vector3 to)
+    {
+        var r = MathF.Sqrt(_minAvoidDistSq) * 1.02f;
+        if (r < 0.1f)
+            return null;
+
+        var c = _avoidCenter;
+        var start = PushOutOfAvoid(from, r);
+        var end = PushOutOfAvoid(to, r);
+
+        if (!TryCircleTangentsXZ(start, c, r, out var s1, out var s2))
+            return null;
+        if (!TryCircleTangentsXZ(end, c, r, out var e1, out var e2))
+            return null;
+
+        // match Y along the corridor
+        s1.Y = start.Y;
+        s2.Y = start.Y;
+        e1.Y = end.Y;
+        e2.Y = end.Y;
+
+        List<Vector3>? best = null;
+        var bestLen = float.MaxValue;
+        foreach (var (ts, te) in new[] { (s1, e1), (s1, e2), (s2, e1), (s2, e2) })
+        {
+            var path = new List<Vector3> { from };
+            if ((from - start).LengthSquared() > 0.01f)
+                path.Add(start);
+            path.Add(ts);
+            SampleCircleArc(ts, te, c, r, start.Y, end.Y, path);
+            path.Add(te);
+            if ((end - to).LengthSquared() > 0.01f)
+                path.Add(end);
+            path.Add(to);
+
+            // only keep corridors whose straight legs stay outside the disc
+            var ok = true;
+            for (var i = 1; i < path.Count; ++i)
+            {
+                if (SegmentViolatesAvoid(path[i - 1], path[i]))
+                {
+                    ok = false;
+                    break;
+                }
+            }
+            if (!ok)
+                continue;
+
+            var len = 0f;
+            for (var i = 1; i < path.Count; ++i)
+                len += (path[i] - path[i - 1]).Length();
+            if (len < bestLen)
+            {
+                bestLen = len;
+                best = path;
+            }
+        }
+        return best;
+    }
+
+    private Vector3 PushOutOfAvoid(Vector3 p, float r)
+    {
+        var dx = p.X - _avoidCenter.X;
+        var dz = p.Z - _avoidCenter.Z;
+        var dSq = dx * dx + dz * dz;
+        if (dSq >= _minAvoidDistSq)
+            return p;
+        if (dSq < 1e-6f)
+        {
+            dx = 1;
+            dz = 0;
+            dSq = 1;
+        }
+        var scale = r / MathF.Sqrt(dSq);
+        return new Vector3(_avoidCenter.X + dx * scale, p.Y, _avoidCenter.Z + dz * scale);
+    }
+
+    private static bool TryCircleTangentsXZ(Vector3 p, Vector3 c, float r, out Vector3 t1, out Vector3 t2)
+    {
+        t1 = t2 = default;
+        var dx = p.X - c.X;
+        var dz = p.Z - c.Z;
+        var dSq = dx * dx + dz * dz;
+        if (dSq <= r * r + 1e-3f)
+            return false;
+
+        var inv = r * r / dSq;
+        var h = r * MathF.Sqrt(dSq - r * r) / dSq;
+        var mx = c.X + inv * dx;
+        var mz = c.Z + inv * dz;
+        t1 = new Vector3(mx - h * dz, p.Y, mz + h * dx);
+        t2 = new Vector3(mx + h * dz, p.Y, mz - h * dx);
+        return true;
+    }
+
+    private static void SampleCircleArc(Vector3 from, Vector3 to, Vector3 c, float r, float y0, float y1, List<Vector3> path)
+    {
+        var a0 = MathF.Atan2(from.Z - c.Z, from.X - c.X);
+        var a1 = MathF.Atan2(to.Z - c.Z, to.X - c.X);
+        var dccw = a1 - a0;
+        while (dccw < 0)
+            dccw += MathF.PI * 2;
+        var dcw = dccw - MathF.PI * 2;
+        var delta = MathF.Abs(dcw) < dccw ? dcw : dccw;
+        // keep chords outside the avoid radius: r*cos(δ/2) >= r/1.02 -> δ ~< 22°, use 15°
+        var steps = Math.Max(1, (int)MathF.Ceiling(MathF.Abs(delta) / (MathF.PI / 12)));
+        for (var i = 1; i < steps; ++i)
+        {
+            var t = (float)i / steps;
+            var a = a0 + delta * t;
+            path.Add(new Vector3(c.X + r * MathF.Cos(a), y0 + (y1 - y0) * t, c.Z + r * MathF.Sin(a)));
+        }
+    }
+
+    private ulong VoxelAt(Vector3 p)
+    {
+        var leaf = _volume.FindLeafVoxel(p);
+        if (leaf.empty)
+            return leaf.voxel;
+        return VoxelSearch.FindNearestEmptyVoxel(_volume, p, new Vector3(5, 5, 5));
+    }
+
+    private bool SegmentViolatesAvoid(Vector3 a, Vector3 b)
+        => _avoidRadius > 0 && SegmentMinDistSqXZ(a, b) + 1e-3f < _minAvoidDistSq;
 
     public void Start(ulong fromVoxel, ulong toVoxel, Vector3 fromPos, Vector3 toPos)
     {
@@ -318,6 +536,14 @@ public class VoxelPathfind
 
     private void VisitNeighbour(int parentIndex, ulong nodeVoxel)
     {
+        var nodeSpan = NodeSpan;
+        ref var parentNode = ref nodeSpan[parentIndex];
+        var enterPos = nodeVoxel == _goalVoxel ? _goalPos : VoxelSearch.FindClosestVoxelPoint(_volume, nodeVoxel, parentNode.Position);
+
+        // hard-avoid: reject if enter point is closer than allowed (goal always allowed so we can reach the boundary)
+        if (_avoidRadius > 0 && nodeVoxel != _goalVoxel && FlatDistSq(enterPos) + 1e-3f < _minAvoidDistSq)
+            return;
+
         var nodeIndex = _nodeLookup.GetValueOrDefault(nodeVoxel, -1);
         if (nodeIndex < 0)
         {
@@ -332,9 +558,8 @@ public class VoxelPathfind
             return;
         }
 
-        var nodeSpan = NodeSpan;
-        ref var parentNode = ref nodeSpan[parentIndex];
-        var enterPos = nodeVoxel == _goalVoxel ? _goalPos : VoxelSearch.FindClosestVoxelPoint(_volume, nodeVoxel, parentNode.Position);
+        nodeSpan = NodeSpan;
+        parentNode = ref nodeSpan[parentIndex];
         var nodeG = CalculateGScore(ref parentNode, nodeVoxel, enterPos, ref parentIndex);
         ref var curNode = ref nodeSpan[nodeIndex];
         if (nodeG + 0.00001f < curNode.GScore)
@@ -368,7 +593,9 @@ public class VoxelPathfind
             ref var grandParentNode = ref NodeSpan[grandParentIndex];
             // TODO: invert LoS check to match path reconstruction step?
             var distanceSquared = (grandParentNode.Position - destPos).LengthSquared();
-            if (distanceSquared <= _raycastLimitSq && VoxelSearch.LineOfSight(_volume, grandParentNode.Voxel, destVoxel, grandParentNode.Position, destPos))
+            if (distanceSquared <= _raycastLimitSq
+                && VoxelSearch.LineOfSight(_volume, grandParentNode.Voxel, destVoxel, grandParentNode.Position, destPos)
+                && !RaycastViolatesAvoid(grandParentNode.Position, destPos))
             {
                 parentIndex = grandParentIndex;
                 baseDistance = MathF.Sqrt(distanceSquared);
@@ -393,6 +620,33 @@ public class VoxelPathfind
         float verticalPenalty = 0.2f * verticalDifference;
 
         return parentBaseG + baseDistance + randomFactor + verticalPenalty;
+    }
+
+    private float FlatDistSq(Vector3 p)
+    {
+        var dx = p.X - _avoidCenter.X;
+        var dz = p.Z - _avoidCenter.Z;
+        return dx * dx + dz * dz;
+    }
+
+    private bool RaycastViolatesAvoid(Vector3 from, Vector3 to) => SegmentViolatesAvoid(from, to);
+
+    private float SegmentMinDistSqXZ(Vector3 a, Vector3 b)
+    {
+        var abx = b.X - a.X;
+        var abz = b.Z - a.Z;
+        var lenSq = abx * abx + abz * abz;
+        float t;
+        if (lenSq < 1e-6f)
+            t = 0;
+        else
+        {
+            t = ((_avoidCenter.X - a.X) * abx + (_avoidCenter.Z - a.Z) * abz) / lenSq;
+            t = Math.Clamp(t, 0f, 1f);
+        }
+        var dx = a.X + abx * t - _avoidCenter.X;
+        var dz = a.Z + abz * t - _avoidCenter.Z;
+        return dx * dx + dz * dz;
     }
 
     private float HeuristicDistance(ulong nodeVoxel, Vector3 v) => nodeVoxel != _goalVoxel ? (v - _goalPos).Length() * 0.999f : 0;

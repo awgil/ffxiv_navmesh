@@ -2,6 +2,7 @@
 using DotRecast.Detour;
 using Navmesh.Movement;
 using Navmesh.NavVolume;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -63,6 +64,68 @@ public class NavmeshQuery
 		}
 	}
 
+	// rejects any polys that intersect a circle XZ. start/end must be outside or FindPath fails
+	public class AvoidRadiusFilter(Vector3 center, float radius) : TeleportAwareFilter
+	{
+		private readonly float _cx = center.X;
+		private readonly float _cz = center.Z;
+		private readonly float _radius = radius;
+
+		public override bool PassFilter(long refs, DtMeshTile tile, DtPoly poly)
+		{
+			if (poly.vertCount == 0)
+				return true;
+
+			float sumX = 0, sumZ = 0;
+			for (int i = 0; i < poly.vertCount; ++i)
+			{
+				var vi = poly.verts[i] * 3;
+				sumX += tile.data.verts[vi];
+				sumZ += tile.data.verts[vi + 2];
+			}
+			var inv = 1f / poly.vertCount;
+			var pcx = sumX * inv;
+			var pcz = sumZ * inv;
+
+			float extentSq = 0;
+			for (int i = 0; i < poly.vertCount; ++i)
+			{
+				var vi = poly.verts[i] * 3;
+				var dx = tile.data.verts[vi] - pcx;
+				var dz = tile.data.verts[vi + 2] - pcz;
+				extentSq = MathF.Max(extentSq, dx * dx + dz * dz);
+			}
+
+			var distX = pcx - _cx;
+			var distZ = pcz - _cz;
+			var dist = MathF.Sqrt(distX * distX + distZ * distZ);
+			// treat poly as a disc around its center
+			return dist >= _radius + MathF.Sqrt(extentSq);
+		}
+	}
+
+	// true if XZ seg passes closer to center than allowed since you may start from inside 
+	public static bool SegmentEntersAvoid(Vector3 from, Vector3 to, Vector3 center, float radius)
+	{
+		var abx = to.X - from.X;
+		var abz = to.Z - from.Z;
+		var lenSq = abx * abx + abz * abz;
+		float t;
+		if (lenSq < 1e-6f)
+			t = 0;
+		else
+		{
+			t = ((center.X - from.X) * abx + (center.Z - from.Z) * abz) / lenSq;
+			t = Math.Clamp(t, 0f, 1f);
+		}
+		var dx = from.X + abx * t - center.X;
+		var dz = from.Z + abz * t - center.Z;
+		var fromDx = from.X - center.X;
+		var fromDz = from.Z - center.Z;
+		var minAllowedSq = MathF.Min(radius * radius, fromDx * fromDx + fromDz * fromDz);
+		return dx * dx + dz * dz + 1e-3f < minAllowedSq;
+	}
+
 	public DtNavMeshQuery MeshQuery;
 	public VoxelPathfind? VolumeQuery;
 	private readonly IDtQueryFilter _filter = new DtQueryDefaultFilter();
@@ -79,8 +142,9 @@ public class NavmeshQuery
 			VolumeQuery = new(navmesh.Volume);
 	}
 
-	public List<Waypoint> PathfindMesh(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling, float range, CancellationToken cancel)
+	public List<Waypoint> PathfindMesh(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling, float range, CancellationToken cancel, IDtQueryFilter? filter = null)
 	{
+		filter ??= _pathFilter;
 		var startRef = FindNearestMeshPoly(from);
 		var endRef = FindNearestMeshPoly(to);
 		Service.Log.Debug($"[pathfind] poly {startRef:X} -> {endRef:X}");
@@ -93,7 +157,7 @@ public class NavmeshQuery
 		var timer = Timer.Create();
 		_lastPath.Clear();
 		var opt = new DtFindPathOption(range > 0 ? new GoalRadiusHeuristic(range) : DtDefaultQueryHeuristic.Default, useRaycast ? DtFindPathOptions.DT_FINDPATH_ANY_ANGLE : 0, useRaycast ? float.MaxValue : 0);
-		MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), _pathFilter, ref _lastPath, opt);
+		MeshQuery.FindPath(startRef, endRef, from.SystemToRecast(), to.SystemToRecast(), filter, ref _lastPath, opt);
 		if (_lastPath.Count == 0)
 		{
 			Service.Log.Error($"Failed to find a path from {from} ({startRef:X}) to {to} ({endRef:X}): failed to find path on mesh");
@@ -133,7 +197,7 @@ public class NavmeshQuery
 		return (Navmesh.AreaId)area;
 	}
 
-	public List<Waypoint> PathfindVolume(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling, CancellationToken cancel)
+	public List<Waypoint> PathfindVolume(Vector3 from, Vector3 to, bool useRaycast, bool useStringPulling, CancellationToken cancel, Vector3? avoidCenter = null, float avoidRadius = 0)
 	{
 		if (VolumeQuery == null)
 		{
@@ -151,7 +215,7 @@ public class NavmeshQuery
 		}
 
 		var timer = Timer.Create();
-		var voxelPath = VolumeQuery.FindPath(startVoxel, endVoxel, from, to, useRaycast, false, cancel); // TODO: do we need intermediate points for string-pulling algo?
+		var voxelPath = VolumeQuery.FindPath(startVoxel, endVoxel, from, to, useRaycast, false, cancel, avoidCenter, avoidRadius); // TODO: do we need intermediate points for string-pulling algo?
 		if (voxelPath.Count == 0)
 		{
 			Service.Log.Error($"Failed to find a path from {from} ({startVoxel:X}) to {to} ({endVoxel:X}): failed to find path on volume");

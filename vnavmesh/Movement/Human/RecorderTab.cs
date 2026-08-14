@@ -105,6 +105,18 @@ public class RecorderTab
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Ceiling on commanded heading change. Measured humans turn at 22-42 through corners; the character itself tops out near 400.");
 
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Wall clearance (yalms)", ref cfg.SteeringWallClearance, 0f, 10f, "%.1f"))
+            Service.Config.NotifyModified();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("How far out obstacles start being given way to. 0 disables it, and the character only reacts once the way is blocked.");
+
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Wall avoidance strength", ref cfg.SteeringWallAvoidance, 0f, 1.5f, "%.2f"))
+            Service.Config.NotifyModified();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("How hard the drift pulls. Too high and it hugs open ground and will not enter doorways.");
+
         if (ImGui.Checkbox("Clamp aim point to the mesh", ref cfg.SteeringClampToMesh))
             Service.Config.NotifyModified();
         if (ImGui.IsItemHovered())

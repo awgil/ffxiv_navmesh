@@ -269,6 +269,20 @@ public class NavmeshQuery
 
 	private List<long> _raycastPath = [];
 
+	// distance to the nearest mesh edge and the direction pointing away from it, or null when nothing
+	// is within maxRadius. humanized steering uses it to drift clear of obstacles while still far off,
+	// rather than reacting once it is already against one.
+	public (float dist, Vector3 away)? NearestWall(Vector3 p, float maxRadius)
+	{
+		var startRef = FindNearestMeshPoly(p);
+		if (startRef == 0)
+			return null;
+		var status = MeshQuery.FindDistanceToWall(startRef, p.SystemToRecast(), maxRadius, _filter, out var dist, out _, out var normal);
+		if (status.Failed() || dist >= maxRadius)
+			return null;
+		return (dist, normal.RecastToSystem());
+	}
+
 	public Vector3? FindNearestPointOnMesh(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5, bool allowUnreachable = true) => FindNearestPointOnMeshPoly(p, FindNearestMeshPoly(p, halfExtentXZ, halfExtentY, allowUnreachable));
 
 	// finds the point on the mesh within specified x/z tolerance and with largest Y that is still smaller than p.Y

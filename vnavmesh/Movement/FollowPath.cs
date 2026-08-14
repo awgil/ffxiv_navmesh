@@ -205,6 +205,27 @@ public class FollowPath : IDisposable
 		if (new Vector2(offset.X, offset.Z).LengthSquared() < 1e-6f)
 			return follow.Target;
 
+		// blend in a drift away from nearby geometry, so obstacles are given way to while still at a
+		// distance instead of on contact
+		if (cfg.SteeringWallAvoidance > 0 && cfg.SteeringWallClearance > 0 && _manager.Query is { } wallQuery
+			&& wallQuery.NearestWall(playerPos, cfg.SteeringWallClearance) is { } wall)
+		{
+			var aim = new Vector2(offset.X, offset.Z);
+			var len = aim.Length();
+			if (len > 1e-4f)
+			{
+				var away = new Vector2(wall.away.X, wall.away.Z);
+				if (away.LengthSquared() > 1e-6f)
+				{
+					// nothing at the clearance edge, full push when right against it
+					var urgency = 1 - wall.dist / cfg.SteeringWallClearance;
+					var blended = aim / len + Vector2.Normalize(away) * (urgency * cfg.SteeringWallAvoidance);
+					if (blended.LengthSquared() > 1e-6f)
+						offset = new Vector3(blended.X * len, offset.Y, blended.Y * len);
+				}
+			}
+		}
+
 		var desired = Angle.FromDirectionXZ(offset);
 		var error = (desired - (_steerHeading ?? desired)).Normalized().Abs();
 

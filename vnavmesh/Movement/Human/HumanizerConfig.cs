@@ -39,4 +39,11 @@ public class HumanizerConfig
     // own feet, and a desired position that close reads as "already arrived", so no input is written
     // at all and it stands still. below this we fall back to upstream's aim instead
     public float SteeringMinAimDistance = 2f;
+    // start drifting away from geometry once within this many yalms of it. shortening the lookahead
+    // only reacts once the way is already blocked, which reads as noticing an obstacle on contact;
+    // a human gives way to it from further out
+    public float SteeringWallClearance = 4f;
+    // how hard that drift pulls, relative to the aim direction. too high and it hugs open ground and
+    // refuses to enter doorways
+    public float SteeringWallAvoidance = 0.6f;
 }

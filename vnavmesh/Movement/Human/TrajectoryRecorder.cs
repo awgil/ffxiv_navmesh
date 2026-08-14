@@ -28,7 +28,7 @@ public unsafe class TrajectoryRecorder : IDisposable
         Agent,
     }
 
-    public const int SchemaVersion = 2;
+    public const int SchemaVersion = 3;
 
     public State CurrentState { get; private set; } = State.Idle;
     public Source CurrentSource { get; private set; }
@@ -311,6 +311,7 @@ public unsafe class TrajectoryRecorder : IDisposable
     {
         try
         {
+            var cfg = Service.Config.Humanizer;
             var dir = Path.Combine(_captureDir, route.Territory.ToString(CultureInfo.InvariantCulture), route.Id);
             Directory.CreateDirectory(dir);
             var name = $"{CurrentSource.ToString().ToLowerInvariant()}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json";
@@ -338,6 +339,14 @@ public unsafe class TrajectoryRecorder : IDisposable
                 ["armedToFirstInputMs"] = _armedToFirstInputMs,
                 ["startFacing"] = _startFacing,
                 ["startPos"] = new JArray(_startFacingPos.X, _startFacingPos.Y, _startFacingPos.Z),
+                // which arm of the evaluation this is, so captures identify themselves (ADR 0006)
+                ["steering"] = new JObject
+                {
+                    ["enabled"] = cfg.SteeringEnabled,
+                    ["lookahead"] = cfg.SteeringLookahead,
+                    ["maxTurnRate"] = cfg.SteeringMaxTurnRate,
+                    ["recoveryTurnRate"] = cfg.SteeringRecoveryTurnRate,
+                },
                 ["columns"] = new JArray(TrajectorySample.Columns),
                 ["samples"] = samples,
             };

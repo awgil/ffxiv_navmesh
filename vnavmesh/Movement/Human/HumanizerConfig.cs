@@ -26,4 +26,8 @@ public class HumanizerConfig
     // ceiling on how fast the commanded heading may rotate, degrees/sec. the character itself
     // tops out near 400, and humans measured at 22-42 through corners
     public float SteeringMaxTurnRate = 45f;
+    // ceiling used when recovering: a large correction, or the last stretch of a path. holding the
+    // normal limit there makes the character orbit, but removing it entirely snaps at 500+, so this
+    // sits between. a turn radius of v/rate must stay under the distance left to cover
+    public float SteeringRecoveryTurnRate = 180f;
 }

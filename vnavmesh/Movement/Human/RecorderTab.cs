@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using Navmesh.Debug;
 using System;
@@ -97,6 +97,12 @@ public class RecorderTab
             Service.Config.NotifyModified();
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Ceiling on commanded heading change. Measured humans turn at 22-42 through corners; the character itself tops out near 400.");
+
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Recovery turn rate (deg/s)", ref cfg.SteeringRecoveryTurnRate, 60f, 400f, "%.0f"))
+            Service.Config.NotifyModified();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Used for large corrections and the last stretch of a path, where the normal ceiling would make the character orbit its target.");
     }
 
     private void DrawAuthoring(uint territory, Vector3? pos)

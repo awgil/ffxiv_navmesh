@@ -184,11 +184,13 @@ public class FollowPath : IDisposable
 		var error = (desired - (_steerHeading ?? desired)).Normalized().Abs();
 
 		// rate limiting is for easing through corners. applied to a reversal it makes the character
-		// orbit, because the turn radius at walking speed exceeds the distance left to cover, so
-		// aim straight when the correction is large or when the end of the path is close.
-		var orbitRisk = error.Rad > MathF.PI / 2 || follow.ProjectedDistToEnd <= cfg.SteeringLookahead;
-		_steerHeading = _steerHeading is { } cur && !orbitRisk
-			? Human.PathSteering.SlewHeading(cur, desired, cfg.SteeringMaxTurnRate.Degrees(), dt)
+		// orbit, because the turn radius at walking speed exceeds the distance left to cover. so a
+		// large correction, or the last stretch, raises the ceiling rather than removing it: an
+		// unlimited snap there was the one remaining 500 deg/s spike.
+		var recovering = error.Rad > MathF.PI / 2 || follow.ProjectedDistToEnd <= cfg.SteeringLookahead;
+		var rate = (recovering ? cfg.SteeringRecoveryTurnRate : cfg.SteeringMaxTurnRate).Degrees();
+		_steerHeading = _steerHeading is { } cur
+			? Human.PathSteering.SlewHeading(cur, desired, rate, dt)
 			: desired;
 
 		// keep the aim point at the same planar distance, so arrival and the fly transition are unaffected

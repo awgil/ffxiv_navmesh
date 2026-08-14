@@ -28,7 +28,7 @@ public unsafe class TrajectoryRecorder : IDisposable
         Agent,
     }
 
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 2;
 
     public State CurrentState { get; private set; } = State.Idle;
     public Source CurrentSource { get; private set; }
@@ -50,7 +50,8 @@ public unsafe class TrajectoryRecorder : IDisposable
     private float _startFacing;
     private Vector3? _prevPos;
     private bool _agentMoveIssued;
-    private uint _prevInputSeq;
+    private uint _prevWalkSeq;
+    private uint _prevFlySeq;
 
     public TrajectoryRecorder(AsyncMoveRequest move, FollowPath follow, string configDir)
     {
@@ -93,7 +94,6 @@ public unsafe class TrajectoryRecorder : IDisposable
             return;
         }
 
-        _prevInputSeq = _follow.Movement.InputSequence;
         Enter(State.Travelling);
         Status = "travelling to A";
     }
@@ -139,6 +139,12 @@ public unsafe class TrajectoryRecorder : IDisposable
         var pos = player.Position;
         var mv = _follow.Movement;
 
+        // advance both watermarks exactly once per frame, so nothing downstream double consumes them
+        var walkFresh = mv.WalkInputSequence != _prevWalkSeq;
+        var flyFresh = mv.FlyInputSequence != _prevFlySeq;
+        _prevWalkSeq = mv.WalkInputSequence;
+        _prevFlySeq = mv.FlyInputSequence;
+
         switch (CurrentState)
         {
             case State.Travelling:
@@ -167,7 +173,7 @@ public unsafe class TrajectoryRecorder : IDisposable
                 }
 
                 // both sources start recording at departure, so the captures align
-                if (InputFresh(mv) && InputMagnitude(mv) > cfg.RecorderDepartThreshold)
+                if (FreshMagnitude(mv, walkFresh, flyFresh) > cfg.RecorderDepartThreshold)
                 {
                     _armedToFirstInputMs = (float)(DateTime.UtcNow - _armedAt).TotalMilliseconds;
                     _recordStarted = DateTime.UtcNow;
@@ -181,27 +187,19 @@ public unsafe class TrajectoryRecorder : IDisposable
                 break;
 
             case State.Recording:
-                Sample(fwk, pos, player.Rotation, mv);
+                Sample(fwk, pos, player.Rotation, mv, walkFresh, flyFresh);
                 if (Vector3.Distance(pos, route.B) <= cfg.RecorderFinishTolerance)
                     Finish(route);
                 break;
         }
     }
 
-    // largest of the walk and fly control magnitudes, so one check covers both modes
-    private static float InputMagnitude(OverrideMovement mv) =>
-        MathF.Max(mv.LastWalkInput.Length(), mv.LastFlyInput.Length());
+    // largest magnitude across the channels that actually ran this frame; a stale channel
+    // reads as zero rather than holding its last value forever
+    private static float FreshMagnitude(OverrideMovement mv, bool walkFresh, bool flyFresh) =>
+        MathF.Max(walkFresh ? mv.LastWalkInput.Length() : 0, flyFresh ? mv.LastFlyInput.Length() : 0);
 
-    // true if a detour ran since we last looked; also advances the watermark
-    private bool InputFresh(OverrideMovement mv)
-    {
-        var seq = mv.InputSequence;
-        var fresh = seq != _prevInputSeq;
-        _prevInputSeq = seq;
-        return fresh;
-    }
-
-    private void Sample(IFramework fwk, Vector3 pos, float facing, OverrideMovement mv)
+    private void Sample(IFramework fwk, Vector3 pos, float facing, OverrideMovement mv, bool walkFresh, bool flyFresh)
     {
         var dt = (float)fwk.UpdateDelta.TotalSeconds;
         var speed = _prevPos is { } prev && dt > 0 ? Vector3.Distance(pos, prev) / dt : 0;
@@ -224,10 +222,12 @@ public unsafe class TrajectoryRecorder : IDisposable
             flags |= SampleFlags.Diving;
         if (Service.Condition[ConditionFlag.Jumping])
             flags |= SampleFlags.Jumping;
-        if (mv.LastInputOverridden)
+        if ((walkFresh && mv.LastWalkOverridden) || (flyFresh && mv.LastFlyOverridden))
             flags |= SampleFlags.Overridden;
-        if (InputFresh(mv))
-            flags |= SampleFlags.InputFresh;
+        if (walkFresh)
+            flags |= SampleFlags.WalkFresh;
+        if (flyFresh)
+            flags |= SampleFlags.FlyFresh;
 
         _samples.Add(new TrajectorySample
         {
@@ -238,9 +238,9 @@ public unsafe class TrajectoryRecorder : IDisposable
             Facing = facing,
             CamH = camH,
             CamV = camV,
-            InLeft = mv.LastWalkInput.X,
-            InFwd = mv.LastWalkInput.Y,
-            FlyUp = mv.LastFlyInput.Z,
+            InLeft = walkFresh ? mv.LastWalkInput.X : 0,
+            InFwd = walkFresh ? mv.LastWalkInput.Y : 0,
+            FlyUp = flyFresh ? mv.LastFlyInput.Z : 0,
             Speed = speed,
             Flags = flags,
         });

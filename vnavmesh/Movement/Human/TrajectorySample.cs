@@ -11,7 +11,8 @@ public enum SampleFlags
     Diving = 1 << 2,
     Jumping = 1 << 3,
     Overridden = 1 << 4, // plugin wrote the input this frame rather than passing player input through
-    InputFresh = 1 << 5, // the game asked for movement input this frame (RMI detour ran)
+    WalkFresh = 1 << 5, // the walk detour ran this frame, so inLeft/inFwd are live rather than stale
+    FlyFresh = 1 << 6, // the fly detour ran this frame, so flyUp is live rather than stale
 }
 
 // one frame of a capture; see ADR 0003

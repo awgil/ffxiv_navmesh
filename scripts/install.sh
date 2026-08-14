@@ -14,10 +14,10 @@
 #   ./scripts/install.sh --status     show what is currently installed
 #   ./scripts/install.sh --restore    put the backed up upstream build back
 #
-# Dev mode points dalamud straight at the build output and turns on hot reloading,
-# so 'dotnet build' is the entire deploy step: no copy, no game restart. The normal
-# install is moved aside while dev mode is active, because two copies would both
-# try to register the vnavmesh IPC names.
+# Dev mode sends the build output into dalamud's devPlugins directory and registers
+# it there with hot reloading, so 'dotnet build' is the entire deploy step: no copy,
+# no game restart. The normal install is moved aside while dev mode is active,
+# because two copies would both try to register the vnavmesh IPC names.
 #
 #   ./scripts/install.sh --dev        build and install as a dev plugin
 #   ./scripts/install.sh --dev-remove unregister and put the normal install back
@@ -77,7 +77,7 @@ win_path() { printf 'Z:%s' "$(printf '%s' "$1" | tr '/' '\\')"; }
 # parse rather than grep: the config stores the path json-escaped, with doubled backslashes
 dev_registered() {
     [ -f "$DALAMUD_CFG" ] || return 1
-    python3 - "$DALAMUD_CFG" "$(win_path "$BUILD_DIR/$PLUGIN.dll")" <<'DEVCHECK'
+    python3 - "$DALAMUD_CFG" "$(win_path "$DEV_DIR/$PLUGIN.dll")" <<'DEVCHECK'
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
@@ -140,11 +140,10 @@ do_status() {
 
     if dev_registered; then
         info "dev:        registered, hot reload on"
-        info "  dalamud loads: $BUILD_DIR/$PLUGIN.dll"
+        info "  dalamud loads: $DEV_DIR/$PLUGIN.dll"
     else
         info "dev:        (not registered)"
     fi
-    [ -d "$DEV_DIR" ] && info "  stale copy still at $DEV_DIR"
     [ -d "$DISABLED_DIR" ] && info "parked:     $DISABLED_DIR"
 
     info "config:     $CONFIG_DIR"
@@ -293,11 +292,26 @@ PY
 do_dev_install() {
     assert_game_stopped
 
+    # send the build output into devPlugins, matching the layout dalamud's watcher is known to
+    # pick up, so a bare 'dotnet build' both deploys and triggers a reload
+    info "pointing build output at $DEV_DIR"
+    if [ "$DRY" -eq 1 ]; then
+        printf '  would: write %s/Directory.Build.local.props\n' "$REPO_ROOT"
+    else
+        cat > "$REPO_ROOT/Directory.Build.local.props" <<XML
+<Project>
+  <PropertyGroup Condition="'\$(MSBuildProjectName)' == '$PLUGIN'">
+    <OutputPath>$DEV_DIR/</OutputPath>
+  </PropertyGroup>
+</Project>
+XML
+    fi
+
     if [ "$BUILD" -eq 1 ]; then
         info "building $CONFIG..."
         run dotnet build "$REPO_ROOT/$PLUGIN/$PLUGIN.csproj" -c "$CONFIG" -v q --nologo
     fi
-    [ -f "$BUILD_DIR/$PLUGIN.dll" ] || die "no build output at $BUILD_DIR/$PLUGIN.dll"
+    [ "$DRY" -eq 1 ] || [ -f "$DEV_DIR/$PLUGIN.dll" ] || die "build did not land in $DEV_DIR"
 
     # two copies would both register the vnavmesh IPC names, so park the normal install
     if [ -d "$PLUGINS_DIR" ]; then
@@ -310,15 +324,8 @@ do_dev_install() {
         fi
     fi
 
-    # point dalamud straight at the build output rather than at a copy, so a rebuild is the
-    # entire deploy step and there is nothing left to sync afterwards
-    if [ -d "$DEV_DIR" ]; then
-        info "dropping the old devPlugins copy, dalamud reads the build output directly now"
-        run rm -rf "$DEV_DIR"
-    fi
-
     local dll
-    dll="$(win_path "$BUILD_DIR/$PLUGIN.dll")"
+    dll="$(win_path "$DEV_DIR/$PLUGIN.dll")"
     info "dalamud path: $dll"
     if [ "$DRY" -eq 1 ]; then
         printf '  would: register %s in dalamudConfig.json with AutomaticReloading\n' "$dll"
@@ -327,22 +334,23 @@ do_dev_install() {
     fi
 
     info ""
-    info "done. start the game; the plugin loads straight from the $CONFIG build output."
-    info "from here 'dotnet build' IS the deploy - dalamud reloads it on its own."
+    info "done. start the game; the plugin loads from devPlugins."
+    info "from here 'dotnet build' writes straight there, so it is the whole deploy step."
+    info "check the build time shown in the Recorder tab to confirm a reload landed."
     info "config backed up once at $DALAMUD_CFG.bak"
 }
 
 do_dev_remove() {
     assert_game_stopped
     local dll
-    dll="$(win_path "$BUILD_DIR/$PLUGIN.dll")"
+    dll="$(win_path "$DEV_DIR/$PLUGIN.dll")"
 
     if [ "$DRY" -eq 1 ]; then
         printf '  would: unregister %s\n' "$dll"
         [ -d "$DEV_DIR" ] && printf '  would: delete the leftover copy at %s\n' "$DEV_DIR"
     else
         [ -f "$DALAMUD_CFG" ] && edit_dalamud_config remove "$dll"
-        rm -rf "$DEV_DIR"
+        rm -rf "$DEV_DIR" "$REPO_ROOT/Directory.Build.local.props"
     fi
 
     if [ -d "$DISABLED_DIR" ] && [ ! -d "$PLUGINS_DIR" ]; then

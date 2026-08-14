@@ -183,21 +183,22 @@ public class FollowPath : IDisposable
 		if (follow.Consumed > 0)
 			Waypoints.RemoveRange(0, follow.Consumed);
 
+		// aiming ahead cuts corners, which through a narrow gap means aiming into a wall. shorten the
+		// lookahead along the path until the line to it is walkable, which keeps the aim on the route:
+		// pulling it straight back toward the player instead would leave the path altogether.
 		var target = follow.Target;
-		// aiming ahead cuts corners, which on an obstacle heavy route means aiming through a wall and
-		// walking into it. pull the aim back to where the mesh actually reaches.
 		if (cfg.SteeringClampToMesh && _manager.Query is { } query)
 		{
-			var clear = query.WalkableFraction(playerPos, target);
-			if (clear < 1)
+			var lookahead = cfg.SteeringLookahead;
+			while (lookahead > cfg.SteeringMinAimDistance && query.WalkableFraction(playerPos, target) < 1)
 			{
-				var clamped = Vector3.Lerp(playerPos, target, MathF.Max(clear - 0.05f, 0));
-				// too short an aim reads as "already arrived" to the movement override, which then
-				// writes nothing and the character stands still. upstream's aim always moves.
-				target = Vector3.Distance(playerPos, clamped) >= cfg.SteeringMinAimDistance
-					? clamped
-					: Waypoints[0].Position;
+				lookahead *= 0.5f;
+				target = Human.PathSteering.Follow(Waypoints, playerPos, lookahead).Target;
 			}
+			// nothing along the path is reachable in a straight line, so give up smoothing and
+			// follow the corridor exactly, which is what upstream does and what always moves
+			if (query.WalkableFraction(playerPos, target) < 1)
+				target = Waypoints[0].Position;
 		}
 
 		var offset = target - playerPos;

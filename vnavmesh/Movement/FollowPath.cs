@@ -217,9 +217,14 @@ public class FollowPath : IDisposable
 				var away = new Vector2(wall.away.X, wall.away.Z);
 				if (away.LengthSquared() > 1e-6f)
 				{
+					var aimDir = aim / len;
+					away = Vector2.Normalize(away);
+					// only give way to a wall being closed on. pushing off whichever wall happens to be
+					// nearest makes a corridor alternate left and right and weave down the middle
+					var closing = MathF.Max(0, -Vector2.Dot(aimDir, away));
 					// nothing at the clearance edge, full push when right against it
 					var urgency = 1 - wall.dist / cfg.SteeringWallClearance;
-					var blended = aim / len + Vector2.Normalize(away) * (urgency * cfg.SteeringWallAvoidance);
+					var blended = aimDir + away * (urgency * closing * cfg.SteeringWallAvoidance);
 					if (blended.LengthSquared() > 1e-6f)
 						offset = new Vector3(blended.X * len, offset.Y, blended.Y * len);
 				}

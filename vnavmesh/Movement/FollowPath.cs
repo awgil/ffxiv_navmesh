@@ -25,6 +25,9 @@ public class FollowPath : IDisposable
 	private NavmeshManager _manager;
 	private OverrideCamera _camera = new();
 	private OverrideMovement _movement = new();
+
+	// exposed so the recorder can observe raw input without taking over movement (ADR 0003)
+	public OverrideMovement Movement => _movement;
 	private DateTime _nextJump;
 
 	private Vector3? posPreviousFrame;

@@ -22,22 +22,55 @@ public unsafe struct PlayerMoveControllerFlyInput
 
 public unsafe class OverrideMovement : IDisposable
 {
+    // whether we write our own values into the input. hooks stay installed independently, see Observing
     public bool Enabled
     {
-        get => _rmiWalkHook.IsEnabled;
+        get => _overriding;
         set
         {
-            if (value)
-            {
-                _rmiWalkHook.Enable();
-                _rmiFlyHook.Enable();
-            }
-            else
-            {
+            _overriding = value;
+            if (!value)
                 UserInput = false;
-                _rmiWalkHook.Disable();
-                _rmiFlyHook.Disable();
-            }
+            SyncHooks();
+        }
+    }
+
+    // keep the hooks installed without writing anything, so input can be observed as the player produced it (ADR 0003)
+    public bool Observing
+    {
+        get => _observing;
+        set
+        {
+            _observing = value;
+            SyncHooks();
+        }
+    }
+
+    // last values seen by the detours, after any override we applied
+    public Vector2 LastWalkInput { get; private set; }
+    public Vector3 LastFlyInput { get; private set; } // x = left, y = forward, z = up
+    public bool LastInputOverridden { get; private set; }
+
+    // incremented every time a detour runs, so observers can tell a fresh value from a stale one
+    public uint InputSequence { get; private set; }
+
+    private bool _overriding;
+    private bool _observing;
+
+    private void SyncHooks()
+    {
+        var want = _overriding || _observing;
+        if (want == _rmiWalkHook.IsEnabled)
+            return;
+        if (want)
+        {
+            _rmiWalkHook.Enable();
+            _rmiFlyHook.Enable();
+        }
+        else
+        {
+            _rmiWalkHook.Disable();
+            _rmiFlyHook.Disable();
         }
     }
 
@@ -91,26 +124,34 @@ public unsafe class OverrideMovement : IDisposable
         // TODO: we really need to introduce some extra checks that PlayerMoveController::readInput does - sometimes it skips reading input, and returning something non-zero breaks stuff...
         bool movementAllowed = bAdditiveUnk == 0 && _rmiWalkIsInputEnabled1(self) && _rmiWalkIsInputEnabled2(self); //&& !Service.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.BeingMoved];
         UserInput = *sumLeft != 0 || *sumForward != 0;
-        if (movementAllowed && (IgnoreUserInput || *sumLeft == 0 && *sumForward == 0) && DirectionToDestination(false) is var relDir && relDir != null)
+        LastInputOverridden = false;
+        if (_overriding && movementAllowed && (IgnoreUserInput || *sumLeft == 0 && *sumForward == 0) && DirectionToDestination(false) is var relDir && relDir != null)
         {
             var dir = relDir.Value.h.ToDirection();
             *sumLeft = dir.X;
             *sumForward = dir.Y;
+            LastInputOverridden = true;
         }
+        LastWalkInput = new(*sumLeft, *sumForward);
+        ++InputSequence;
     }
 
     private void RMIFlyDetour(void* self, PlayerMoveControllerFlyInput* result)
     {
         _rmiFlyHook.Original(self, result);
         UserInput = result->Forward != 0 || result->Left != 0 || result->Up != 0;
+        LastInputOverridden = false;
         // TODO: we really need to introduce some extra checks that PlayerMoveController::readInput does - sometimes it skips reading input, and returning something non-zero breaks stuff...
-        if ((IgnoreUserInput || result->Forward == 0 && result->Left == 0 && result->Up == 0) && DirectionToDestination(true) is var relDir && relDir != null)
+        if (_overriding && (IgnoreUserInput || result->Forward == 0 && result->Left == 0 && result->Up == 0) && DirectionToDestination(true) is var relDir && relDir != null)
         {
             var dir = relDir.Value.h.ToDirection();
             result->Forward = dir.Y;
             result->Left = dir.X;
             result->Up = relDir.Value.v.Rad;
+            LastInputOverridden = true;
         }
+        LastFlyInput = new(result->Left, result->Forward, result->Up);
+        ++InputSequence;
     }
 
     private (Angle h, Angle v)? DirectionToDestination(bool allowVertical)

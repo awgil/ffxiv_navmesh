@@ -34,8 +34,10 @@ public class RecorderTab
     {
         try
         {
-            var path = System.Reflection.Assembly.GetExecutingAssembly().Location;
-            return path.Length > 0 ? System.IO.File.GetLastWriteTime(path).ToString("HH:mm:ss") : "unknown";
+            // Assembly.Location is empty here: dalamud loads plugins from bytes rather than from the
+            // file, so the path has to come from dalamud itself
+            var dll = Service.PluginInterface.AssemblyLocation;
+            return dll.Exists ? dll.LastWriteTime.ToString("HH:mm:ss") : "unknown";
         }
         catch
         {

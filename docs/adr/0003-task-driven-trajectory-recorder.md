@@ -37,6 +37,12 @@ A capture session runs a four-state machine:
    human captures that is the player pressing a key; for agent captures the plugin issues
    a move to B and recording begins when the resulting input appears. Recording therefore
    starts at the moment of departure in both cases, not at some arbitrary earlier instant.
+
+   Departure is a release-then-press edge, not merely a non-zero reading. Arriving at A
+   leaves the travelling phase's full-throttle value sitting in the input channel, so the
+   recorder waits to observe a genuine idle frame before it will accept a press. A player
+   still holding a movement key on arrival therefore has to release it first, which the
+   armed prompt says.
 4. **Finished.** On reaching B within tolerance the capture is written to disk. Timeout
    and manual abort discard it.
 

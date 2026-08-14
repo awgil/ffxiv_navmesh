@@ -52,6 +52,7 @@ public unsafe class TrajectoryRecorder : IDisposable
     private bool _agentMoveIssued;
     private uint _prevWalkSeq;
     private uint _prevFlySeq;
+    private bool _sawIdle; // seen genuine zero input while armed, so the next press is a real departure
 
     public TrajectoryRecorder(AsyncMoveRequest move, FollowPath follow, string configDir)
     {
@@ -152,9 +153,10 @@ public unsafe class TrajectoryRecorder : IDisposable
                 {
                     _follow.Stop();
                     _armedAt = DateTime.UtcNow;
+                    _sawIdle = false;
                     Enter(State.Armed);
                     Status = CurrentSource == Source.Human
-                        ? "at A - walk to B when ready"
+                        ? "at A - release keys, then walk to B"
                         : "at A - dispatching agent";
                 }
                 else if (!_move.TaskInProgress && _follow.Waypoints.Count == 0)
@@ -172,8 +174,18 @@ public unsafe class TrajectoryRecorder : IDisposable
                     _agentMoveIssued = true;
                 }
 
+                // arriving at A leaves the travelling phase's full throttle value sitting in the
+                // channel, so wait for a genuine idle before treating a press as departure
+                var armedMag = FreshMagnitude(mv, walkFresh, flyFresh);
+                if (!_sawIdle)
+                {
+                    if ((walkFresh || flyFresh) && armedMag <= cfg.RecorderDepartThreshold)
+                        _sawIdle = true;
+                    break;
+                }
+
                 // both sources start recording at departure, so the captures align
-                if (FreshMagnitude(mv, walkFresh, flyFresh) > cfg.RecorderDepartThreshold)
+                if (armedMag > cfg.RecorderDepartThreshold)
                 {
                     _armedToFirstInputMs = (float)(DateTime.UtcNow - _armedAt).TotalMilliseconds;
                     _recordStarted = DateTime.UtcNow;
@@ -182,7 +194,7 @@ public unsafe class TrajectoryRecorder : IDisposable
                     _prevPos = null;
                     Enter(State.Recording);
                     Status = "recording";
-                    goto case State.Recording;
+                    Sample(fwk, pos, player.Rotation, mv, walkFresh, flyFresh);
                 }
                 break;
 

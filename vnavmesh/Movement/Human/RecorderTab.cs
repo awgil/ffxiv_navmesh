@@ -35,8 +35,9 @@ public class RecorderTab
         try
         {
             // Assembly.Location is empty here: dalamud loads plugins from bytes rather than from the
-            // file, so the path has to come from dalamud itself
-            var dll = Service.PluginInterface.AssemblyLocation;
+            // file, so the path has to come from dalamud itself. re-stat rather than reading the
+            // FileInfo it hands over, which cached its timestamp when the plugin was discovered.
+            var dll = new System.IO.FileInfo(Service.PluginInterface.AssemblyLocation.FullName);
             return dll.Exists ? dll.LastWriteTime.ToString("HH:mm:ss") : "unknown";
         }
         catch

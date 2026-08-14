@@ -34,6 +34,7 @@ public unsafe class TrajectoryRecorder : IDisposable
     public Source CurrentSource { get; private set; }
     public Route? CurrentRoute { get; private set; }
     public string Status { get; private set; } = "idle";
+    public int BatchRemaining { get; private set; }
     public int SampleCount => _samples.Count;
     public string CaptureDir => _captureDir;
 
@@ -54,6 +55,8 @@ public unsafe class TrajectoryRecorder : IDisposable
     private uint _prevWalkSeq;
     private uint _prevFlySeq;
     private bool _sawIdle; // seen genuine zero input while armed, so the next press is a real departure
+    private Route? _batchRoute;
+    private Source _batchSource;
 
     public TrajectoryRecorder(AsyncMoveRequest move, FollowPath follow, NavmeshManager manager, string configDir)
     {
@@ -80,7 +83,17 @@ public unsafe class TrajectoryRecorder : IDisposable
 
     public void Dispose() => Cancel("plugin unloading");
 
-    public void Begin(Route route, Source source)
+    // repeats is the total number of captures to take, since one run per click is not enough to
+    // separate a change from run to run variance
+    public void Begin(Route route, Source source, int repeats = 1)
+    {
+        _batchRoute = route;
+        _batchSource = source;
+        BatchRemaining = Math.Max(0, repeats - 1);
+        BeginOne(route, source);
+    }
+
+    private void BeginOne(Route route, Source source)
     {
         if (CurrentState != State.Idle)
         {
@@ -135,6 +148,8 @@ public unsafe class TrajectoryRecorder : IDisposable
             return;
 
         Service.Log.Info($"[recorder] cancelled: {reason}");
+        BatchRemaining = 0;
+        _batchRoute = null;
         _follow.Stop();
         _follow.Movement.Observing = false;
         _samples.Clear();
@@ -310,6 +325,13 @@ public unsafe class TrajectoryRecorder : IDisposable
         _samples.Clear();
         CurrentRoute = null;
         Enter(State.Idle);
+
+        if (BatchRemaining > 0 && _batchRoute is { } next)
+        {
+            --BatchRemaining;
+            Service.Log.Info($"[recorder] batch: {BatchRemaining + 1} run(s) left");
+            BeginOne(next, _batchSource);
+        }
     }
 
     private string? Write(Route route)

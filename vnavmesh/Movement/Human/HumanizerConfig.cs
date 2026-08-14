@@ -1,4 +1,4 @@
-namespace Navmesh.Movement.Human;
+﻿namespace Navmesh.Movement.Human;
 
 // all fork-added settings live here, hung off Config as a single field; see ADR 0002
 // everything defaults to upstream behaviour
@@ -16,6 +16,8 @@ public class HumanizerConfig
     public float RecorderDepartThreshold = 0.05f;
     // draw the active route's A and B in the world
     public bool RecorderDrawRoute = true;
+    // how many captures one click takes; repeats are what separate a change from run to run spread
+    public int RecorderRepeats = 3;
 
     // --- steering (ADR 0005, ADR 0006) ---
 

@@ -54,7 +54,8 @@ public class RecorderTab
         ImGui.TextDisabled($"loaded build: {_buildStamp}");
         ImGui.Separator();
 
-        ImGui.TextUnformatted($"State: {_recorder.CurrentState}  |  {_recorder.Status}");
+        var batch = _recorder.BatchRemaining > 0 ? $"  |  {_recorder.BatchRemaining} more queued" : "";
+        ImGui.TextUnformatted($"State: {_recorder.CurrentState}  |  {_recorder.Status}{batch}");
         if (_recorder.CurrentState == TrajectoryRecorder.State.Recording)
             ImGui.TextUnformatted($"Samples: {_recorder.SampleCount}");
         if (_recorder.CurrentState != TrajectoryRecorder.State.Idle && ImGui.Button("Cancel capture"))
@@ -73,6 +74,9 @@ public class RecorderTab
         DrawRouteList(territory);
 
         ImGui.Separator();
+        ImGui.SetNextItemWidth(120);
+        if (ImGui.SliderInt("Runs per click", ref Service.Config.Humanizer.RecorderRepeats, 1, 10))
+            Service.Config.NotifyModified();
         ImGui.TextDisabled($"Captures: {_recorder.CaptureDir}");
         if (ImGui.Checkbox("Draw active route in world", ref Service.Config.Humanizer.RecorderDrawRoute))
             Service.Config.NotifyModified();
@@ -169,13 +173,14 @@ public class RecorderTab
 
             using var _ = ImRaii.PushIndent();
 
+            var repeats = Math.Max(1, Service.Config.Humanizer.RecorderRepeats);
             using (ImRaii.Disabled(!idle))
             {
-                if (ImGui.Button("Record human"))
-                    _recorder.Begin(route, TrajectoryRecorder.Source.Human);
+                if (ImGui.Button($"Record human x{repeats}"))
+                    _recorder.Begin(route, TrajectoryRecorder.Source.Human, repeats);
                 ImGui.SameLine();
-                if (ImGui.Button("Record agent"))
-                    _recorder.Begin(route, TrajectoryRecorder.Source.Agent);
+                if (ImGui.Button($"Record agent x{repeats}"))
+                    _recorder.Begin(route, TrajectoryRecorder.Source.Agent, repeats);
             }
 
             ImGui.SameLine();

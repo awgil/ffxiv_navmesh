@@ -27,10 +27,29 @@ public class RecorderTab
         _dd = dd;
     }
 
+    // build time of the loaded assembly, so it is obvious whether a rebuild has actually been picked up
+    private static readonly string _buildStamp = BuildStamp();
+
+    private static string BuildStamp()
+    {
+        try
+        {
+            var path = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            return path.Length > 0 ? System.IO.File.GetLastWriteTime(path).ToString("HH:mm:ss") : "unknown";
+        }
+        catch
+        {
+            return "unknown";
+        }
+    }
+
     public void Draw()
     {
         var territory = Service.ClientState.TerritoryType;
         var player = Service.ObjectTable.LocalPlayer;
+
+        ImGui.TextDisabled($"loaded build: {_buildStamp}");
+        ImGui.Separator();
 
         ImGui.TextUnformatted($"State: {_recorder.CurrentState}  |  {_recorder.Status}");
         if (_recorder.CurrentState == TrajectoryRecorder.State.Recording)

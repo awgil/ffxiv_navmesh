@@ -14,3 +14,4 @@ Status values: `Proposed`, `Accepted`, `Superseded by NNNN`, `Rejected`.
 | [0003](0003-task-driven-trajectory-recorder.md) | Task-driven trajectory recorder | Accepted |
 | [0004](0004-analog-movement-magnitude.md) | Analog movement magnitude as the control signal | Superseded by 0005 |
 | [0005](0005-imitate-keyboard-input.md) | Imitate keyboard input | Accepted |
+| [0006](0006-three-arm-evaluation.md) | Three-arm evaluation | Accepted |

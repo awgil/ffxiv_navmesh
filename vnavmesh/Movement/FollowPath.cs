@@ -33,6 +33,11 @@ public class FollowPath : IDisposable
 	private Vector3? posPreviousFrame;
 	private Angle? _steerHeading; // commanded heading, carried between frames so it can be rate limited
 
+	// last steering decision, recorded per frame so a capture can show what the controller actually did
+	public bool SteerRan { get; private set; }
+	public bool SteerRecovering { get; private set; }
+	public Angle SteerCommanded { get; private set; }
+
 	private int _millisecondsWithNoSignificantMovement = 0;
 
 	public event Action<Vector3, bool, float>? OnStuck;
@@ -168,6 +173,8 @@ public class FollowPath : IDisposable
 	private Vector3 SteeringTarget(Vector3 playerPos, float dt)
 	{
 		var cfg = Service.Config.Humanizer;
+		SteerRan = false;
+		SteerRecovering = false;
 		if (!cfg.SteeringEnabled)
 			return Waypoints[0].Position;
 
@@ -192,6 +199,9 @@ public class FollowPath : IDisposable
 		_steerHeading = _steerHeading is { } cur
 			? Human.PathSteering.SlewHeading(cur, desired, rate, dt)
 			: desired;
+		SteerRan = true;
+		SteerRecovering = recovering;
+		SteerCommanded = _steerHeading.Value;
 
 		// keep the aim point at the same planar distance, so arrival and the fly transition are unaffected
 		var planar = new Vector2(offset.X, offset.Z).Length();

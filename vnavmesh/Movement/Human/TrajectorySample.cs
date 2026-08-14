@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace Navmesh.Movement.Human;
 
@@ -13,6 +13,8 @@ public enum SampleFlags
     Overridden = 1 << 4, // plugin wrote the input this frame rather than passing player input through
     WalkFresh = 1 << 5, // the walk detour ran this frame, so inLeft/inFwd are live rather than stale
     FlyFresh = 1 << 6, // the fly detour ran this frame, so flyUp is live rather than stale
+    SteerRan = 1 << 7, // humanized steering computed a heading this frame
+    SteerRecovering = 1 << 8, // steering was on its raised ceiling rather than the normal one
 }
 
 // one frame of a capture; see ADR 0003
@@ -31,6 +33,7 @@ public struct TrajectorySample
         "flyUp",    // raw fly input, vertical component
         "speed",    // world-space speed derived from position delta, yalms/second
         "flags",    // SampleFlags bitmask
+        "steerCmd", // heading humanized steering commanded, radians; 0 when it did not run
     ];
 
     public float T;
@@ -41,6 +44,7 @@ public struct TrajectorySample
     public float FlyUp;
     public float Speed;
     public SampleFlags Flags;
+    public float SteerCmd;
 
     public readonly void Write(Span<float> dest)
     {
@@ -56,5 +60,6 @@ public struct TrajectorySample
         dest[9] = FlyUp;
         dest[10] = Speed;
         dest[11] = (float)Flags;
+        dest[12] = SteerCmd;
     }
 }

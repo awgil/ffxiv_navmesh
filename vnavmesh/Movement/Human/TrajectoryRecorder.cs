@@ -28,7 +28,7 @@ public unsafe class TrajectoryRecorder : IDisposable
         Agent,
     }
 
-    public const int SchemaVersion = 3;
+    public const int SchemaVersion = 4;
 
     public State CurrentState { get; private set; } = State.Idle;
     public Source CurrentSource { get; private set; }
@@ -277,6 +277,10 @@ public unsafe class TrajectoryRecorder : IDisposable
             flags |= SampleFlags.WalkFresh;
         if (flyFresh)
             flags |= SampleFlags.FlyFresh;
+        if (_follow.SteerRan)
+            flags |= SampleFlags.SteerRan;
+        if (_follow.SteerRecovering)
+            flags |= SampleFlags.SteerRecovering;
 
         _samples.Add(new TrajectorySample
         {
@@ -292,6 +296,7 @@ public unsafe class TrajectoryRecorder : IDisposable
             FlyUp = flyFresh ? mv.LastFlyInput.Z : 0,
             Speed = speed,
             Flags = flags,
+            SteerCmd = _follow.SteerRan ? _follow.SteerCommanded.Rad : 0,
         });
     }
 

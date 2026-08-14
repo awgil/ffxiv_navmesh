@@ -32,6 +32,7 @@ public class FollowPath : IDisposable
 
 	private Vector3? posPreviousFrame;
 	private Angle? _steerHeading; // commanded heading, carried between frames so it can be rate limited
+	private Vector2 _avoidSmoothed; // wall drift, averaged over time so a corridor does not make it weave
 
 	// last steering decision, recorded per frame so a capture can show what the controller actually did
 	public bool SteerRan { get; private set; }
@@ -201,15 +202,21 @@ public class FollowPath : IDisposable
 				lookahead *= 0.5f;
 				target = Human.PathSteering.Follow(Waypoints, playerPos, lookahead).Target;
 			}
-			// nothing along the path is reachable in a straight line, so give up smoothing and
-			// follow the corridor exactly, which is what upstream does and what always moves
+			// nothing along the path is reachable in a straight line, so follow the corridor closely.
+			// keep it a short step along the path rather than the next waypoint, which can sit far away
+			// in another direction and makes the aim jump between wildly different distances
 			if (query.WalkableFraction(playerPos, target) < 1)
-				target = Waypoints[0].Position;
+				target = Human.PathSteering.Follow(Waypoints, playerPos, cfg.SteeringMinAimDistance).Target;
 		}
 
 		var offset = target - playerPos;
 		if (new Vector2(offset.X, offset.Z).LengthSquared() < 1e-6f)
 			return follow.Target;
+
+		// let the drift fade rather than vanish when the wall drops out of range
+		if (_manager.Query is null || cfg.SteeringWallAvoidance <= 0
+			|| _manager.Query.NearestWall(playerPos, cfg.SteeringWallClearance) is null)
+			_avoidSmoothed *= MathF.Exp(-dt / MathF.Max(0.05f, cfg.SteeringWallSmoothing));
 
 		// blend in a drift away from nearby geometry, so obstacles are given way to while still at a
 		// distance instead of on contact
@@ -225,15 +232,18 @@ public class FollowPath : IDisposable
 				{
 					var aimDir = aim / len;
 					away = Vector2.Normalize(away);
-					// only give way to a wall being closed on. pushing off whichever wall happens to be
-					// nearest makes a corridor alternate left and right and weave down the middle
-					var closing = MathF.Max(0, -Vector2.Dot(aimDir, away));
 					// nothing at the clearance edge, full push when right against it
 					var urgency = 1 - wall.dist / cfg.SteeringWallClearance;
-					var push = urgency * closing * cfg.SteeringWallAvoidance;
+					var raw = away * (urgency * cfg.SteeringWallAvoidance);
+					// average over time: the two sides of a corridor cancel and it runs down the middle,
+					// where reacting to whichever edge is nearest right now makes it weave between them
+					var alpha = cfg.SteeringWallSmoothing > 0
+						? 1 - MathF.Exp(-dt / cfg.SteeringWallSmoothing)
+						: 1;
+					_avoidSmoothed += (raw - _avoidSmoothed) * alpha;
 					SteerWallDist = wall.dist;
-					SteerWallPush = push;
-					var blended = aimDir + away * push;
+					SteerWallPush = _avoidSmoothed.Length();
+					var blended = aimDir + _avoidSmoothed;
 					if (blended.LengthSquared() > 1e-6f)
 						offset = new Vector3(blended.X * len, offset.Y, blended.Y * len);
 				}
@@ -304,6 +314,7 @@ public class FollowPath : IDisposable
 	{
 		UpdateSharedState(false);
 		_steerHeading = null;
+		_avoidSmoothed = default;
 		_millisecondsWithNoSignificantMovement = 0;
 		Waypoints.Clear();
 	}
@@ -325,6 +336,7 @@ public class FollowPath : IDisposable
 	{
 		UpdateSharedState(true);
 		_steerHeading = null;
+		_avoidSmoothed = default;
 		Waypoints = waypoints;
 		IgnoreDeltaY = ignoreDeltaY;
 		DestinationTolerance = destTolerance;

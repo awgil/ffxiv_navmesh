@@ -117,6 +117,12 @@ public class RecorderTab
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("How hard the drift pulls. Too high and it hugs open ground and will not enter doorways.");
 
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Wall smoothing (s)", ref cfg.SteeringWallSmoothing, 0f, 1.5f, "%.2f"))
+            Service.Config.NotifyModified();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Seconds the drift is averaged over. Higher settles it down; 0 reacts to whichever edge is nearest right now, which weaves in a corridor.");
+
         if (ImGui.Checkbox("Clamp aim point to the mesh", ref cfg.SteeringClampToMesh))
             Service.Config.NotifyModified();
         if (ImGui.IsItemHovered())

@@ -46,4 +46,8 @@ public class HumanizerConfig
     // how hard that drift pulls, relative to the aim direction. too high and it hugs open ground and
     // refuses to enter doorways
     public float SteeringWallAvoidance = 0.6f;
+    // seconds over which the drift is averaged. gating it by whether the wall is being closed on
+    // stopped it helping at all, because the path runs along mesh edges and travel is mostly
+    // parallel to them; averaging instead lets a corridor's two sides cancel to centre it
+    public float SteeringWallSmoothing = 0.35f;
 }

@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <!--
+    The sources under test are compiled in rather than referenced. The plugin assembly is built x64
+    only (the Dalamud SDK forces it) so it cannot be loaded by a test host on another architecture,
+    and it needs Dalamud itself at runtime besides. Compiling in keeps the tests runnable anywhere,
+    at the cost of listing the files; that list doubles as a statement of which code is pure enough
+    to test outside the game.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\vnavmesh\Extensions.cs" />
+    <Compile Include="..\..\vnavmesh\NavVolume\VoxelMap.cs" />
+    <Compile Include="..\..\vnavmesh\NavVolume\Voxelizer.cs" />
+    <Compile Include="..\..\vnavmesh\NavVolume\VoxelSearch.cs" />
+    <Compile Include="..\..\vnavmesh\NavVolume\VoxelStringPull.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\DotRecast\src\DotRecast.Core\DotRecast.Core.csproj" />
+  </ItemGroup>
+</Project>

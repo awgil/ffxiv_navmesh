@@ -223,7 +223,13 @@ public class NavmeshQuery
 		}
 		Service.Log.Debug($"Pathfind took {timer.Value().TotalSeconds:f3}s: {string.Join(", ", voxelPath.Select(r => $"{r.p} {r.voxel:X}"))}");
 
-		// TODO: string-pulling support
+		if (useStringPulling)
+		{
+			var straightened = VoxelStringPull.Simplify(VolumeQuery.Volume, voxelPath);
+			Service.Log.Debug($"String pulling took {timer.Value().TotalSeconds:f3}s total: {voxelPath.Count} -> {straightened.Count} points");
+			voxelPath = straightened;
+		}
+
 		var res = voxelPath.Select(r => new Waypoint(r.p)).ToList();
 		res.Add(new(to));
 		return res;

@@ -184,7 +184,12 @@ public class FollowPath : IDisposable
 		SteerWallPush = 0;
 		SteerAimDist = 0;
 		SteerWaypointsLeft = 0;
-		if (!cfg.SteeringEnabled)
+		// walking only. everything below leans on navmesh queries, and on a flying path those report
+		// the ground somewhere underneath rather than the air being flown through, so the clamp
+		// shortens the aim for walls that are not in the way and the drift pushes away from geometry
+		// that is not there. IgnoreDeltaY is set from !fly, so it is the path type, not the current
+		// state, and steering cannot flicker on and off as the character takes off and lands.
+		if (!cfg.SteeringEnabled || !IgnoreDeltaY)
 			return Waypoints[0].Position;
 
 		var follow = Human.PathSteering.Follow(Waypoints, playerPos, cfg.SteeringLookahead);

@@ -34,6 +34,9 @@ public struct TrajectorySample
         "speed",    // world-space speed derived from position delta, yalms/second
         "flags",    // SampleFlags bitmask
         "steerCmd", // heading humanized steering commanded, radians; 0 when it did not run
+        "wallDist", // distance to nearest mesh edge, yalms; -1 when none within clearance
+        "wallPush", // applied wall avoidance weight; 0 when it did not fire
+        "aimDist",  // how far ahead steering ended up aiming, yalms
     ];
 
     public float T;
@@ -45,6 +48,9 @@ public struct TrajectorySample
     public float Speed;
     public SampleFlags Flags;
     public float SteerCmd;
+    public float WallDist;
+    public float WallPush;
+    public float AimDist;
 
     public readonly void Write(Span<float> dest)
     {
@@ -61,5 +67,8 @@ public struct TrajectorySample
         dest[10] = Speed;
         dest[11] = (float)Flags;
         dest[12] = SteerCmd;
+        dest[13] = WallDist;
+        dest[14] = WallPush;
+        dest[15] = AimDist;
     }
 }

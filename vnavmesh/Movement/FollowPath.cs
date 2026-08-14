@@ -37,6 +37,9 @@ public class FollowPath : IDisposable
 	public bool SteerRan { get; private set; }
 	public bool SteerRecovering { get; private set; }
 	public Angle SteerCommanded { get; private set; }
+	public float SteerWallDist { get; private set; } = -1; // -1 when nothing is within clearance
+	public float SteerWallPush { get; private set; }       // applied avoidance weight, 0 when it did not fire
+	public float SteerAimDist { get; private set; }        // how far ahead it ended up aiming
 
 	private int _millisecondsWithNoSignificantMovement = 0;
 
@@ -175,6 +178,9 @@ public class FollowPath : IDisposable
 		var cfg = Service.Config.Humanizer;
 		SteerRan = false;
 		SteerRecovering = false;
+		SteerWallDist = -1;
+		SteerWallPush = 0;
+		SteerAimDist = 0;
 		if (!cfg.SteeringEnabled)
 			return Waypoints[0].Position;
 
@@ -224,7 +230,10 @@ public class FollowPath : IDisposable
 					var closing = MathF.Max(0, -Vector2.Dot(aimDir, away));
 					// nothing at the clearance edge, full push when right against it
 					var urgency = 1 - wall.dist / cfg.SteeringWallClearance;
-					var blended = aimDir + away * (urgency * closing * cfg.SteeringWallAvoidance);
+					var push = urgency * closing * cfg.SteeringWallAvoidance;
+					SteerWallDist = wall.dist;
+					SteerWallPush = push;
+					var blended = aimDir + away * push;
 					if (blended.LengthSquared() > 1e-6f)
 						offset = new Vector3(blended.X * len, offset.Y, blended.Y * len);
 				}
@@ -246,6 +255,7 @@ public class FollowPath : IDisposable
 		SteerRan = true;
 		SteerRecovering = recovering;
 		SteerCommanded = _steerHeading.Value;
+		SteerAimDist = new Vector2(offset.X, offset.Z).Length();
 
 		// keep the aim point at the same planar distance, so arrival and the fly transition are unaffected
 		var planar = new Vector2(offset.X, offset.Z).Length();

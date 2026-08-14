@@ -4,6 +4,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Navmesh.Movement;
+using Navmesh.Movement.Human;
 using System;
 using System.IO;
 using System.Numerics;
@@ -18,6 +19,8 @@ public sealed class Plugin : IDalamudPlugin
     private FollowPath _followPath;
     private AsyncMoveRequest _asyncMove;
     private DTRProvider _dtrProvider;
+    private RouteBook _routeBook;
+    private TrajectoryRecorder _recorder;
     private MainWindow _wndMain;
     private IPCProvider _ipcProvider;
 
@@ -41,7 +44,9 @@ public sealed class Plugin : IDalamudPlugin
         _followPath = new(dalamud, _navmeshManager);
         _asyncMove = new(_navmeshManager, _followPath);
         _dtrProvider = new(_navmeshManager, _asyncMove, _followPath);
-        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider, dalamud.ConfigDirectory.FullName) { IsOpen = dalamud.IsDev };
+        _routeBook = new(dalamud.ConfigDirectory.FullName);
+        _recorder = new(_asyncMove, _followPath, dalamud.ConfigDirectory.FullName);
+        _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider, _recorder, _routeBook, dalamud.ConfigDirectory.FullName) { IsOpen = dalamud.IsDev };
         _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain, _dtrProvider);
 
         WindowSystem.AddWindow(_wndMain);
@@ -91,6 +96,7 @@ public sealed class Plugin : IDalamudPlugin
 
         _ipcProvider.Dispose();
         _wndMain.Dispose();
+        _recorder.Dispose();
         _dtrProvider.Dispose();
         _asyncMove.Dispose();
         _followPath.Dispose();
@@ -115,6 +121,7 @@ public sealed class Plugin : IDalamudPlugin
         _followPath.Update(fwk);
         _asyncMove.Update();
         _dtrProvider.Update();
+        _recorder.Update(fwk);
     }
 
     private void Draw()

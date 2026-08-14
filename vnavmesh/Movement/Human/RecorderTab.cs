@@ -1,0 +1,154 @@
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
+using Navmesh.Debug;
+using System;
+using System.Linq;
+using System.Numerics;
+
+namespace Navmesh.Movement.Human;
+
+// UI for authoring routes and running captures; see ADR 0003
+public class RecorderTab
+{
+    private readonly TrajectoryRecorder _recorder;
+    private readonly RouteBook _routes;
+    private readonly DebugDrawer _dd;
+
+    private Vector3? _pendingA;
+    private Vector3? _pendingB;
+    private bool _pendingFly;
+    private string _pendingNotes = "";
+    private Route? _selected;
+
+    public RecorderTab(TrajectoryRecorder recorder, RouteBook routes, DebugDrawer dd)
+    {
+        _recorder = recorder;
+        _routes = routes;
+        _dd = dd;
+    }
+
+    public void Draw()
+    {
+        var territory = Service.ClientState.TerritoryType;
+        var player = Service.ObjectTable.LocalPlayer;
+
+        ImGui.TextUnformatted($"State: {_recorder.CurrentState}  |  {_recorder.Status}");
+        if (_recorder.CurrentState == TrajectoryRecorder.State.Recording)
+            ImGui.TextUnformatted($"Samples: {_recorder.SampleCount}");
+        if (_recorder.CurrentState != TrajectoryRecorder.State.Idle && ImGui.Button("Cancel capture"))
+            _recorder.Cancel("user request");
+
+        ImGui.Separator();
+
+        DrawAuthoring(territory, player?.Position);
+
+        ImGui.Separator();
+
+        DrawRouteList(territory);
+
+        ImGui.Separator();
+        ImGui.TextDisabled($"Captures: {_recorder.CaptureDir}");
+        if (ImGui.Checkbox("Draw active route in world", ref Service.Config.Humanizer.RecorderDrawRoute))
+            Service.Config.NotifyModified();
+    }
+
+    private void DrawAuthoring(uint territory, Vector3? pos)
+    {
+        if (!ImGui.CollapsingHeader("New route"))
+            return;
+
+        using var _ = ImRaii.PushIndent();
+
+        if (pos is not { } here)
+        {
+            ImGui.TextDisabled("no player");
+            return;
+        }
+
+        if (ImGui.Button("Set A here"))
+            _pendingA = here;
+        ImGui.SameLine();
+        ImGui.TextUnformatted(_pendingA is { } a ? $"A = {a:f2}" : "A = unset");
+
+        if (ImGui.Button("Set B here"))
+            _pendingB = here;
+        ImGui.SameLine();
+        ImGui.TextUnformatted(_pendingB is { } b ? $"B = {b:f2}" : "B = unset");
+
+        ImGui.Checkbox("Flying route", ref _pendingFly);
+        ImGui.InputText("Notes", ref _pendingNotes, 256);
+
+        using (ImRaii.Disabled(_pendingA == null || _pendingB == null))
+        {
+            if (ImGui.Button("Add route"))
+            {
+                _routes.Add(new Route
+                {
+                    Id = _routes.SuggestId(territory),
+                    Territory = territory,
+                    A = _pendingA!.Value,
+                    B = _pendingB!.Value,
+                    Fly = _pendingFly,
+                    Notes = _pendingNotes,
+                });
+                _pendingA = _pendingB = null;
+                _pendingNotes = "";
+            }
+        }
+    }
+
+    private void DrawRouteList(uint territory)
+    {
+        var here = _routes.ForTerritory(territory).ToList();
+        ImGui.TextUnformatted($"Routes in territory {territory}: {here.Count}");
+
+        var idle = _recorder.CurrentState == TrajectoryRecorder.State.Idle;
+
+        foreach (var route in here)
+        {
+            using var id = ImRaii.PushId(route.Id);
+
+            if (ImGui.Selectable($"{route.Id}  ({route.Length:f0}y{(route.Fly ? ", fly" : "")})", _selected == route))
+                _selected = route;
+
+            using var _ = ImRaii.PushIndent();
+
+            using (ImRaii.Disabled(!idle))
+            {
+                if (ImGui.Button("Record human"))
+                    _recorder.Begin(route, TrajectoryRecorder.Source.Human);
+                ImGui.SameLine();
+                if (ImGui.Button("Record agent"))
+                    _recorder.Begin(route, TrajectoryRecorder.Source.Agent);
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Delete"))
+            {
+                _routes.Remove(route);
+                if (_selected == route)
+                    _selected = null;
+                break;
+            }
+
+            if (route.Notes.Length > 0)
+                ImGui.TextDisabled(route.Notes);
+        }
+    }
+
+    // called from MainWindow.EndFrame, where the drawer is between StartFrame/EndFrame
+    public void DrawWorld()
+    {
+        if (!Service.Config.Humanizer.RecorderDrawRoute)
+            return;
+
+        var route = _recorder.CurrentRoute ?? _selected;
+        if (route == null || route.Territory != Service.ClientState.TerritoryType)
+            return;
+
+        // A green, B magenta, with a hint line between them
+        _dd.DrawWorldSphere(route.A, 1.0f, 0xff00ff00);
+        _dd.DrawWorldSphere(route.B, 1.0f, 0xffff00ff);
+        _dd.DrawWorldLine(route.A, route.B, 0x40ffffff);
+    }
+}

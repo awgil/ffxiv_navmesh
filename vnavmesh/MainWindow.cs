@@ -2,6 +2,7 @@
 using Dalamud.Interface.Windowing;
 using Navmesh.Debug;
 using Navmesh.Movement;
+using Navmesh.Movement.Human;
 using System;
 
 namespace Navmesh;
@@ -14,9 +15,10 @@ public class MainWindow : Window, IDisposable
 	private DebugNavmeshManager _debugNavmeshManager;
 	private DebugNavmeshCustom _debugNavmeshCustom;
 	private DebugLayout _debugLayout;
+	private RecorderTab _recorderTab;
 	private string _configDirectory;
 
-	public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, string configDir) : base("Navmesh")
+	public MainWindow(NavmeshManager manager, FollowPath path, AsyncMoveRequest move, DTRProvider dtr, TrajectoryRecorder recorder, RouteBook routes, string configDir) : base("Navmesh")
 	{
 		_path = path;
 		_configDirectory = configDir;
@@ -24,6 +26,7 @@ public class MainWindow : Window, IDisposable
 		_debugNavmeshManager = new(_dd, _debugGameColl, manager, path, move, dtr);
 		_debugNavmeshCustom = new(_dd, _debugGameColl, manager, _configDirectory);
 		_debugLayout = new(_dd, _debugGameColl);
+		_recorderTab = new(recorder, routes, _dd);
 	}
 
 	public void Dispose()
@@ -43,6 +46,7 @@ public class MainWindow : Window, IDisposable
 	public void EndFrame()
 	{
 		_debugGameColl.DrawVisualizers();
+		_recorderTab.DrawWorld();
 		if (Service.Config.ShowWaypoints)
 		{
 			var player = Service.ObjectTable.LocalPlayer;
@@ -83,6 +87,9 @@ public class MainWindow : Window, IDisposable
 				using (var tab = ImRaii.TabItem("Navmesh custom"))
 					if (tab)
 						_debugNavmeshCustom.Draw();
+				using (var tab = ImRaii.TabItem("Recorder"))
+					if (tab)
+						_recorderTab.Draw();
 			}
 		}
 	}

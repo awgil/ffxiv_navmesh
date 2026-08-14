@@ -226,13 +226,29 @@ public unsafe class TrajectoryRecorder : IDisposable
                     _agentMoveIssued = true;
                 }
 
-                // arriving at A leaves the travelling phase's full throttle value sitting in the
-                // channel, so wait for a genuine idle before treating a press as departure
                 var armedMag = FreshMagnitude(mv, walkFresh, flyFresh);
-                if (!_sawIdle)
+                if (CurrentSource == Source.Agent)
                 {
+                    // the agent's departure is unambiguous: it is when the path we just asked for
+                    // starts driving. requiring a release first, as a human needs, could miss the
+                    // idle frame entirely and then sit here while the agent ran the whole route.
+                    if (!_agentMoveIssued || _follow.Waypoints.Count == 0)
+                        break;
+                }
+                else if (!_sawIdle)
+                {
+                    // a player may still be holding a key on arrival, and the travelling phase leaves
+                    // its full throttle value in the channel, so wait for a genuine release first
                     if ((walkFresh || flyFresh) && armedMag <= cfg.RecorderDepartThreshold)
                         _sawIdle = true;
+                    break;
+                }
+
+                // whatever the cause, drifting away from A while still armed means departure was
+                // missed and whatever we would record now is not the run that was asked for
+                if (Vector3.Distance(pos, route.A) > cfg.RecorderArriveTolerance * 4)
+                {
+                    Cancel($"left A while still armed, {Vector3.Distance(pos, route.A):f0}y away - departure was missed");
                     break;
                 }
 
@@ -321,6 +337,20 @@ public unsafe class TrajectoryRecorder : IDisposable
 
     private void Finish(Route route)
     {
+        // a capture this short is not the run, it is a departure that was detected far too late
+        if (_samples.Count < 30)
+        {
+            Service.Log.Warning($"[recorder] discarding {_samples.Count} sample capture, too short to be the run");
+            _follow.Stop();
+            _follow.Movement.Observing = false;
+            Status = $"discarded: only {_samples.Count} samples";
+            _samples.Clear();
+            CurrentRoute = null;
+            BatchRemaining = 0;
+            Enter(State.Idle);
+            return;
+        }
+
         var path = Write(route);
         _follow.Stop();
         _follow.Movement.Observing = false;

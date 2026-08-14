@@ -74,6 +74,22 @@ DALAMUD_CFG="$XOM_ROOT/dalamudConfig.json"
 # wine maps the mac filesystem onto Z:, and dalamud stores windows-shaped paths
 win_path() { printf 'Z:%s' "$(printf '%s' "$1" | tr '/' '\\')"; }
 
+# parse rather than grep: the config stores the path json-escaped, with doubled backslashes
+dev_registered() {
+    [ -f "$DALAMUD_CFG" ] || return 1
+    python3 - "$DALAMUD_CFG" "$(win_path "$DEV_DIR/$PLUGIN.dll")" <<'DEVCHECK'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+locs = (d.get("DevPluginLoadLocations") or {}).get("$values") or []
+hit = next((v for v in locs if v.get("Path") == sys.argv[2] and v.get("IsEnabled")), None)
+reload_on = (d.get("DevPluginSettings") or {}).get(sys.argv[2], {}).get("AutomaticReloading")
+sys.exit(0 if hit and reload_on else 1)
+DEVCHECK
+}
+
 [ -d "$XOM_ROOT" ] || die "XIV on Mac setup not found at: $XOM_ROOT (set XOM_ROOT to override)"
 
 # the game holds the plugin dlls open, so swapping files under it corrupts the install
@@ -124,8 +140,8 @@ do_status() {
 
     if [ -d "$DEV_DIR" ]; then
         info "dev:        $DEV_DIR ($(date -r "$DEV_DIR/$PLUGIN.dll" '+%Y-%m-%d %H:%M' 2>/dev/null || echo 'no dll'))"
-        if grep -qF "$(win_path "$DEV_DIR/$PLUGIN.dll")" "$DALAMUD_CFG" 2>/dev/null; then
-            info "  registered with dalamud"
+        if dev_registered; then
+            info "  registered with dalamud, hot reload on"
         else
             info "  NOT registered with dalamud"
         fi

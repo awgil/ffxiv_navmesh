@@ -5,3 +5,4 @@ bin/
 Directory.Build.targets
 analysis/.venv/
 analysis/*.egg-info/
+__pycache__/

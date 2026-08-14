@@ -3,3 +3,5 @@ obj/
 bin/
 *.user
 Directory.Build.targets
+analysis/.venv/
+analysis/*.egg-info/

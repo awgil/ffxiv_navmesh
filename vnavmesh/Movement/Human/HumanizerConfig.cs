@@ -43,9 +43,10 @@ public class HumanizerConfig
     // only reacts once the way is already blocked, which reads as noticing an obstacle on contact;
     // a human gives way to it from further out
     public float SteeringWallClearance = 4f;
-    // how hard that drift pulls, relative to the aim direction. too high and it hugs open ground and
-    // refuses to enter doorways
-    public float SteeringWallAvoidance = 0.6f;
+    // how hard that drift pulls, relative to the aim direction. this is loop gain: the drift moves the
+    // character, which changes the wall distance, which changes the drift. 0.6 oscillated visibly,
+    // 0.3 measured better on every count, so this sits just above the tested value
+    public float SteeringWallAvoidance = 0.35f;
     // seconds over which the drift is averaged. gating it by whether the wall is being closed on
     // stopped it helping at all, because the path runs along mesh edges and travel is mostly
     // parallel to them; averaging instead lets a corridor's two sides cancel to centre it

@@ -2,6 +2,3 @@
 obj/
 bin/
 *.user
-
-# machine-local build overrides written by scripts/install.sh --dev
-Directory.Build.local.props

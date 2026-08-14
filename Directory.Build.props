@@ -1,8 +1,0 @@
-<Project>
-  <!--
-    Optional machine-local overrides, not tracked. The dev install mode writes one to send the
-    vnavmesh build output straight into the dalamud devPlugins directory, so a bare `dotnet build`
-    deploys and dalamud's own watcher can pick it up.
-  -->
-  <Import Project="Directory.Build.local.props" Condition="Exists('$(MSBuildThisFileDirectory)Directory.Build.local.props')" />
-</Project>

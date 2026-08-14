@@ -36,7 +36,8 @@ public struct TrajectorySample
         "steerCmd", // heading humanized steering commanded, radians; 0 when it did not run
         "wallDist", // distance to nearest mesh edge, yalms; -1 when none within clearance
         "wallPush", // applied wall avoidance weight; 0 when it did not fire
-        "aimDist",  // how far ahead steering ended up aiming, yalms
+        "aimDist",  // how far ahead steering ended up aiming, yalms, before wall drift scales it
+        "wpLeft",   // waypoints remaining; a short list leaves Follow only the destination to offer
     ];
 
     public float T;
@@ -51,6 +52,7 @@ public struct TrajectorySample
     public float WallDist;
     public float WallPush;
     public float AimDist;
+    public float WaypointsLeft;
 
     public readonly void Write(Span<float> dest)
     {
@@ -70,5 +72,6 @@ public struct TrajectorySample
         dest[13] = WallDist;
         dest[14] = WallPush;
         dest[15] = AimDist;
+        dest[16] = WaypointsLeft;
     }
 }

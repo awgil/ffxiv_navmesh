@@ -28,7 +28,7 @@ public unsafe class TrajectoryRecorder : IDisposable
         Agent,
     }
 
-    public const int SchemaVersion = 5;
+    public const int SchemaVersion = 6;
 
     public State CurrentState { get; private set; } = State.Idle;
     public Source CurrentSource { get; private set; }
@@ -315,6 +315,7 @@ public unsafe class TrajectoryRecorder : IDisposable
             WallDist = _follow.SteerWallDist,
             WallPush = _follow.SteerWallPush,
             AimDist = _follow.SteerAimDist,
+            WaypointsLeft = _follow.SteerWaypointsLeft,
         });
     }
 

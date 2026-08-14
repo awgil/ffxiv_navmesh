@@ -41,6 +41,7 @@ public class FollowPath : IDisposable
 	public float SteerWallDist { get; private set; } = -1; // -1 when nothing is within clearance
 	public float SteerWallPush { get; private set; }       // applied avoidance weight, 0 when it did not fire
 	public float SteerAimDist { get; private set; }        // how far ahead it ended up aiming
+	public int SteerWaypointsLeft { get; private set; }    // a short list means Follow can only offer the destination
 
 	private int _millisecondsWithNoSignificantMovement = 0;
 
@@ -182,6 +183,7 @@ public class FollowPath : IDisposable
 		SteerWallDist = -1;
 		SteerWallPush = 0;
 		SteerAimDist = 0;
+		SteerWaypointsLeft = 0;
 		if (!cfg.SteeringEnabled)
 			return Waypoints[0].Position;
 
@@ -212,6 +214,10 @@ public class FollowPath : IDisposable
 		var offset = target - playerPos;
 		if (new Vector2(offset.X, offset.Z).LengthSquared() < 1e-6f)
 			return follow.Target;
+
+		// before the drift scales it, so this really is how far ahead the aim landed
+		SteerAimDist = new Vector2(offset.X, offset.Z).Length();
+		SteerWaypointsLeft = Waypoints.Count;
 
 		// let the drift fade rather than vanish when the wall drops out of range
 		if (_manager.Query is null || cfg.SteeringWallAvoidance <= 0
@@ -265,7 +271,6 @@ public class FollowPath : IDisposable
 		SteerRan = true;
 		SteerRecovering = recovering;
 		SteerCommanded = _steerHeading.Value;
-		SteerAimDist = new Vector2(offset.X, offset.Z).Length();
 
 		// keep the aim point at the same planar distance, so arrival and the fly transition are unaffected
 		var planar = new Vector2(offset.X, offset.Z).Length();

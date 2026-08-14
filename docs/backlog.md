@@ -58,24 +58,22 @@ on the ground instead of staying airborne.
 
 **Three separate causes, worth separating before fixing.**
 
-**a. Flight paths are never smoothed.** Walking paths come from Detour and are
-string-pulled into corner points. Flight paths come from `VoxelPathfind`, an A*
-over the voxel map, and are returned as raw voxel centres. Upstream's own `TODO`
-lists this: "use same string-pulling idea for navvolumes". So the waypoint list
-is a stair-stepped chain through voxel space, and following it exactly produces
-the stepped, mechanical look. This is a path quality problem, not a control one,
-and it is the largest of the three.
+**a. Flight paths are never smoothed.** *Addressed by ADR 0007, unverified in
+game.* Walking paths come from Detour and are string-pulled into corner points.
+Flight paths come from `VoxelPathfind`, an A* over the voxel map, and were
+returned as raw voxel centres. `VoxelStringPull.Simplify` now collapses them
+greedily by line of sight, under the existing `UseStringPulling` flag. This is
+the cheap version, not the exact funnel upstream's `TODO` asks for, so it leaves
+corners uncut and that TODO stays open.
 
 **b. Humanized steering is applied to flight, and its queries do not mean
-anything there.** `FollowPath.SteeringTarget` runs for every path, walking or
-flying. Inside it, `WalkableFraction` and `NearestWall` are *navmesh* queries: on
-a flight path they describe the ground far below, not the air the character is
-moving through. So the clamp can shorten a lookahead for a wall that is not in
-the way, and the wall drift can push away from ground geometry that is
-irrelevant. Steering should be gated to walking until flight has its own
-treatment, and it may be the direct cause of the unwanted landings.
+anything there.** *Fixed by ADR 0007.* `FollowPath.SteeringTarget` ran for every
+path, walking or flying. Inside it, `WalkableFraction` and `NearestWall` are
+*navmesh* queries: on a flight path they describe the ground far below, not the
+air the character is moving through. It is now gated to walking paths, which
+means arm 3 equals arm 2 in the air until flight gets its own control work.
 
-**c. The walk to fly transition is crude.** `FollowPath.Update` spams the jump
+**c. The walk to fly transition is crude.** *Open.* `FollowPath.Update` spams the jump
 action on a fixed 100 ms interval whenever the desired position is above the
 character and it is mounted. Fixed-period input is trivially distinguishable from
 a human, and the condition can retrigger mid-flight.
@@ -90,3 +88,8 @@ block, so there is a measurable difference to aim at.
 walking. Nothing measured about walking transfers to flight without its own
 captures, and there is currently one flying route (territory 958, route003) with
 two captures. That is not enough for anything.
+
+**Watch for.** Straightening can remove the initial climb from a route whose
+destination is no higher than its start, and takeoff only fires while the desired
+position is above the character. A flying route over flat ground may now stay on
+the ground longer. If that shows up, the fix belongs with (c).

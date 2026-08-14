@@ -149,7 +149,7 @@ public class FollowPath : IDisposable
 
 			OverrideAFK.ResetTimers();
 			_movement.Enabled = MovementAllowed;
-			_movement.DesiredPosition = SteeringTarget(player.Position, (float)fwk.UpdateDelta.TotalSeconds);
+			_movement.DesiredPosition = SteeringTarget(player.Position, player.Rotation, (float)fwk.UpdateDelta.TotalSeconds);
 			if (_movement.DesiredPosition.Y > player.Position.Y && !Service.Condition[ConditionFlag.InFlight] && !Service.Condition[ConditionFlag.Diving] && !IgnoreDeltaY) //Only do this bit if on a flying path
 			{
 				// walk->fly transition (TODO: reconsider?)
@@ -170,7 +170,7 @@ public class FollowPath : IDisposable
 	}
 
 	// upstream aims straight at Waypoints[0]; humanized steering aims along the path instead, see Human/PathSteering
-	private Vector3 SteeringTarget(Vector3 playerPos, float dt)
+	private Vector3 SteeringTarget(Vector3 playerPos, float playerFacing, float dt)
 	{
 		var cfg = Service.Config.Humanizer;
 		SteerRan = false;
@@ -188,7 +188,10 @@ public class FollowPath : IDisposable
 			return follow.Target;
 
 		var desired = Angle.FromDirectionXZ(offset);
-		var error = (desired - (_steerHeading ?? desired)).Normalized().Abs();
+		// seed from where the character is actually looking, so the departure turn out of a standstill
+		// is rate limited like any other rather than snapping at the character's top speed
+		_steerHeading ??= playerFacing.Radians();
+		var error = (desired - _steerHeading.Value).Normalized().Abs();
 
 		// rate limiting is for easing through corners. applied to a reversal it makes the character
 		// orbit, because the turn radius at walking speed exceeds the distance left to cover. so a
@@ -196,9 +199,7 @@ public class FollowPath : IDisposable
 		// unlimited snap there was the one remaining 500 deg/s spike.
 		var recovering = error.Rad > MathF.PI / 2 || follow.ProjectedDistToEnd <= cfg.SteeringLookahead;
 		var rate = (recovering ? cfg.SteeringRecoveryTurnRate : cfg.SteeringMaxTurnRate).Degrees();
-		_steerHeading = _steerHeading is { } cur
-			? Human.PathSteering.SlewHeading(cur, desired, rate, dt)
-			: desired;
+		_steerHeading = Human.PathSteering.SlewHeading(_steerHeading.Value, desired, rate, dt);
 		SteerRan = true;
 		SteerRecovering = recovering;
 		SteerCommanded = _steerHeading.Value;

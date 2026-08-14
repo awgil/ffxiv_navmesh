@@ -39,12 +39,18 @@ class Steering:
     lookahead: float
     max_turn_rate: float
     recovery_turn_rate: float
+    wall_clearance: float | None = None
+    wall_avoidance: float | None = None
+    wall_smoothing: float | None = None
 
     @property
     def label(self) -> str:
         if not self.enabled:
             return "baseline"
-        return f"steer L{self.lookahead:.0f} T{self.max_turn_rate:.0f} R{self.recovery_turn_rate:.0f}"
+        base = f"steer L{self.lookahead:.0f} T{self.max_turn_rate:.0f} R{self.recovery_turn_rate:.0f}"
+        if self.wall_avoidance is not None:
+            base += f" W{self.wall_clearance:.0f}/{self.wall_avoidance:.2f}/{self.wall_smoothing:.2f}"
+        return base
 
 
 @dataclass
@@ -99,6 +105,9 @@ def load(path: Path) -> Capture:
             lookahead=float(s.get("lookahead", 0)),
             max_turn_rate=float(s.get("maxTurnRate", 0)),
             recovery_turn_rate=float(s.get("recoveryTurnRate", 0)),
+            wall_clearance=None if "wallClearance" not in s else float(s["wallClearance"]),
+            wall_avoidance=None if "wallAvoidance" not in s else float(s["wallAvoidance"]),
+            wall_smoothing=None if "wallSmoothing" not in s else float(s["wallSmoothing"]),
         )
     sp = doc.get("startPos")
     return Capture(

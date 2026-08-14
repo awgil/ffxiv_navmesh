@@ -31,6 +31,7 @@ public class FollowPath : IDisposable
 	private DateTime _nextJump;
 
 	private Vector3? posPreviousFrame;
+	private Angle? _steerHeading; // commanded heading, carried between frames so it can be rate limited
 
 	private int _millisecondsWithNoSignificantMovement = 0;
 
@@ -143,7 +144,7 @@ public class FollowPath : IDisposable
 
 			OverrideAFK.ResetTimers();
 			_movement.Enabled = MovementAllowed;
-			_movement.DesiredPosition = Waypoints[0].Position;
+			_movement.DesiredPosition = SteeringTarget(player.Position, (float)fwk.UpdateDelta.TotalSeconds);
 			if (_movement.DesiredPosition.Y > player.Position.Y && !Service.Condition[ConditionFlag.InFlight] && !Service.Condition[ConditionFlag.Diving] && !IgnoreDeltaY) //Only do this bit if on a flying path
 			{
 				// walk->fly transition (TODO: reconsider?)
@@ -161,6 +162,30 @@ public class FollowPath : IDisposable
 			_camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
 			_camera.DesiredAltitude = Service.Config.AlignCameraHeight.Degrees();
 		}
+	}
+
+	// upstream aims straight at Waypoints[0]; humanized steering aims along the path instead, see Human/PathSteering
+	private Vector3 SteeringTarget(Vector3 playerPos, float dt)
+	{
+		var cfg = Service.Config.Humanizer;
+		if (!cfg.SteeringEnabled)
+			return Waypoints[0].Position;
+
+		var target = Human.PathSteering.LookaheadTarget(Waypoints, playerPos, cfg.SteeringLookahead);
+		var offset = target - playerPos;
+		if (new Vector2(offset.X, offset.Z).LengthSquared() < 1e-6f)
+			return target;
+
+		var desired = Angle.FromDirectionXZ(offset);
+		// a fresh path can hand us a corner that is already behind, which lookahead alone will not smooth
+		_steerHeading = _steerHeading is { } cur
+			? Human.PathSteering.SlewHeading(cur, desired, cfg.SteeringMaxTurnRate.Degrees(), dt)
+			: desired;
+
+		// keep the aim point at the same planar distance, so arrival and the fly transition are unaffected
+		var planar = new Vector2(offset.X, offset.Z).Length();
+		var dir = _steerHeading.Value.ToDirectionXZ() * planar;
+		return new Vector3(playerPos.X + dir.X, target.Y, playerPos.Z + dir.Z);
 	}
 
 	private static float DistanceToLineSegment(Vector3 v, Vector3 a, Vector3 b)
@@ -203,6 +228,7 @@ public class FollowPath : IDisposable
 	public void Stop()
 	{
 		UpdateSharedState(false);
+		_steerHeading = null;
 		_millisecondsWithNoSignificantMovement = 0;
 		Waypoints.Clear();
 	}
@@ -223,6 +249,7 @@ public class FollowPath : IDisposable
 	public void Move(List<Waypoint> waypoints, bool ignoreDeltaY, float destTolerance = 0)
 	{
 		UpdateSharedState(true);
+		_steerHeading = null;
 		Waypoints = waypoints;
 		IgnoreDeltaY = ignoreDeltaY;
 		DestinationTolerance = destTolerance;

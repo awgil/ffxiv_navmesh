@@ -40,6 +40,10 @@ public class RecorderTab
 
         ImGui.Separator();
 
+        DrawSteering();
+
+        ImGui.Separator();
+
         DrawAuthoring(territory, player?.Position);
 
         ImGui.Separator();
@@ -50,6 +54,30 @@ public class RecorderTab
         ImGui.TextDisabled($"Captures: {_recorder.CaptureDir}");
         if (ImGui.Checkbox("Draw active route in world", ref Service.Config.Humanizer.RecorderDrawRoute))
             Service.Config.NotifyModified();
+    }
+
+    private void DrawSteering()
+    {
+        var cfg = Service.Config.Humanizer;
+
+        // off is arm 2 of the evaluation, on is arm 3, so this switch is the whole experiment
+        if (ImGui.Checkbox("Humanized steering", ref cfg.SteeringEnabled))
+            Service.Config.NotifyModified();
+        ImGui.SameLine();
+        ImGui.TextDisabled(cfg.SteeringEnabled ? "(arm 3)" : "(arm 2, upstream behaviour)");
+
+        using var _ = ImRaii.Disabled(!cfg.SteeringEnabled);
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Lookahead (yalms)", ref cfg.SteeringLookahead, 1f, 40f, "%.1f"))
+            Service.Config.NotifyModified();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("How far along the path to aim. Larger smooths corners more but cuts them harder.");
+
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Max turn rate (deg/s)", ref cfg.SteeringMaxTurnRate, 10f, 400f, "%.0f"))
+            Service.Config.NotifyModified();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Ceiling on commanded heading change. Measured humans turn at 22-42 through corners; the character itself tops out near 400.");
     }
 
     private void DrawAuthoring(uint territory, Vector3? pos)

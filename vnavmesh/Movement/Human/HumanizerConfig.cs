@@ -16,4 +16,14 @@ public class HumanizerConfig
     public float RecorderDepartThreshold = 0.05f;
     // draw the active route's A and B in the world
     public bool RecorderDrawRoute = true;
+
+    // --- steering (ADR 0005, ADR 0006) ---
+
+    // master switch: off means upstream behaviour exactly, which is arm 2 of the evaluation
+    public bool SteeringEnabled = false;
+    // how far ahead along the path to aim, yalms. larger is smoother but cuts corners harder
+    public float SteeringLookahead = 8f;
+    // ceiling on how fast the commanded heading may rotate, degrees/sec. the character itself
+    // tops out near 400, and humans measured at 22-42 through corners
+    public float SteeringMaxTurnRate = 45f;
 }

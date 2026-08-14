@@ -45,7 +45,7 @@ public sealed class Plugin : IDalamudPlugin
         _asyncMove = new(_navmeshManager, _followPath);
         _dtrProvider = new(_navmeshManager, _asyncMove, _followPath);
         _routeBook = new(dalamud.ConfigDirectory.FullName);
-        _recorder = new(_asyncMove, _followPath, dalamud.ConfigDirectory.FullName);
+        _recorder = new(_asyncMove, _followPath, _navmeshManager, dalamud.ConfigDirectory.FullName);
         _wndMain = new(_navmeshManager, _followPath, _asyncMove, _dtrProvider, _recorder, _routeBook, dalamud.ConfigDirectory.FullName) { IsOpen = dalamud.IsDev };
         _ipcProvider = new(_navmeshManager, _followPath, _asyncMove, _wndMain, _dtrProvider);
 

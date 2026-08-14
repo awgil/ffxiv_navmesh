@@ -39,6 +39,7 @@ public unsafe class TrajectoryRecorder : IDisposable
 
     private readonly AsyncMoveRequest _move;
     private readonly FollowPath _follow;
+    private readonly NavmeshManager _manager;
     private readonly string _captureDir;
     private readonly List<TrajectorySample> _samples = [];
 
@@ -54,11 +55,27 @@ public unsafe class TrajectoryRecorder : IDisposable
     private uint _prevFlySeq;
     private bool _sawIdle; // seen genuine zero input while armed, so the next press is a real departure
 
-    public TrajectoryRecorder(AsyncMoveRequest move, FollowPath follow, string configDir)
+    public TrajectoryRecorder(AsyncMoveRequest move, FollowPath follow, NavmeshManager manager, string configDir)
     {
         _move = move;
         _follow = follow;
+        _manager = manager;
         _captureDir = Path.Combine(configDir, "captures");
+    }
+
+    // a walking pathfind needs a start polygon on the walkable mesh, so being airborne or otherwise
+    // off-mesh fails deep inside the query with a message that does not name the real cause
+    private string? WhyCannotStart(Route route, Vector3 playerPos)
+    {
+        if (_manager.Navmesh == null || _manager.Query is not { } query)
+            return "navmesh is not loaded yet";
+        if (route.Fly)
+            return null;
+        if (query.FindNearestMeshPoly(playerPos) == 0)
+            return "you are not standing on the navmesh - land first";
+        if (query.FindNearestMeshPoly(route.A) == 0)
+            return $"route point A ({route.A:f1}) is not on the navmesh";
+        return null;
     }
 
     public void Dispose() => Cancel("plugin unloading");
@@ -74,6 +91,19 @@ public unsafe class TrajectoryRecorder : IDisposable
         if (Service.ClientState.TerritoryType != route.Territory)
         {
             Status = $"wrong territory (need {route.Territory})";
+            return;
+        }
+
+        if (Service.ObjectTable.LocalPlayer is not { } player)
+        {
+            Status = "no player";
+            return;
+        }
+
+        if (WhyCannotStart(route, player.Position) is { } reason)
+        {
+            Status = reason;
+            Service.Log.Warning($"[recorder] refusing to start: {reason}");
             return;
         }
 
@@ -161,8 +191,10 @@ public unsafe class TrajectoryRecorder : IDisposable
                 }
                 else if (!_move.TaskInProgress && _follow.Waypoints.Count == 0)
                 {
-                    // pathfind finished and the follower ran dry without getting us there
-                    Cancel("could not reach A");
+                    // pathfind finished and the follower ran dry without getting us there; the query
+                    // logs the underlying reason, so say what we know rather than just "could not reach"
+                    var dist = Vector3.Distance(pos, route.A);
+                    Cancel($"could not reach A, still {dist:f0}y away - check the pathfind error above");
                 }
                 break;
 

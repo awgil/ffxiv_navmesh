@@ -2,7 +2,12 @@
 
 ## Status
 
-Proposed. Blocked on an experiment; see "Validation" below.
+Superseded by [0005](0005-imitate-keyboard-input.md).
+
+The premise below did not survive first contact with recorded data. Human and agent
+walking speed measured the same, because keyboard input has no continuous magnitude to
+imitate. The validation experiment was never run and is not worth running. Kept for the
+reasoning, not as guidance.
 
 ## Context
 

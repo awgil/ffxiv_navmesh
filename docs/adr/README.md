@@ -12,4 +12,5 @@ Status values: `Proposed`, `Accepted`, `Superseded by NNNN`, `Rejected`.
 | [0001](0001-fork-identity-and-drop-in-compatibility.md) | Fork identity and drop-in compatibility | Accepted |
 | [0002](0002-change-containment-for-upstream-merges.md) | Change containment for upstream merges | Accepted |
 | [0003](0003-task-driven-trajectory-recorder.md) | Task-driven trajectory recorder | Accepted |
-| [0004](0004-analog-movement-magnitude.md) | Analog movement magnitude as the control signal | Proposed |
+| [0004](0004-analog-movement-magnitude.md) | Analog movement magnitude as the control signal | Superseded by 0005 |
+| [0005](0005-imitate-keyboard-input.md) | Imitate keyboard input | Accepted |

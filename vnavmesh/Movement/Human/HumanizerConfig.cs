@@ -35,4 +35,8 @@ public class HumanizerConfig
     // pull the aim point back to where the mesh actually reaches, so cutting a corner cannot aim
     // through geometry. off restores the naive behaviour, which sticks on obstacle heavy routes
     public bool SteeringClampToMesh = true;
+    // shortest usable aim distance, yalms. clamping can shrink the aim point onto the character's
+    // own feet, and a desired position that close reads as "already arrived", so no input is written
+    // at all and it stands still. below this we fall back to upstream's aim instead
+    public float SteeringMinAimDistance = 2f;
 }

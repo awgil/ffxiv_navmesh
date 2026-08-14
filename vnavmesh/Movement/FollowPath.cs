@@ -190,7 +190,14 @@ public class FollowPath : IDisposable
 		{
 			var clear = query.WalkableFraction(playerPos, target);
 			if (clear < 1)
-				target = Vector3.Lerp(playerPos, target, MathF.Max(clear - 0.05f, 0));
+			{
+				var clamped = Vector3.Lerp(playerPos, target, MathF.Max(clear - 0.05f, 0));
+				// too short an aim reads as "already arrived" to the movement override, which then
+				// writes nothing and the character stands still. upstream's aim always moves.
+				target = Vector3.Distance(playerPos, clamped) >= cfg.SteeringMinAimDistance
+					? clamped
+					: Waypoints[0].Position;
+			}
 		}
 
 		var offset = target - playerPos;

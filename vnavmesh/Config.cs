@@ -26,6 +26,9 @@ public class Config
     public float RandomnessMultiplier = 1f;
     public int BuildMaxCores = 1;
 
+    // all fork-added settings, see ADR 0002
+    public Movement.Human.HumanizerConfig Humanizer = new();
+
     private static readonly int realMaxCores = Environment.ProcessorCount;
 
     public event Action? Modified;

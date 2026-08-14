@@ -1,5 +1,9 @@
 """Print a per-arm comparison of captures for one route.
 
+Peak and snap share are the headline, per the amendment to ADR 0006: p99 reads
+0.0 for every baseline run because its snaps occupy well under one percent of
+frames, so it cannot see the behaviour it was meant to measure.
+
 Usage:
     uv run capture-report [--route route001] [--captures PATH]
 """
@@ -49,18 +53,17 @@ def main() -> None:
         by_arm[c.arm].append(c)
 
     print(f"route {args.route}, body metrics exclude the first {args.window:g}s\n")
-    print(f"{'arm':<28} {'n':>2} {'p50':>7} {'p90':>7} {'p99':>9} {'peak':>7} {'snap%':>6} {'path':>7} {'dur':>6}")
+    print(f"{'arm':<28} {'n':>2} {'PEAK':>10} {'SNAP%':>6} {'p99':>9} {'p90':>7} {'path':>7} {'dur':>6}")
     print("-" * 88)
     for arm in sorted(by_arm):
         group = by_arm[arm]
         bodies = [body(c, since=args.window) for c in group]
         print(
             f"{arm:<28} {len(group):>2} "
-            f"{_spread([b.p50 for b in bodies]):>7} "
-            f"{_spread([b.p90 for b in bodies]):>7} "
-            f"{_spread([b.p99 for b in bodies]):>9} "
-            f"{_spread([b.peak for b in bodies]):>7} "
+            f"{_spread([b.peak for b in bodies]):>10} "
             f"{st.mean(b.snap_pct for b in bodies):>5.1f}% "
+            f"{_spread([b.p99 for b in bodies]):>9} "
+            f"{_spread([b.p90 for b in bodies]):>7} "
             f"{_spread([c.path_length for c in group]):>7} "
             f"{_spread([c.duration for c in group]):>6}"
         )

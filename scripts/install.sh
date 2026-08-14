@@ -14,10 +14,10 @@
 #   ./scripts/install.sh --status     show what is currently installed
 #   ./scripts/install.sh --restore    put the backed up upstream build back
 #
-# Dev mode installs to devPlugins instead and registers it with dalamud, which
-# gives hot reloading: a rebuild alone makes dalamud reload the plugin, no game
-# restart. The normal install is moved aside while dev mode is active, because two
-# copies would both try to register the vnavmesh IPC names.
+# Dev mode points dalamud straight at the build output and turns on hot reloading,
+# so 'dotnet build' is the entire deploy step: no copy, no game restart. The normal
+# install is moved aside while dev mode is active, because two copies would both
+# try to register the vnavmesh IPC names.
 #
 #   ./scripts/install.sh --dev        build and install as a dev plugin
 #   ./scripts/install.sh --dev-remove unregister and put the normal install back
@@ -77,7 +77,7 @@ win_path() { printf 'Z:%s' "$(printf '%s' "$1" | tr '/' '\\')"; }
 # parse rather than grep: the config stores the path json-escaped, with doubled backslashes
 dev_registered() {
     [ -f "$DALAMUD_CFG" ] || return 1
-    python3 - "$DALAMUD_CFG" "$(win_path "$DEV_DIR/$PLUGIN.dll")" <<'DEVCHECK'
+    python3 - "$DALAMUD_CFG" "$(win_path "$BUILD_DIR/$PLUGIN.dll")" <<'DEVCHECK'
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
@@ -138,16 +138,13 @@ do_status() {
         info "backup:     (none yet - first install will make one)"
     fi
 
-    if [ -d "$DEV_DIR" ]; then
-        info "dev:        $DEV_DIR ($(date -r "$DEV_DIR/$PLUGIN.dll" '+%Y-%m-%d %H:%M' 2>/dev/null || echo 'no dll'))"
-        if dev_registered; then
-            info "  registered with dalamud, hot reload on"
-        else
-            info "  NOT registered with dalamud"
-        fi
+    if dev_registered; then
+        info "dev:        registered, hot reload on"
+        info "  dalamud loads: $BUILD_DIR/$PLUGIN.dll"
     else
-        info "dev:        (not installed)"
+        info "dev:        (not registered)"
     fi
+    [ -d "$DEV_DIR" ] && info "  stale copy still at $DEV_DIR"
     [ -d "$DISABLED_DIR" ] && info "parked:     $DISABLED_DIR"
 
     info "config:     $CONFIG_DIR"
@@ -247,6 +244,20 @@ vals = locs.setdefault("$values", [])
 settings = d.setdefault("DevPluginSettings", {
     "$type": "System.Collections.Generic.Dictionary`2[[System.String, System.Private.CoreLib],[Dalamud.Configuration.Internal.DevPluginSettings, Dalamud]], System.Private.CoreLib"})
 
+# any other registration of this same dll name, left over from an earlier layout or from the
+# other build config, would load a second copy and fight over the IPC names
+leaf = dll.rsplit("\\", 1)[-1].lower()
+stale = [v.get("Path") for v in vals
+         if v.get("Path") != dll and (v.get("Path") or "").lower().endswith(leaf)]
+
+# read the id before dropping the old entries, so it can be carried onto the new one
+carried = next((settings[p].get("WorkingPluginId") for p in stale
+                if p in settings and settings[p].get("WorkingPluginId")), None)
+for path in stale:
+    print("dropping stale registration: " + path)
+    settings.pop(path, None)
+vals[:] = [v for v in vals if v.get("Path") not in stale]
+
 existing = next((v for v in vals if v.get("Path") == dll), None)
 
 if mode == "add":
@@ -263,7 +274,7 @@ if mode == "add":
         "NotifyForErrors": True,
         "AutomaticReloading": True,
         # keep the id dalamud already assigned, so it does not treat this as a new plugin
-        "WorkingPluginId": prev.get("WorkingPluginId") or str(uuid.uuid4()),
+        "WorkingPluginId": prev.get("WorkingPluginId") or carried or str(uuid.uuid4()),
         "DismissedValidationProblems": {
             "$type": "System.Collections.Generic.List`1[[System.String, System.Private.CoreLib]], System.Private.CoreLib",
             "$values": []},
@@ -299,40 +310,36 @@ do_dev_install() {
         fi
     fi
 
-    info "installing dev plugin -> $DEV_DIR"
-    run mkdir -p "$DEV_DIR"
-    if [ "$DRY" -eq 1 ]; then
-        printf '  would: clear %s and copy %s files
-' "$DEV_DIR" "$(find "$BUILD_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ')"
-    else
-        find "$DEV_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-        find "$BUILD_DIR" -maxdepth 1 -type f -exec cp {} "$DEV_DIR/" \;
+    # point dalamud straight at the build output rather than at a copy, so a rebuild is the
+    # entire deploy step and there is nothing left to sync afterwards
+    if [ -d "$DEV_DIR" ]; then
+        info "dropping the old devPlugins copy, dalamud reads the build output directly now"
+        run rm -rf "$DEV_DIR"
     fi
 
     local dll
-    dll="$(win_path "$DEV_DIR/$PLUGIN.dll")"
+    dll="$(win_path "$BUILD_DIR/$PLUGIN.dll")"
     info "dalamud path: $dll"
     if [ "$DRY" -eq 1 ]; then
-        printf '  would: register %s in dalamudConfig.json with AutomaticReloading
-' "$dll"
+        printf '  would: register %s in dalamudConfig.json with AutomaticReloading\n' "$dll"
     else
         edit_dalamud_config add "$dll"
     fi
 
     info ""
-    info "done. start the game; the plugin loads from devPlugins with hot reload on."
-    info "after this, a plain 'dotnet build' is enough - dalamud picks the rebuild up."
+    info "done. start the game; the plugin loads straight from the $CONFIG build output."
+    info "from here 'dotnet build' IS the deploy - dalamud reloads it on its own."
     info "config backed up once at $DALAMUD_CFG.bak"
 }
 
 do_dev_remove() {
     assert_game_stopped
     local dll
-    dll="$(win_path "$DEV_DIR/$PLUGIN.dll")"
+    dll="$(win_path "$BUILD_DIR/$PLUGIN.dll")"
 
     if [ "$DRY" -eq 1 ]; then
-        printf '  would: unregister %s and delete %s
-' "$dll" "$DEV_DIR"
+        printf '  would: unregister %s\n' "$dll"
+        [ -d "$DEV_DIR" ] && printf '  would: delete the leftover copy at %s\n' "$DEV_DIR"
     else
         [ -f "$DALAMUD_CFG" ] && edit_dalamud_config remove "$dll"
         rm -rf "$DEV_DIR"

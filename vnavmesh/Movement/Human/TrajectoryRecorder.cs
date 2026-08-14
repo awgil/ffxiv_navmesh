@@ -179,6 +179,11 @@ public unsafe class TrajectoryRecorder : IDisposable
         switch (CurrentState)
         {
             case State.Travelling:
+                // a pathfind still in flight will repopulate the waypoints after we stop, and the
+                // armed state would read that as departure. matters when we already start on top of A.
+                if (_move.TaskInProgress)
+                    break;
+
                 if (Vector3.Distance(pos, route.A) <= cfg.RecorderArriveTolerance)
                 {
                     _follow.Stop();
@@ -189,7 +194,7 @@ public unsafe class TrajectoryRecorder : IDisposable
                         ? "at A - release keys, then walk to B"
                         : "at A - dispatching agent";
                 }
-                else if (!_move.TaskInProgress && _follow.Waypoints.Count == 0)
+                else if (_follow.Waypoints.Count == 0)
                 {
                     // pathfind finished and the follower ran dry without getting us there; the query
                     // logs the underlying reason, so say what we know rather than just "could not reach"

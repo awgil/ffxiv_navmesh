@@ -183,7 +183,17 @@ public class FollowPath : IDisposable
 		if (follow.Consumed > 0)
 			Waypoints.RemoveRange(0, follow.Consumed);
 
-		var offset = follow.Target - playerPos;
+		var target = follow.Target;
+		// aiming ahead cuts corners, which on an obstacle heavy route means aiming through a wall and
+		// walking into it. pull the aim back to where the mesh actually reaches.
+		if (cfg.SteeringClampToMesh && _manager.Query is { } query)
+		{
+			var clear = query.WalkableFraction(playerPos, target);
+			if (clear < 1)
+				target = Vector3.Lerp(playerPos, target, MathF.Max(clear - 0.05f, 0));
+		}
+
+		var offset = target - playerPos;
 		if (new Vector2(offset.X, offset.Z).LengthSquared() < 1e-6f)
 			return follow.Target;
 
@@ -206,7 +216,7 @@ public class FollowPath : IDisposable
 		// keep the aim point at the same planar distance, so arrival and the fly transition are unaffected
 		var planar = new Vector2(offset.X, offset.Z).Length();
 		var dir = _steerHeading.Value.ToDirectionXZ() * planar;
-		return new Vector3(playerPos.X + dir.X, follow.Target.Y, playerPos.Z + dir.Z);
+		return new Vector3(playerPos.X + dir.X, target.Y, playerPos.Z + dir.Z);
 	}
 
 	private static float DistanceToLineSegment(Vector3 v, Vector3 a, Vector3 b)

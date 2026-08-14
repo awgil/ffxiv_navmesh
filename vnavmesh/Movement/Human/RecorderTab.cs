@@ -105,6 +105,11 @@ public class RecorderTab
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Ceiling on commanded heading change. Measured humans turn at 22-42 through corners; the character itself tops out near 400.");
 
+        if (ImGui.Checkbox("Clamp aim point to the mesh", ref cfg.SteeringClampToMesh))
+            Service.Config.NotifyModified();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Stops the aim point sitting through a wall when a corner is cut, which is what makes the character stick on obstacle heavy routes.");
+
         ImGui.SetNextItemWidth(200);
         if (ImGui.SliderFloat("Recovery turn rate (deg/s)", ref cfg.SteeringRecoveryTurnRate, 60f, 400f, "%.0f"))
             Service.Config.NotifyModified();

@@ -32,4 +32,7 @@ public class HumanizerConfig
     // normal limit there makes the character orbit, but removing it entirely snaps at 500+, so this
     // sits between. a turn radius of v/rate must stay under the distance left to cover
     public float SteeringRecoveryTurnRate = 180f;
+    // pull the aim point back to where the mesh actually reaches, so cutting a corner cannot aim
+    // through geometry. off restores the naive behaviour, which sticks on obstacle heavy routes
+    public bool SteeringClampToMesh = true;
 }

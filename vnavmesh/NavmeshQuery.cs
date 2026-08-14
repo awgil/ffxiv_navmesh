@@ -251,6 +251,24 @@ public class NavmeshQuery
 
 	public Vector3? FindNearestPointOnMeshPoly(Vector3 p, long poly) => MeshQuery.ClosestPointOnPoly(poly, p.SystemToRecast(), out var closest, out _).Succeeded() ? closest.RecastToSystem() : null;
 
+	// walks the straight line from 'from' to 'to' across the mesh and returns the fraction of it that
+	// is actually walkable: 1 when the whole segment is clear, less when it leaves the mesh partway.
+	// used by humanized steering, which aims ahead along the path and must not aim through a wall.
+	public float WalkableFraction(Vector3 from, Vector3 to)
+	{
+		var startRef = FindNearestMeshPoly(from);
+		if (startRef == 0)
+			return 0;
+		_raycastPath.Clear();
+		var status = MeshQuery.Raycast(startRef, from.SystemToRecast(), to.SystemToRecast(), _filter, out var t, out _, ref _raycastPath);
+		if (status.Failed())
+			return 0;
+		// detour reports t >= a large value when nothing was hit
+		return t >= 1 ? 1 : t;
+	}
+
+	private List<long> _raycastPath = [];
+
 	public Vector3? FindNearestPointOnMesh(Vector3 p, float halfExtentXZ = 5, float halfExtentY = 5, bool allowUnreachable = true) => FindNearestPointOnMeshPoly(p, FindNearestMeshPoly(p, halfExtentXZ, halfExtentY, allowUnreachable));
 
 	// finds the point on the mesh within specified x/z tolerance and with largest Y that is still smaller than p.Y

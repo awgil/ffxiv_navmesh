@@ -171,21 +171,30 @@ public class FollowPath : IDisposable
 		if (!cfg.SteeringEnabled)
 			return Waypoints[0].Position;
 
-		var target = Human.PathSteering.LookaheadTarget(Waypoints, playerPos, cfg.SteeringLookahead);
-		var offset = target - playerPos;
+		var follow = Human.PathSteering.Follow(Waypoints, playerPos, cfg.SteeringLookahead);
+		// drop what the projection says is behind us; proximity popping never fires when corners are cut
+		if (follow.Consumed > 0)
+			Waypoints.RemoveRange(0, follow.Consumed);
+
+		var offset = follow.Target - playerPos;
 		if (new Vector2(offset.X, offset.Z).LengthSquared() < 1e-6f)
-			return target;
+			return follow.Target;
 
 		var desired = Angle.FromDirectionXZ(offset);
-		// a fresh path can hand us a corner that is already behind, which lookahead alone will not smooth
-		_steerHeading = _steerHeading is { } cur
+		var error = (desired - (_steerHeading ?? desired)).Normalized().Abs();
+
+		// rate limiting is for easing through corners. applied to a reversal it makes the character
+		// orbit, because the turn radius at walking speed exceeds the distance left to cover, so
+		// aim straight when the correction is large or when the end of the path is close.
+		var orbitRisk = error.Rad > MathF.PI / 2 || follow.ProjectedDistToEnd <= cfg.SteeringLookahead;
+		_steerHeading = _steerHeading is { } cur && !orbitRisk
 			? Human.PathSteering.SlewHeading(cur, desired, cfg.SteeringMaxTurnRate.Degrees(), dt)
 			: desired;
 
 		// keep the aim point at the same planar distance, so arrival and the fly transition are unaffected
 		var planar = new Vector2(offset.X, offset.Z).Length();
 		var dir = _steerHeading.Value.ToDirectionXZ() * planar;
-		return new Vector3(playerPos.X + dir.X, target.Y, playerPos.Z + dir.Z);
+		return new Vector3(playerPos.X + dir.X, follow.Target.Y, playerPos.Z + dir.Z);
 	}
 
 	private static float DistanceToLineSegment(Vector3 v, Vector3 a, Vector3 b)

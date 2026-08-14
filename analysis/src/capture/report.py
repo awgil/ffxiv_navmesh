@@ -17,7 +17,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from .metrics import DEPARTURE_WINDOW_S, body, commanded, departure, recovering_pct
-from .model import Capture, load_all, trim_to_departure
+from .model import Capture, load_all, territories, trim_to_departure
 
 DEFAULT_CAPTURES = (
     Path.home()
@@ -37,10 +37,21 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--captures", type=Path, default=DEFAULT_CAPTURES)
     ap.add_argument("--route", default="route001")
+    ap.add_argument("--territory", type=int, help="required when a route id exists in more than one zone")
+    ap.add_argument("--list", action="store_true", help="show every captured route and exit")
     ap.add_argument("--window", type=float, default=DEPARTURE_WINDOW_S)
     args = ap.parse_args()
 
-    caps = load_all(args.captures, route=args.route)
+    if args.list:
+        for (terr, route), n in sorted(territories(args.captures).items()):
+            print(f"  --territory {terr} --route {route}   ({n} captures)")
+        return
+
+    caps = load_all(args.captures, route=args.route, territory=args.territory)
+    seen = {c.territory for c in caps}
+    if len(seen) > 1:
+        print(f"route {args.route} exists in territories {sorted(seen)}; pass --territory to pick one")
+        return
     if not caps:
         print(f"no captures for {args.route} under {args.captures}")
         return
@@ -52,7 +63,7 @@ def main() -> None:
     for c in caps:
         by_arm[c.arm].append(c)
 
-    print(f"route {args.route}, body metrics exclude the first {args.window:g}s\n")
+    print(f"territory {caps[0].territory} route {args.route}, body metrics exclude the first {args.window:g}s\n")
     print(f"{'arm':<28} {'n':>2} {'PEAK':>10} {'SNAP%':>6} {'p99':>9} {'p90':>7} {'path':>7} {'dur':>6}")
     print("-" * 88)
     for arm in sorted(by_arm):

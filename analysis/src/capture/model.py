@@ -115,11 +115,25 @@ def load(path: Path) -> Capture:
     )
 
 
-def load_all(root: Path, route: str | None = None) -> list[Capture]:
+def load_all(
+    root: Path, route: str | None = None, territory: int | None = None
+) -> list[Capture]:
+    """Route ids are only unique within a territory, so both are needed to select one."""
     caps = [load(p) for p in sorted(root.rglob("*.json"))]
     if route:
         caps = [c for c in caps if c.route == route]
+    if territory:
+        caps = [c for c in caps if c.territory == territory]
     return sorted(caps, key=lambda c: c.path.stat().st_mtime)
+
+
+def territories(root: Path) -> dict[tuple[int, str], int]:
+    """Every (territory, route) present, with how many captures each has."""
+    out: dict[tuple[int, str], int] = {}
+    for p in sorted(root.rglob("*.json")):
+        c = load(p)
+        out[(c.territory, c.route)] = out.get((c.territory, c.route), 0) + 1
+    return out
 
 
 def trim_to_departure(cap: Capture, threshold: float = 0.05) -> Capture:

@@ -141,6 +141,7 @@ public sealed class NavmeshManager : IDisposable
 		{
 			using var autoDisposeCombined = combined;
 			using var autoDecrementCounter = new OnDispose(() => --_numActivePathfinds);
+			using var announce = new Movement.Human.PathfindAnnouncer(to, flying, range, combined.Token); // fork, see ADR 0009
 			LogInfo($"Kicking off pathfind from {from} to {to}");
 			var path = await Task.Run(() =>
 			{
@@ -156,6 +157,7 @@ public sealed class NavmeshManager : IDisposable
 				return Query.PathfindMesh(from, to, UseRaycasts, UseStringPulling, range, combined.Token, filter);
 			}, combined.Token);
 			Log($"Pathfinding done: {path.Count} waypoints");
+			announce.Done(); // fork, see ADR 0009
 			return path;
 		}, combined.Token);
 	}

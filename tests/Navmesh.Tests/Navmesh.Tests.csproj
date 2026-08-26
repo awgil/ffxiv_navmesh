@@ -28,6 +28,7 @@
     <Compile Include="..\..\vnavmesh\NavVolume\VoxelPathfindTuning.cs" />
     <Compile Include="..\..\vnavmesh\NavVolume\VoxelStringPull.cs" />
     <Compile Include="..\..\vnavmesh\Movement\Human\HumanizerConfig.cs" />
+    <Compile Include="..\..\vnavmesh\Movement\Human\PathfindChat.cs" />
   </ItemGroup>
 
   <ItemGroup>

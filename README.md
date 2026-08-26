@@ -15,6 +15,8 @@ What is here so far:
   centres
 - a tuned flying pathfind, which finds the same routes 15 to 20 times faster on average
   and cuts the worst case from about thirteen seconds to under one
+- a chat echo for pathfinding, which says what is being searched for and how long it took,
+  printed locally so nobody else sees it
 
 Everything the fork adds is off by default, and it is a drop-in replacement: same internal
 name, same IPC, so other plugins see it as vnavmesh. That also means it cannot be installed

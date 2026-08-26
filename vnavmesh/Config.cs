@@ -59,6 +59,8 @@ public class Config
             NotifyModified();
         if (ImGui.Checkbox("Stop pathing when stuck", ref StopOnStuck))
             NotifyModified();
+        if (ImGui.Checkbox("Announce pathfinding in chat", ref Humanizer.PathfindChatEnabled)) // fork, see ADR 0009
+            NotifyModified();
 
         ImGui.SetNextItemWidth(200);
         if (ImGui.SliderInt("Max cores used during mesh build", ref BuildMaxCores, -8, realMaxCores))

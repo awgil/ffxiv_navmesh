@@ -70,6 +70,12 @@ public class HumanizerConfig
     // budget that still found every route upstream found across the three zones measured
     public int VolumeMaxSteps = 200000;
 
+    // --- pathfind chat (ADR 0009) ---
+
+    // echo the start and the end of every pathfind into the chat log. off is upstream, which says
+    // nothing. the lines are printed locally and never leave the client
+    public bool PathfindChatEnabled = false;
+
     // upstream's randomness lives on Config rather than here, so it is passed in
     public NavVolume.VoxelPathfindTuning VolumePathfinding(float randomnessMultiplier)
     {

@@ -67,6 +67,10 @@ public class RecorderTab
 
         ImGui.Separator();
 
+        DrawVolumePathfinding();
+
+        ImGui.Separator();
+
         DrawAuthoring(territory, player?.Position);
 
         ImGui.Separator();
@@ -133,6 +137,46 @@ public class RecorderTab
             Service.Config.NotifyModified();
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Used for large corrections and the last stretch of a path, where the normal ceiling would make the character orbit its target.");
+    }
+
+    private void DrawVolumePathfinding()
+    {
+        var cfg = Service.Config.Humanizer;
+
+        if (ImGui.Checkbox("Tune flying pathfind", ref cfg.VolumeTuningEnabled))
+            Service.Config.NotifyModified();
+        ImGui.SameLine();
+        ImGui.TextDisabled(cfg.VolumeTuningEnabled ? "(tuned)" : "(upstream behaviour)");
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Only affects flying routes. Walking goes through Detour and is already fast.");
+
+        using var _ = ImRaii.Disabled(!cfg.VolumeTuningEnabled);
+
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Heuristic weight", ref cfg.VolumeHeuristicWeight, 1f, 3f, "%.2f"))
+            Service.Config.NotifyModified();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("1 is upstream. Higher searches less and gives up on the shortest route; the straightening pass takes most of the length back.");
+
+        if (ImGui.Checkbox("Line of sight during search", ref cfg.VolumeSearchRaycast))
+            Service.Config.NotifyModified();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("On is upstream. Straightening already does this to the finished path, so leaving it off is where most of the time is saved.");
+
+        using (ImRaii.Disabled(!cfg.VolumeSearchRaycast))
+        {
+            ImGui.SetNextItemWidth(200);
+            if (ImGui.SliderFloat("Line of sight range (yalms)", ref cfg.VolumeRaycastRange, 0f, 100f, "%.0f"))
+                Service.Config.NotifyModified();
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("How far one check may reach. 0 is upstream, which is no limit at all, and a long check walks every voxel on the line.");
+        }
+
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderInt("Search budget (nodes)", ref cfg.VolumeMaxSteps, 10000, 1000000))
+            Service.Config.NotifyModified();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Where the search gives up. 1000000 is upstream. A destination that cannot be reached at all runs to this limit before it says so.");
     }
 
     private void DrawAuthoring(uint territory, Vector3? pos)

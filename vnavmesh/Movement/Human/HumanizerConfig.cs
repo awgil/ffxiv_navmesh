@@ -51,4 +51,37 @@ public class HumanizerConfig
     // stopped it helping at all, because the path runs along mesh edges and travel is mostly
     // parallel to them; averaging instead lets a corridor's two sides cancel to centre it
     public float SteeringWallSmoothing = 0.35f;
+
+    // --- volume pathfinding (ADR 0008) ---
+
+    // master switch: off means upstream's volume search exactly, knobs below ignored
+    public bool VolumeTuningEnabled = false;
+    // multiplies the A* heuristic. 1 is upstream, and it underestimates badly because moves are
+    // axis-only while the estimate is a straight line; above 1 the search stops spreading sideways
+    public float VolumeHeuristicWeight = 1.5f;
+    // how far the in-search line of sight check may reach, yalms. 0 is upstream, which is no limit
+    public float VolumeRaycastRange = 25f;
+    // run the line of sight collapse during the search at all. off is roughly three times faster
+    // again, but it advances one voxel per node instead of one hop, so a long twisting route can
+    // run out of budget where upstream would have found it: measured at about one route in twenty
+    public bool VolumeSearchRaycast = true;
+    // expansions before the search gives up. upstream is 1000000, which is a flood a goal in a
+    // sealed pocket or a separate region will always run to the end of. 200000 was the lowest
+    // budget that still found every route upstream found across the three zones measured
+    public int VolumeMaxSteps = 200000;
+
+    // upstream's randomness lives on Config rather than here, so it is passed in
+    public NavVolume.VoxelPathfindTuning VolumePathfinding(float randomnessMultiplier)
+    {
+        var tuning = NavVolume.VoxelPathfindTuning.Upstream;
+        tuning.RandomnessMultiplier = randomnessMultiplier;
+        if (!VolumeTuningEnabled)
+            return tuning;
+
+        tuning.HeuristicWeight = VolumeHeuristicWeight;
+        tuning.RaycastRange = VolumeRaycastRange;
+        tuning.SearchRaycast = VolumeSearchRaycast;
+        tuning.MaxSteps = VolumeMaxSteps;
+        return tuning;
+    }
 }

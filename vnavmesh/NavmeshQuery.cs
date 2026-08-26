@@ -215,6 +215,7 @@ public class NavmeshQuery
 		}
 
 		var timer = Timer.Create();
+		VolumeQuery.Settings = Service.Config.Humanizer.VolumePathfinding(Service.Config.RandomnessMultiplier); // fork, see ADR 0008
 		var voxelPath = VolumeQuery.FindPath(startVoxel, endVoxel, from, to, useRaycast, false, cancel, avoidCenter, avoidRadius); // TODO: do we need intermediate points for string-pulling algo?
 		if (voxelPath.Count == 0)
 		{

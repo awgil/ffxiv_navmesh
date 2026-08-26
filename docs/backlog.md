@@ -93,3 +93,48 @@ two captures. That is not enough for anything.
 destination is no higher than its start, and takeoff only fires while the desired
 position is above the character. A flying route over flat ground may now stay on
 the ground longer. If that shows up, the fix belongs with (c).
+
+---
+
+## 3. A flying destination that cannot be reached costs a full flood
+
+**Symptom.** Some flying pathfinds take seconds and then hand back a route that
+does not go where it was asked. The search budget added in ADR 0008 caps the wall
+clock, but the answer is still "here is a partial path" rather than "there is no
+path".
+
+**Why it happens.** `VoxelPathfind` has no notion of which parts of the volume
+connect to which. When start and goal sit in different connected components of
+the empty space, A* has nothing to find, so it expands the entire component it
+started in before giving up. Nothing is wrong with the search; it is being asked
+a question it cannot answer cheaply.
+
+**How common it is.** Labelling the empty voxels with union-find over the same
+neighbour relation the search uses:
+
+| zone | empty voxels | components | largest |
+|------|--------------|------------|---------|
+| Yak T'el (`x6f2`) | 38.2M | 6907 | 64.1% |
+| Gyr Abania (`g3f1`) | 29.8M | 4108 | 72.7% |
+
+Every pair that failed in the ADR 0008 measurements was a pair whose ends fell in
+different components. Not all of those are pairs a player would ever ask for:
+they were sampled by picking random walkable polygons, which happily picks the
+inside of a building and a hilltop across the zone. But the ones that do come up
+in play cost the same flood.
+
+**Directions worth trying.** Label components once and check before searching.
+`VoxelMap.Tile.Contents` already carries a TODO for exactly this ("region id in
+low bits") and has 15 spare bits per empty voxel, and the mesh side already does
+the equivalent through `FloodFill` and `FLAG_UNREACHABLE`. The open questions are
+where the labelling runs and what it costs: doing it at build time means the
+region ids want to be serialized, which bumps `Navmesh.Version` and invalidates
+every cached zone; doing it at load time means paying for it on every zone
+change. A first cut using a `Dictionary<ulong, int>` took 22 s per zone, which is
+too slow for either, but almost all of that was the dictionary rather than the
+algorithm, and labelling in place would not need one.
+
+**How to measure.** The failure is visible without any of this: a pathfind that
+runs to the search budget and returns a path whose last point is not near the
+requested destination. Counting those over a set of sampled pairs is what the
+table above is built from.

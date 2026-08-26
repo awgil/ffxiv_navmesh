@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -24,7 +24,10 @@
     <Compile Include="..\..\vnavmesh\NavVolume\VoxelMap.cs" />
     <Compile Include="..\..\vnavmesh\NavVolume\Voxelizer.cs" />
     <Compile Include="..\..\vnavmesh\NavVolume\VoxelSearch.cs" />
+    <Compile Include="..\..\vnavmesh\NavVolume\VoxelPathfind.cs" />
+    <Compile Include="..\..\vnavmesh\NavVolume\VoxelPathfindTuning.cs" />
     <Compile Include="..\..\vnavmesh\NavVolume\VoxelStringPull.cs" />
+    <Compile Include="..\..\vnavmesh\Movement\Human\HumanizerConfig.cs" />
   </ItemGroup>
 
   <ItemGroup>

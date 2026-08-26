@@ -33,8 +33,19 @@ public class VoxelPathfind
     private float _avoidRadiusSq;
     private float _minAvoidDistSq; // don't go closer to center than this (start dist if inside, else full radius)
 
+    // fork: knobs on the search, defaulting to upstream behaviour; see ADR 0008
+    public VoxelPathfindTuning Settings = VoxelPathfindTuning.Upstream;
+
     public VoxelMap Volume => _volume;
     public Span<Node> NodeSpan => CollectionsMarshal.AsSpan(_nodes);
+
+    // fork: the caller's raycast flag is shared with the mesh query, so the tuning has to be able
+    // to veto it, and the limit upstream left wide open comes from the same place
+    private void ApplyTuning(bool useRaycast)
+    {
+        _useRaycast = useRaycast && Settings.SearchRaycast;
+        _raycastLimitSq = Settings.RaycastRange > 0 ? Settings.RaycastRange * Settings.RaycastRange : float.MaxValue;
+    }
 
     public VoxelPathfind(VoxelMap volume)
     {
@@ -43,7 +54,7 @@ public class VoxelPathfind
 
     public List<(ulong voxel, Vector3 p)> FindPath(ulong fromVoxel, ulong toVoxel, Vector3 fromPos, Vector3 toPos, bool useRaycast, bool returnIntermediatePoints, CancellationToken cancel, Vector3? avoidCenter = null, float avoidRadius = 0)
     {
-        _useRaycast = useRaycast;
+        ApplyTuning(useRaycast);
         _avoidCenter = avoidCenter ?? default;
         _avoidRadius = avoidRadius > 0 && avoidCenter.HasValue ? avoidRadius : 0;
         _avoidRadiusSq = _avoidRadius * _avoidRadius;
@@ -72,7 +83,7 @@ public class VoxelPathfind
         var savedMin = _minAvoidDistSq;
         _avoidRadius = 0;
         _minAvoidDistSq = 0;
-        _useRaycast = useRaycast;
+        ApplyTuning(useRaycast);
         try
         {
             Start(fromVoxel, toVoxel, fromPos, toPos);
@@ -284,8 +295,10 @@ public class VoxelPathfind
         //Service.Log.Debug($"volume pathfind: {fromPos} ({fromVoxel:X}) to {toPos} ({toVoxel:X})");
     }
 
-    public void Execute(CancellationToken cancel, int maxSteps = 1000000)
+    public void Execute(CancellationToken cancel, int maxSteps = 0)
     {
+        if (maxSteps <= 0)
+            maxSteps = Settings.MaxSteps; // fork: budget comes from the tuning, see ADR 0008
         for (int i = 0; i < maxSteps; ++i)
         {
             if (!ExecuteStep())
@@ -580,7 +593,7 @@ public class VoxelPathfind
     private Random _rng = new();
     private float CalculateGScore(ref Node parent, ulong destVoxel, Vector3 destPos, ref int parentIndex)
     {
-        float randomFactor = (float)_rng.NextDouble() * Service.Config.RandomnessMultiplier;
+        float randomFactor = (float)_rng.NextDouble() * Settings.RandomnessMultiplier;
 
         float baseDistance;
         float parentBaseG;
@@ -649,7 +662,7 @@ public class VoxelPathfind
         return dx * dx + dz * dz;
     }
 
-    private float HeuristicDistance(ulong nodeVoxel, Vector3 v) => nodeVoxel != _goalVoxel ? (v - _goalPos).Length() * 0.999f : 0;
+    private float HeuristicDistance(ulong nodeVoxel, Vector3 v) => nodeVoxel != _goalVoxel ? (v - _goalPos).Length() * 0.999f * Settings.HeuristicWeight : 0;
 
     private void AddToOpen(int nodeIndex)
     {

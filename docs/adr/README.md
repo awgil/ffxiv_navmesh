@@ -16,3 +16,4 @@ Status values: `Proposed`, `Accepted`, `Superseded by NNNN`, `Rejected`.
 | [0005](0005-imitate-keyboard-input.md) | Imitate keyboard input | Accepted |
 | [0006](0006-three-arm-evaluation.md) | Three-arm evaluation | Accepted |
 | [0007](0007-flight-paths-are-straightened-not-steered.md) | Flight paths are straightened, not steered | Accepted |
+| [0008](0008-volume-pathfinding-is-tuned-not-rewritten.md) | Volume pathfinding is tuned, not rewritten | Accepted |

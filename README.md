@@ -13,6 +13,8 @@ What is here so far:
   geometry, instead of pointing at the next waypoint
 - greedy line of sight straightening for flying paths, which upstream leaves as raw voxel
   centres
+- a tuned flying pathfind, which finds the same routes 15 to 20 times faster on average
+  and cuts the worst case from about thirteen seconds to under one
 
 Everything the fork adds is off by default, and it is a drop-in replacement: same internal
 name, same IPC, so other plugins see it as vnavmesh. That also means it cannot be installed

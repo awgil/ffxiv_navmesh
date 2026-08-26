@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # the test project compiles the geometry sources in rather than referencing the plugin, so it
+      # needs no Dalamud and runs on a bare runner; see tests/README.md
+      - name: Test
+        run: dotnet test tests/Navmesh.Tests --configuration Release
+
+  build:
+    name: Plugin build
+    runs-on: ubuntu-latest
+    env:
+      DALAMUD_HOME: /tmp/dalamud
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Dalamud.NET.Sdk looks for a local game install and finds nothing on a runner, so point it at
+      # a downloaded copy. The release channel tracks the API version the SDK reference pins.
+      - name: Download Dalamud
+        run: |
+          wget -q https://goatcorp.github.io/dalamud-distrib/latest.zip -O ${{ env.DALAMUD_HOME }}.zip
+          unzip -q ${{ env.DALAMUD_HOME }}.zip -d ${{ env.DALAMUD_HOME }}
+
+      - name: Build
+        run: dotnet build --configuration Release vnavmesh/vnavmesh.csproj

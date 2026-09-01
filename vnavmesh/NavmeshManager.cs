@@ -300,11 +300,13 @@ public sealed class NavmeshManager : IDisposable
 		// cache doesn't exist or can't be used for whatever reason - build navmesh from scratch
 		var builder = new NavmeshBuilder(scene, customization);
 		var deltaProgress = 0.99f / (builder.NumTilesX * builder.NumTilesZ);
-		builder.BuildTiles(() =>
+		var resultEnumerable = builder.BuildTiles(() =>
 		{
 			_loadTaskProgress += deltaProgress;
 			cancel.ThrowIfCancellationRequested();
 		});
+		
+		foreach (var _ in resultEnumerable) { /* do nothing, but still need to keep the iterator running */ }
 
 		// write results to cache
 		{

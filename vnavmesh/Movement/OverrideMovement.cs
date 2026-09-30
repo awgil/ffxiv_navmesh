@@ -126,7 +126,8 @@ public unsafe class OverrideMovement : IDisposable
         var dirH = Angle.FromDirectionXZ(dist);
         var dirV = allowVertical ? Angle.FromDirection(new(dist.Y, new Vector2(dist.X, dist.Z).Length())) : default;
 
-        var refDir = _legacyMode
+        // first person moves relative to character facing in both modes
+        var refDir = _legacyMode && !OverrideCamera.IsFirstPerson
             ? ((CameraEx*)CameraManager.Instance()->GetActiveCamera())->DirH.Radians() + 180.Degrees()
             : player.Rotation.Radians();
         return (dirH - refDir, dirV);

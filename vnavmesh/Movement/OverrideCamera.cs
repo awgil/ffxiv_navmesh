@@ -1,5 +1,7 @@
 ﻿using Dalamud.Hooking;
 using Dalamud.Utility.Signatures;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using System;
 using System.Runtime.InteropServices;
@@ -38,6 +40,8 @@ public unsafe class OverrideCamera : IDisposable
     public Angle DesiredAltitude;
     public Angle SpeedH = 360.Degrees(); // per second
     public Angle SpeedV = 360.Degrees(); // per second
+
+    public static bool IsFirstPerson => CameraManager.Instance()->GetActiveCamera()->ControlMode == CameraControlMode.FirstPerson;
 
     private delegate void RMICameraDelegate(CameraEx* self, int inputMode, float speedH, float speedV);
     [Signature("48 8B C4 53 48 81 EC ?? ?? ?? ?? 44 0F 29 50 ??")]

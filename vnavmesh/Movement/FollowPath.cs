@@ -153,7 +153,7 @@ public class FollowPath : IDisposable
 				}
 			}
 
-			_camera.Enabled = Service.Config.AlignCameraToMovement;
+			_camera.Enabled = Service.Config.AlignCameraToMovement && !OverrideCamera.IsFirstPerson;
 			_camera.SpeedH = _camera.SpeedV = 360.Degrees();
 			_camera.DesiredAzimuth = Angle.FromDirectionXZ(_movement.DesiredPosition - player.Position) + 180.Degrees();
 			_camera.DesiredAltitude = Service.Config.AlignCameraHeight.Degrees();

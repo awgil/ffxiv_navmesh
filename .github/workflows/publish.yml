@@ -17,10 +17,6 @@ jobs:
     uses: xanunderscore/DynamisPublishAction/.github/workflows/dynamis.yml@master
     with:
       plugin_id: 48
-      internal_name: vnavmesh
-      project_file: vnavmesh/vnavmesh.csproj
-      dotnet_version: 10.0.x
-      dalamud_version: 15
       testing: ${{ github.ref == 'refs/heads/testing' || inputs.testing == 'true' }}
     secrets:
       publisher_key: ${{ secrets.PUBLISHER_KEY }}

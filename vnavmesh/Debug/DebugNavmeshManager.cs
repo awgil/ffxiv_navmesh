@@ -79,6 +79,17 @@ class DebugNavmeshManager : IDisposable
 		if (ImGui.Button("Export bitmap"))
 			ExportBitmap(_manager.Navmesh, _manager.Query, playerPos);
 
+		if (player != null)
+		{
+			ImGui.SameLine();
+			if (ImGui.Button("Record seed point"))
+				FloodFill.Get()?.AddPoint(Service.ClientState.TerritoryType, playerPos);
+
+			ImGui.SameLine();
+			if (ImGui.Button("Dump all polygons connected to player (to clipboard)"))
+				_manager.Envelope(playerPos);
+		}
+
 		ImGui.Checkbox("Allow movement", ref _path.MovementAllowed);
 		ImGui.Checkbox("Use raycasts", ref _manager.UseRaycasts);
 		ImGui.Checkbox("Use string pulling", ref _manager.UseStringPulling);

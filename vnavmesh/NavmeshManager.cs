@@ -1,4 +1,5 @@
-﻿using Dalamud.Game.ClientState.Conditions;
+﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Conditions;
 using DotRecast.Detour;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision.Math;
@@ -208,6 +209,33 @@ public sealed class NavmeshManager : IDisposable
 		bitmap.Save(filename);
 		Service.Log.Debug($"Generated nav bitmap '{filename}' @ {string.Join(", ", starting)}: {bitmap.MinBounds}-{bitmap.MaxBounds}");
 		return (bitmap.MinBounds, bitmap.MaxBounds);
+	}
+
+	public void Envelope(Vector3 starting)
+	{
+		if (Query == null || Navmesh == null)
+			return;
+
+		var startPoly = Query.FindNearestMeshPoly(starting);
+		var reachablePolys = Query.FindReachableMeshPolys([startPoly]);
+
+		using var mw = new MemoryStream();
+		using (var b = new StreamWriter(mw))
+		{
+			foreach (var p in reachablePolys)
+			{
+				Navmesh.Mesh.GetTileAndPolyByRefUnsafe(p, out var tile, out var poly);
+				for (var i = 0; i < poly.vertCount; i++)
+				{
+					var v = NavmeshBitmap.GetVertex(tile, poly.verts[i]);
+					b.Write($"{v.X:f3},{v.Z:f3};");
+				}
+				b.Write("\n");
+			}
+
+			b.Flush();
+		}
+		ImGui.SetClipboardText(mw.GetBuffer());
 	}
 
 	// if non-empty string is returned, active layout is ready

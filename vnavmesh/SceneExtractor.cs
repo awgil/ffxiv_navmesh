@@ -112,6 +112,7 @@ public class SceneExtractor
 		foreach (var part in scene.BgParts)
 		{
 			var info = ExtractBgPartInfo(scene, part.key, part.transform, part.crc, part.analytic);
+			Service.Log.Debug($"BGPart: {part.key:X} -> {info.path}");
 			if (info.path.Length > 0)
 				AddInstance(Meshes[info.path], part.key, ref info.transform, ref info.bounds, part.matId);
 		}

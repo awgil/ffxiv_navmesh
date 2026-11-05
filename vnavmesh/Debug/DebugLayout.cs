@@ -136,7 +136,7 @@ public unsafe class DebugLayout : IDisposable
 			tree.LeafNode($"Rotation: {*inst->GetRotationImpl()}");
 			tree.LeafNode($"Scale: {*inst->GetScaleImpl()}");
 			tree.LeafNode($"Graphics: {(nint)inst->GetGraphics():X}");
-			tree.LeafNode($"Collider: {(nint)collider:X} (loaded={inst->IsColliderLoaded()}, active={inst->IsColliderActive()})");
+			tree.LeafNode($"Collider: {(nint)collider:X} (loaded={inst->IsColliderLoaded()}, active={inst->IsColliderActive()}, type={(collider == null ? "none" : collider->GetColliderType())})");
 			tree.LeafNode($"Want to be active: {inst->WantToBeActive()}");
 			switch (inst->Id.Type)
 			{

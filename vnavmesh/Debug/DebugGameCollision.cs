@@ -397,7 +397,6 @@ public unsafe class DebugGameCollision : IDisposable
 			return !(aright <= bleft || bright <= aleft || atop <= bbottom || btop <= abottom);
 		}
 
-		var j = 0;
 		for (var level = 1; level < tree->NumLevels; level++)
 		{
 			var cellSizeX = (tree->MaxX - tree->MinX + 1) / (1 << level);
@@ -487,23 +486,19 @@ public unsafe class DebugGameCollision : IDisposable
 	static bool PlaneLine(Vector3 rayOrigin, Vector3 rayDir, Vector3 pointA, Vector3 pointB, out Vector3 intersection)
 	{
 		intersection = default;
-		var p0 = pointA;
-		var p1 = pointB;
-		var p_co = rayOrigin;
-		var p_no = rayDir;
 
-		if (DistSqXZ(p0, rayOrigin) >= PlayerReachSq && DistSqXZ(p1, rayOrigin) >= PlayerReachSq)
+		if (DistSqXZ(pointA, rayOrigin) >= PlayerReachSq && DistSqXZ(pointB, rayOrigin) >= PlayerReachSq)
 			return false;
 
-		var u = p1 - p0;
-		var dot = Vector3.Dot(p_no, u);
+		var u = pointB - pointA;
+		var dot = Vector3.Dot(rayDir, u);
 
 		if (MathF.Abs(dot) >= float.Epsilon)
 		{
-			var w = p0 - p_co;
-			var fac = -Vector3.Dot(p_no, w) / dot;
+			var w = pointA - rayOrigin;
+			var fac = -Vector3.Dot(rayDir, w) / dot;
 			u *= fac;
-			intersection = p0 + u;
+			intersection = pointA + u;
 			return fac >= 0 && fac <= 1;
 		}
 

@@ -6,8 +6,8 @@ using DotRecast.Recast;
 using Navmesh.NavVolume;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Navmesh;
@@ -91,9 +91,9 @@ public class NavmeshBuilder
     }
 
     // TODO this is kinda more complicated than it needs to be because we're trying to maintain tile order in the output mesh
-    public List<RcBuilderResult> BuildTiles(Action? onTileFinished = null)
+    public IEnumerable<RcBuilderResult> BuildTiles(Action? onTileFinished = null)
     {
-        var tasks = new List<Task<(DtMeshData?, VoxelMap?, RcBuilderResult)>>();
+        var tasks = new Queue<Task<(DtMeshData?, VoxelMap?, RcBuilderResult)>>();
 
         int threadCount;
 
@@ -104,55 +104,53 @@ public class NavmeshBuilder
         else
             threadCount = wantedThreads;
         threadCount = Math.Clamp(threadCount, 1, maxThreads);
+        
+        using var tiles = Enumerable.Range(0, NumTilesZ)
+            .SelectMany(z0 => Enumerable.Range(0, NumTilesX).Select(x0 => (z0, x0)))
+            .GetEnumerator();
 
-        var sem = new SemaphoreSlim(threadCount, threadCount);
+        for (var i = 0; i < threadCount; i++)
+            LaunchNextBuildTileTask();
 
-        for (var z = 0; z < NumTilesZ; z++)
-        {
-            for (var x = 0; x < NumTilesX; x++)
-            {
-                var z0 = z;
-                var x0 = x;
-                tasks.Add(Task.Run(async () =>
-                {
-                    await sem.WaitAsync();
-                    try
-                    {
-                        var (tile, vox, rc) = BuildTile(x0, z0);
-
-                        VoxelMap? thisVolume = null;
-                        if (vox != null)
-                        {
-                            thisVolume = new VoxelMap(BoundsMin, BoundsMax, Settings.NumTiles);
-                            thisVolume.Build(vox, x0, z0);
-                        }
-
-                        onTileFinished?.Invoke();
-                        return (tile, thisVolume, rc);
-                    }
-                    finally
-                    {
-                        sem.Release();
-                    }
-                }));
-            }
-        }
-
-        var results = new List<RcBuilderResult>();
-
-        foreach (var t in tasks)
+        while (tasks.TryDequeue(out var t))
         {
             t.Wait();
+            LaunchNextBuildTileTask();
+            
             var (tile, vox, result) = t.Result;
+            
             if (tile != null)
                 Navmesh.Mesh.AddTile(tile, 0, 0);
             if (Navmesh.Volume != null && vox != null)
                 MergeTile(Navmesh.Volume, result.tileX, result.tileZ, vox);
 
-            results.Add(result);
+            yield return result;
         }
 
-        return results;
+        yield break;
+
+        void LaunchNextBuildTileTask()
+        {
+            if (!tiles.MoveNext())
+                return;
+
+            var (z0, x0) = tiles.Current;
+
+            tasks.Enqueue(Task.Run(() =>
+            {
+                var (tile, vox, rc) = BuildTile(x0, z0);
+
+                VoxelMap? thisVolume = null;
+                if (vox != null)
+                {
+                    thisVolume = new VoxelMap(BoundsMin, BoundsMax, Settings.NumTiles);
+                    thisVolume.Build(vox, x0, z0);
+                }
+
+                onTileFinished?.Invoke();
+                return (tile, thisVolume, rc);
+            }));
+        }
     }
 
     private static void MergeTile(VoxelMap parent, int x, int z, VoxelMap child)
